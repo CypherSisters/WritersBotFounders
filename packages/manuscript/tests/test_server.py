@@ -1038,8 +1038,9 @@ def test_remove_puts_a_manuscript_away(env):
     status = folder / "status.json"
     before = status.read_text(encoding="utf-8") if status.exists() else None
     status.write_text(json.dumps({"state": "reading", "step": "Reading section 1 of 3", "done": 0, "total": 3}), encoding="utf-8")
-    text, err = tool(port, "manuscript_remove", title="Goodbye")
-    assert err and "still reading" in text and folder.is_dir()
+    # 0.3.4: a status file that says "reading" with no live reading behind it (Manuscript was restarted) no longer blocks
+    code, st = call(port, "GET", "/api/status" + q(title="Goodbye"))
+    assert st["state"] == "failed"                   # the server already reads a stale "reading" as stopped
     status.write_text(before if before is not None else json.dumps({"state": "done"}), encoding="utf-8")
     original = (folder / "original.txt").read_bytes() if (folder / "original.txt").exists() else None
     text, err = tool(port, "manuscript_remove", title="Goodbye")
