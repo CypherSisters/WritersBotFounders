@@ -1,0 +1,2863 @@
+openapi: 3.1.0
+info:
+  title: PuffPAI Core API
+  version: "1"
+  description: |
+    The Core API: versioned HTTP on 127.0.0.1 (default port 8420), under /v1.
+    Source: docs/01_ARCHITECTURE.md "Core API", docs/02_PACKAGE_CONTRACT.md
+    ("PUFFPAI_TOKEN"), docs/04_DEVELOPERS.md "The Core API at a glance",
+    docs/zones/Z1_VAULT_PROVIDERS.md section 8.
+
+    Every UI, including the default Desktop, uses only this API. The Core API
+    holds base routes only; a feature's routes belong to the package that owns it.
+    No route ever returns a secret value. No route lets a program say Yes on an
+    everyday caller's behalf: consent comes from the owner on a Core card, and
+    floor-level cards need the PIN or Windows Hello (D29).
+
+    Status: built so far: GET /v1/health, GET /v1/registry and
+    GET /v1/registry/{id} (lane L0); chat, brain and model (lane L2); the vault routes (lane L3)
+    except store/move and backup/*; the checklist, events, wizard, settings, notify, theme, people
+    and ui groups (lane L5); the packages, pages and providers groups, GET /v1/consent and
+    POST /v1/consent/{id}/answer (lane L1; the consent store moves to lane L4's at merge).
+    Every other route answers 501 with
+    {"error": "not built yet", "lane": "<L#>"} until its lane fills it in.
+    Request and response bodies marked PROPOSED are a starting point for that lane.
+
+    Who may call (x-access on each route):
+      public        no credential
+      owner         an owner credential: a paired device or an owner API key
+      program       a program key (puffpai apikey), or any owner credential; a program key opens
+                    only these routes (/openai/v1 and /ollama/api) and the public ones, nothing else
+      owner_device  a paired device only (an owner sitting at a screen), never a bare API key
+      package_ok    owner, or a package's own PUFFPAI_TOKEN (the handler filters to its own items)
+      own_row       owner, or a package token for its own Registry row only
+      core          refused over HTTP; the Core calls it in process
+      toolsmith     Toolsmith's own process only: its Toolsmith token (lane L6, 09 section 3), bound to one
+                    build, given on its stdin, revoked when it ends; it opens no other route
+    A PUFFPAI_TOKEN may call only: brain, notify, theme, people (GET only), its own
+    Registry row, its own Checklist steps, its granted events, and asking for one address for itself
+    (02 "How the Core runs a package").
+
+    Two addresses (D49). The Core's own address (8420) serves the Desktop and the API. The
+    Desktop is at http://puffpai.localhost:8420 (D79): the paired-device cookie is set and read
+    only when Host is exactly puffpai.localhost:<port>, and a POST, PUT, PATCH or DELETE signed
+    in by the cookie must send Origin http://puffpai.localhost:<port> (or, with no Origin,
+    Sec-Fetch-Site: same-origin) and the header X-PuffPAI: 1, else 403. The cookie counts only
+    with its second half in X-PuffPAI-Device (returned once by POST /v1/pair as device_key and
+    kept in the Desktop's localStorage); without it the cookie is no cookie (401). A token
+    bound that way needs its second half as a bearer too, and a browser token from before D79
+    (no second half) is refused everywhere and revoked at Core start. Every puffpai_device (puffpai_device_<port> when the Core is not on 8420, D129)
+    cookie sent is checked, never only the first. On 127.0.0.1:<port> and localhost:<port>,
+    GET /, /ui/..., /v1/recover and /v1/signin answer 302 to the same path on puffpai.localhost (no cookie
+    set or read) and /v1/pair answers 403; bearer callers use 127.0.0.1 as before. Both
+    listeners answer 421 to any other Host (DNS rebinding). The package id puffpai is reserved. Bearer and
+    X-PuffPAI-Key callers are not affected. /pkg/ answers 404 here. The pages address (8422)
+    serves /pkg/ (lane L1 forwards it, adding the package token), /v1/health, and the
+    package_ok and own_row routes for a package token. It never reads the cookie and refuses
+    owner credentials (403); any other route answers 404 there.
+
+    The home network (D130, built, not yet tested by the owner). On unless she turns it off (off: no listener and no
+    socket): one more listener on this bot's Core port + 3, for the Desktop and the API, and one port per package for
+    its pages (19100 and up, 100 per bot). The 127.0.0.1 addresses above do not change. A connection is refused before
+    any route unless its real socket peer is home-network or link-local (never public, never loopback; no forwarded
+    header is read; else 403 in plain text) and its Host is this computer's own home-network address or own name, <hostname>
+    or <hostname>.local, on that listener's port (else 421 in plain text). A VPN address in 100.64.0.0/10 counts as neither. There the only credential is a paired browser's cookie,
+    puffpai_device_<port>, with its second half in X-PuffPAI-Device; an owner API key, package token, Toolsmith token or
+    the terminal key is refused (403). A POST, PUT, PATCH or DELETE must send Origin http://<that Host> (or, with no
+    Origin, Sec-Fetch-Site: same-origin) and X-PuffPAI: 1, POST /v1/pair included. A device with no paired cookie gets
+    GET / and GET /window/ as a 302 to GET /pair, and 401 for the rest but /v1/pair and /v1/signin. GET / and /ui/ there serve only the built-in Desktop, whichever she chose on this computer. Past that a paired
+    device gets everything the owner gets on this computer, the vault, keys, floor-level Yes, the command line and
+    shutdown included (the owner's decision for now; roles come later). There is no TLS, so anyone watching the network
+    can see PINs and keys and act as that device, the command line included. /openai/v1 and /ollama/api work there with
+    the same cookie and second half, not with an owner key. On this address POST /v1/knowledge/files/open answers the
+    file itself, POST /v1/window/open and POST /v1/terminal/open open nothing and name a page in {"url"}.
+    Package pages there need that package's page pass (GET /v1/network/pages); adopted apps and tries have no port.
+
+    Every package page has its own origin (D53): http://<id>.localhost:8422, on the same
+    pages listener. A request with that Host is that package's page (the path is the
+    package's own path, so a package origin never reaches the Core API); a *.localhost Host
+    that is not a valid package id answers 404. On 127.0.0.1:8422, GET /pkg/<id>/<path> only
+    redirects (302) to the package's own origin.
+servers:
+  - url: http://puffpai.localhost:8420
+    description: The Desktop's own address; the only one where the device cookie is set or read (D79)
+  - url: http://127.0.0.1:8420
+    description: The Core API for programs (bearer tokens); the Desktop's pages only redirect here (D79)
+  - url: http://127.0.0.1:8422
+    description: The pages address (package pages; no owner login, D49)
+  - url: http://{id}.localhost:8422
+    description: A package page's own origin (D53)
+    variables: { id: { default: freshtable } }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: 'An owner API key, a paired-device token or a package''s PUFFPAI_TOKEN. The Core stores only a SHA-256 hash of each.'
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-PuffPAI-Key
+      description: 'The same credentials as bearer, for clients that cannot set Authorization.'
+    deviceSession:
+      type: apiKey
+      in: cookie
+      name: puffpai_device   # puffpai_device_<port> when the Core is not on 8420 (D129)
+      description: 'A paired device''s token as a cookie, host-only on puffpai.localhost, read only when Host is puffpai.localhost:<port>, and counted only with its second half in the X-PuffPAI-Device header (D79). Never read on the pages address (D49); a cookie-signed state change needs the Desktop''s own Origin and X-PuffPAI: 1.'
+  requestBodies:
+    VaultPin:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pin]
+            properties:
+              pin: { type: string, format: password, writeOnly: true }
+    VaultPinChange:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pin, new_pin]
+            properties:
+              pin: { type: string, format: password, writeOnly: true }
+              new_pin: { type: string, format: password, writeOnly: true }
+    VaultUnlock:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [secret]
+            properties:
+              method: { type: string, default: pin }
+              secret: { type: string, format: password, writeOnly: true }
+              accept_older: { type: boolean, description: 'Her answer to "Your vault went back in time. Use this older copy?"' }
+    VaultRecover:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, new_pin]
+            properties:
+              code: { type: string, format: password, writeOnly: true }
+              new_pin: { type: string, format: password, writeOnly: true }
+    VaultCode:
+      description: 'The recovery code typed back. Hidden on entry and never echoed (D36(c)).'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code: { type: string, format: password, writeOnly: true }
+    VaultWayIn:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [secret]
+            description: 'Floor-level (D29): the current PIN or the recovery code is needed too.'
+            properties:
+              kind: { const: passphrase }
+              label: { type: string, maxLength: 60 }
+              secret: { type: string, format: password, writeOnly: true }
+              pin: { type: string, format: password, writeOnly: true, description: 'The current PIN (or give code)' }
+              code: { type: string, format: password, writeOnly: true, description: 'The recovery code (or give pin)' }
+    VaultCurrentSecret:
+      description: 'Floor-level (D29): the current PIN or the recovery code. Hidden on entry and never echoed.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              pin: { type: string, format: password, writeOnly: true }
+              code: { type: string, format: password, writeOnly: true }
+    VaultInboxFile:
+      description: 'Her floor-level Yes (D29) to let a sealed inbox box replace a key already saved under that name.'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, pin]
+            properties:
+              name: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" }
+              pin: { type: string, format: password, writeOnly: true }
+    VaultSecret:
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [value]
+            properties:
+              value: { type: string, format: password, writeOnly: true }
+              label: { type: string }
+              unattended: { type: boolean, description: 'Works after a restart without the PIN (D27). Never with card_backed.' }
+              card_backed: { type: boolean }
+              seal_if_locked: { type: boolean }
+  responses:
+    RecoveryCodeOnce:
+      description: 'The recovery code, shown once to the owner at a paired device (Cache-Control: no-store). Never stored in the clear, never shown again.'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [recovery_code]
+            properties:
+              recovery_code: { type: string, pattern: "^[2-9CDFHJKLMNPQRTVWXY]{5}(-[2-9CDFHJKLMNPQRTVWXY]{5}){4}$" }
+              note: { type: string }
+    NotBuilt:
+      description: 'Not built yet. The lane named fills it in.'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, lane]
+            properties:
+              error: { const: not built yet }
+              lane: { type: string, pattern: "^L[0-9]+$" }
+    Unauthorized:
+      description: 'No credential, or one the Core does not know.'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: 'The credential is known but may not call this route.'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, description: Plain words. }
+        code: { type: string, description: 'A short code when there is one. "sign_in": the Core''s own refusal when no credential counted (401, D91 and D92; a client signs out only on this or no code). "pair_code": POST /v1/pair with a wrong, used or old code.' }
+    RegistryRow:
+      $ref: "./registry.schema.json"
+    Step:
+      description: 'The one step shape (02 "Setup steps").'
+      $ref: "./puffpai-package.schema.json#/$defs/step"
+security:
+  - bearer: []
+  - apiKey: []
+  - deviceSession: []
+
+paths:
+  /v1/health:
+    get:
+      tags: [core]
+      summary: 'Is the Core up'
+      x-access: public
+      x-lane: L0
+      security: []
+      responses:
+        "200":
+          description: 'The Core answers.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version, api]
+                properties:
+                  ok: { type: boolean }
+                  version: { type: string }
+                  api: { const: v1 }
+
+  /v1/core:
+    get:
+      tags: [core]
+      summary: 'Which bot this Core runs for'
+      description: |
+        Built by I22b (D91). Reply {"bot_id": "<32 hex>", "pid": <n>}. bot_id is a hash of the Core's bot folder
+        (its full path), so `puffpai` can check, with the terminal key, that the Core on the port in
+        settings	erminal.json is this bot's own and not another bot's that holds the port now. It says nothing
+        about the folder itself.
+      x-access: owner
+      x-lane: I22b
+      responses:
+        "200": { description: 'This Core''s bot.' }
+        "401": { description: 'No credential this Core knows (another bot''s key).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/shutdown:
+    post:
+      tags: [core]
+      summary: 'Stop BuildBot: every app and Toolsmith end through their Job Objects, the same stop as Ctrl+C'
+      description: |
+        Built by I7. `puffpai shutdown` and "Stop BuildBot.cmd" call it with this run's terminal key
+        (settings\terminal.json). The owner at this computer only (a paired-device token): an owner API key, a
+        package token and a Toolsmith token are refused. The answer comes first; the Core then stops, and its
+        stop removes settings\terminal.json last. It stops `puffpai setup` too, at any question or during a build
+        (D122): the setup window sees the stop at its next prompt or poll, and ends with a plain line.
+      x-access: owner_device
+      x-lane: I7
+      responses:
+        "202": { description: '{"stopping": true, "said": "BuildBot is stopping its apps."}' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/registry:
+    get:
+      tags: [registry]
+      summary: 'Everything installed'
+      x-access: owner
+      x-lane: L0
+      parameters:
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: 'Every Registry row, sorted by id.'
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/RegistryRow" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/registry/{id}:
+    get:
+      tags: [registry]
+      summary: 'One Registry row'
+      x-access: own_row
+      x-lane: L0
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 'The row.'
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistryRow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: 'No such package.'
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/packages:
+    post:
+      tags: [packages]
+      summary: 'Add a package (the one install path)'
+      description: |
+        Body: {"source": "<folder | git URL | built-in id | store:<id>>", "link": false}.
+        Validates, runs the Drawbridge check and raises ONE Yes card; the reply
+        carries the card's consent_id, not an install (01 "Package Manager").
+        store:<id> (D89): the row from the official store first, then the owner's sources in order; a
+        yanked (id, commit) is refused (409) with its reason; exactly the pinned commit is fetched and only
+        the row's folder is installed; the manifest's id and kind must be the row's. origin is
+        store:verified only from the official store with tier verified, else store:community. The card
+        has "store": {where, tier, repo, path, commit}.
+      x-access: owner
+      x-lane: L1
+      responses: { "202": { description: 'The Yes card: {"consent_id", "id", "card", "floor"}. 400, 403 or 409 with {"error", "problems"} (403: Drawbridge said no, or is not here).' } }
+  /v1/packages/available:
+    get:
+      tags: [packages]
+      summary: 'The packages that ship with PuffPAI and are not installed yet (added by lane I8b for the Desktop''s Apps page)'
+      description: 'Reply [{"id", "name", "kind", "description", "version", "author", "icon"}]. icon is the manifest icon file as a data: URL (svg, png, webp or jpeg, at most 64 KB; lane I10a, the PuffPAI store), or null. Add one with POST /v1/packages {"source": "<its id>"}: the same checks and the same Yes card as any folder.'
+      x-access: owner
+      x-lane: I8b
+      responses:
+        "200": { description: 'The built-in packages not installed.' }
+  /v1/store:
+    get:
+      tags: [packages]
+      summary: 'The PuffPAI Store: every store source''s rows, merged (lane store, D89)'
+      description: 'Reply {"sources": [{source, official, removable, ok, stale, fetched_at, line, dropped, count}], "packages": [{id, kind, name, description, version, author, license, repo, path, commit, icon?, levels?, verified_by?, abilities?, tier, origin, listed_tier, source, official, used, yanked, yanked_why?, builtin_look, installed}]}. icon is an https address the Desktop never loads (D96). abilities is {tools: {name: description}, examples: {name: [ask]}}, plain text within limits. yanked_why says why a row was pulled; the official list counts for every source. builtin_look marks a second copy of a built-in look, which the Desktop does not show. tier and origin are what the Core will record: verified only for a verified row from the official store; every other row is community. used marks the row store:<id> installs (the official store first, then the owner''s sources in order). A source that can''t be reached shows its last good copy with stale true and a plain line. Query fresh=1 asks every source again now (else a copy from the last 60 s is used, also when the source failed). Query saved=1 reads the saved copies only and never the network, for what runs without the owner asking (D96). Rows that break the store''s row rules are left out (dropped, with a reason). Install one with POST /v1/packages {"source": "store:<id>"}. An installed store package that a store pulled (yanked) gets one Desktop notice offering removal; nothing is removed without the owner.'
+      x-access: owner
+      x-lane: store
+      parameters:
+        - { name: fresh, in: query, schema: { type: string } }
+        - { name: saved, in: query, schema: { type: string } }
+      responses:
+        "200": { description: 'The merged store.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/store/sources:
+    get:
+      tags: [packages]
+      summary: 'The store sources: the official store (always first, never removable), then the owner''s own'
+      x-access: owner
+      x-lane: store
+      responses:
+        "200": { description: '{"sources": [{source, key, official, removable, line}]}.' }
+    post:
+      tags: [packages]
+      summary: 'Add a store source: an https index.json address, or a folder or file on this computer holding one'
+      description: 'Body {"source": "<https address | full path>"}. Plain http, other schemes, an address with a name or password, a network share and a relative path are refused (400). The official store (409), a source already added (409), a folder with no index.json (404), more than 20 sources (409). Kept in settings\store.json. Everything from an added source installs as community, whatever its index says.'
+      x-access: owner_device
+      x-lane: store
+      responses:
+        "201": { description: '{"added": true, "source", "line"}.' }
+        "400": { description: '{"error", "problems"}.' }
+        "409": { description: '{"error", "problems"}.' }
+    delete:
+      tags: [packages]
+      summary: 'Remove one of the owner''s store sources'
+      description: 'Body {"source"} or query source=. The official store can''t be removed (409); a source not added is 404. Its saved copy is deleted; packages installed from it stay and get no updates from it.'
+      x-access: owner_device
+      x-lane: store
+      parameters:
+        - { name: source, in: query, schema: { type: string } }
+      responses:
+        "200": { description: '{"removed": true, "source", "line"}.' }
+        "404": { description: '{"error", "problems"}.' }
+        "409": { description: '{"error", "problems"}.' }
+  /v1/store/updates:
+    get:
+      tags: [packages]
+      summary: 'Installed store packages whose store source now pins a different commit'
+      description: 'Reply {"updates": [{id, name, have: {commit, version, origin}, store: {commit, version, origin, path}, source, stale, line}], "not_found": [{id, name, line}], "sources": [...]}. Apply one with POST /v1/packages/{id}/update: its Yes card first. Query fresh=1 as for GET /v1/store.'
+      x-access: owner
+      x-lane: store
+      parameters:
+        - { name: fresh, in: query, schema: { type: string } }
+      responses:
+        "200": { description: 'The updates.' }
+  /v1/packages/{id}:
+    delete:
+      tags: [packages]
+      summary: 'Remove a package'
+      description: 'PROPOSED query keep_data=ask|keep|delete. A linked folder is never deleted.'
+      x-access: owner
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'Removed: {"removed": true, "nothing_running", "folder_removed", "linked_folder_kept", "data_kept"}. 409 with {"question": "keep_data"} while the data choice is open.' } }
+  /v1/packages/{id}/start:
+    post:
+      tags: [packages]
+      summary: 'Start through Steward'
+      x-access: owner
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'The Registry row, status running. 409 with the plain reason.' } }
+  /v1/packages/{id}/stop:
+    post:
+      tags: [packages]
+      summary: 'Stop through Steward'
+      x-access: owner
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: '{"row", "nothing_running"}.' } }
+  /v1/packages/{id}/update:
+    post:
+      tags: [packages]
+      summary: 'Fetch, re-check, show what changed, Yes, swap'
+      description: 'Lane I13: a built-in (an install copied from this BuildBot''s own packages folder) is compared with that copy by manifest version and tree hash. Up to date: 200 {"status": "current"}. A system part (desktop, wizard, cloud-avatar) is updated now with an audit line and no card, 200 {"status": "updated", "row"}, unless it adds a host, key or changing tool or a new Drawbridge reason, then it gets the card. An app: 202 {"status": "card"} with the Yes card "<name> has an update" and a Desktop notice. Any other package: fetched again from its source, 202 {"status": "card"}. A store package (D89): the commit its own store source pins now (409 when it is already at it, or that commit is yanked), with its tier as that row says now; the card has "store" with was_commit. Every swap is atomic; a failure puts the old version back (409). Adopted, linked and git packages are never compared with a built-in.'
+      x-access: owner_device
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"status": "current" | "updated", "line"} for a built-in.' }
+        "202": { description: 'The Yes card and {"what_changed": {version, hosts, install_hosts, keys, changes}}, "status": "card".' }
+  /v1/packages/{id}/open/{page}:
+    post:
+      tags: [packages]
+      summary: 'Open a page (in the Desktop, a new tab, or ui.open''s program)'
+      description: 'For a page or widget served through /pkg/ (a page or widget id), url is on the package''s own origin: http://{id}.localhost:8422/{path} (D53).'
+      x-access: owner
+      x-lane: L1
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: page, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: '{"open": "in_desktop" | "new_tab" | "program", "url"}.' } }
+  /v1/packages/{id}/frame:
+    get:
+      tags: [packages]
+      summary: 'May this package''s page be shown inside a Home tile, and at what address (D82, D83)'
+      description: 'Only a page of PuffPAI''s own origin shows inside the Desktop or the window (D83, the owner 10-30): a rule on the Registry row''s origin, which only the Core writes. An allowlist: built in (origin local: exactly the repo''s folder for this id, or core), from the official PuffPAI store (store:verified or store:community with store.source "official"), or exactly made. Anything else is third party (adopted, github, another local folder, another store, unknown, empty), and always opens in her real browser, in a new tab (D13); its page also answers frame-ancestors ''none''. Read from the Registry row only. kind "page": PuffPAI''s own origin, and its first ui.pages entry has a path or file, no url, and show is not "new_tab"; url is on its own origin, http://{id}.localhost:8422/{path} (D53); always ok. kind "app": any other page; never framed, so ok is false and the line is "<name> opens in your browser, in a new tab."; url is its address for the Open button ({port} filled, any sign-in removed) when that is http or https on 127.0.0.1, localhost or ::1 and not one of the Core''s own ports (the Core address, the pages address, the Bridge proxy, always 8420 to 8422), else its page on the pages address, else "". Nothing is fetched. kind "none": no page. Never 500.'
+      x-access: owner
+      x-lane: dash
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"ok": bool, "url": str, "kind": "page" | "app" | "none", "sandbox": str (the iframe sandbox for kind page, "allow-scripts allow-forms allow-popups allow-same-origin"; "" otherwise), "running": bool (the row''s status is running), "line": str (plain words for the owner)}.' }
+        "404": { description: '{"error"}: nothing installed with that id.' }
+  /v1/packages/{id}/logs:
+    get:
+      tags: [packages]
+      summary: 'The package''s log (logs\<id>.log)'
+      x-access: owner
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'The last lines of logs\<id>.log (text/plain; ?lines=, at most 5000).' } }
+  /pkg/{id}/:
+    get:
+      tags: [pages]
+      summary: 'A package''s home page (path /), forwarded like /pkg/{id}/{path}, on the pages address only (D49)'
+      x-access: public
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'Whatever the package page answers.' } }
+    post:
+      tags: [pages]
+      summary: 'A package page''s own POST to its home path, forwarded (D53: from its own origin only)'
+      x-access: public
+      x-lane: L1
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'Whatever the package page answers.' } }
+    put:
+      tags: [pages]
+      summary: 'A package page''s own PUT to its home path, forwarded like POST (lane I13: its own origin only)'
+      x-access: public
+      x-lane: I13
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'Whatever the package page answers (405 for a static package).' } }
+    delete:
+      tags: [pages]
+      summary: 'A package page''s own DELETE to its home path, forwarded like POST (lane I13: its own origin only)'
+      x-access: public
+      x-lane: I13
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: 'Whatever the package page answers (405 for a static package).' } }
+  /pkg/{id}/{path}:
+    get:
+      tags: [pages]
+      summary: 'A package page, forwarded to 127.0.0.1:{port} with the package token added'
+      description: 'Not under /v1 because pages are not API. Served only on the pages address 127.0.0.1:8422 (D49; 404 on the Core''s own address), where there is no owner login, so the forwarding adds the package token. Pages built for PuffPAI show in the Desktop in a frame (D13). D53: reached as http://{id}.localhost:8422/{path} (the package comes from the Host); on 127.0.0.1:8422 a GET here redirects (302) there and anything else is 404. Lane L1: the request goes to the package''s own port only with its own token; Cookie, Authorization, X-PuffPAI-Key and X-PuffPAI are never forwarded; Set-Cookie, WWW-Authenticate, Clear-Site-Data and Access-Control-* never come back; redirects are not followed. A request that is not GET, HEAD or OPTIONS must come from the package''s own origin (Origin: null, other packages, the Core and other websites get 403); a GET from the Core''s own origin gets Access-Control-Allow-Origin for that origin, without credentials.'
+      x-access: public
+      x-lane: L1
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: 'Whatever the package page answers.' } }
+    post:
+      tags: [pages]
+      summary: 'A package page''s own POST, forwarded'
+      x-access: public
+      x-lane: L1
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: 'Whatever the package page answers.' } }
+    put:
+      tags: [pages]
+      summary: 'A package page''s own PUT, forwarded like POST (lane I13: its own origin only, its own token)'
+      x-access: public
+      x-lane: I13
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: 'Whatever the package page answers (405 for a static package).' } }
+    delete:
+      tags: [pages]
+      summary: 'A package page''s own DELETE, forwarded like POST (lane I13: its own origin only, its own token)'
+      x-access: public
+      x-lane: I13
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: 'Whatever the package page answers (405 for a static package).' } }
+
+  /v1/providers:
+    get:
+      tags: [providers]
+      summary: 'Which provider fills each zone slot'
+      x-access: owner
+      x-lane: L1
+      responses: { "200": { description: '[{"slot", "contract", "how_many", "installed", "active"}].' } }
+  /v1/providers/{slot}:
+    put:
+      tags: [providers]
+      summary: 'Pick the active provider for a one-at-a-time slot'
+      description: 'PROPOSED body {"id": "<package id>"}. Raises a Yes card; zone1.vault-store moves go through /v1/vault/store/move.'
+      x-access: owner
+      x-lane: L1
+      parameters: [ { name: slot, in: path, required: true, schema: { type: string } } ]
+      responses: { "202": { description: 'The Yes card for the pick: {"consent_id", "card"}.' } }
+
+  /v1/chat:
+    post:
+      tags: [chat]
+      summary: 'One chat turn through Concierge'
+      description: 'Body {"text": "...", "conversation": "main"}. Reply {"text", "empty", "notice", "changed", "used", "steps"}: text is the brain''s answer exactly as it said it; changed lists the tool calls with changes: true that really ran; an empty answer is text "" with notice "The brain gave no answer.". Every turn passes the privacy gate first; with no gate nothing runs (503).'
+      x-access: owner
+      x-lane: L2
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'No text.' }
+        "503": { description: 'The brain cannot answer: {"error", "state"} with the real reason (not_downloaded, timed_out, error, no_gate, not_local, no_model).' }
+  /v1/chat/stream:
+    post:
+      tags: [chat]
+      summary: 'The same turn, streamed'
+      description: 'Same body. NDJSON lines: {"type": "progress"|"token"|"ask"|"answered"|"open"|"tool_done", ...}, then {"type": "done", ...the /v1/chat reply} or {"type": "error", "error", "state"}.'
+      x-access: owner
+      x-lane: L2
+      responses:
+        "200": { description: 'application/x-ndjson event lines.' }
+        "400": { description: 'No text.' }
+  /v1/chat/history:
+    get:
+      tags: [chat]
+      summary: 'One conversation''s words, for her paired browser (the PuffPAI window)'
+      description: 'Query conversation (default main) and limit (1 to 500, default 200). Reply [{"role", "content", "at", "changed"}], oldest first, in the store''s locked form: handles, never held values (X6).'
+      x-access: owner_device
+      x-lane: window
+      responses:
+        "200": { description: 'The lines.' }
+        "400": { description: 'A conversation id or limit that can''t be used.' }
+  /v1/chat/tool:
+    post:
+      tags: [chat]
+      summary: 'Call one tool by name (pages and UIs), through Drawbridge'
+      description: 'Body {"tool": "<pkg>.<name>", "args": {}}. Reply {"ok", "result" | "error", "asked", "tool"}. A tool in abilities.changes asks the owner''s Yes first, as in chat.'
+      x-access: owner
+      x-lane: L2
+      responses:
+        "200": { description: 'It ran.' }
+        "400": { description: 'Unknown or wrong arguments, refused before it ran: {"ok": false, "error", "bad_args": true}.' }
+        "422": { description: 'It did not run or did not work: {"ok": false, "error"}.' }
+        "503": { description: 'The brain cannot run: {"error", "state"}.' }
+  /v1/brain/chat:
+    post:
+      tags: [brain]
+      summary: 'A package asks the local model for text or image reading'
+      description: 'Body {"messages": [{"role", "content"}], "images": [base64, ...]}. Reply {"text", "usage": {"prompt_tokens", "completion_tokens"}, "model"} (model: the local model that answered, so an app can say which model read its picture; lane I19b). Each answered ask with images is counted for that model (GET /v1/models/used). Packages never call the model server directly. The gate runs with vault_open=False: a package gets handles only, never held values. images is optional and allowed only when the model reads pictures (its profile says vision).'
+      x-access: package_ok
+      x-lane: L2
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'No messages, or pictures for a model that cannot read them.' }
+        "503": { description: 'The brain cannot answer: {"error", "state": not_downloaded|loading|timed_out|error|no_gate|not_local|no_model}.' }
+  /v1/model:
+    put:
+      tags: [model]
+      summary: 'Change the brain outside setup (D133)'
+      description: 'Body {"model": "<name>"}. In this order: a name, its Ollama answers, that Ollama has it. Nothing is saved until all three hold. Reply: as GET, plus a plain line.'
+      x-access: owner_device
+      x-lane: dev-cli
+      responses:
+        "200": { description: 'Saved.' }
+        "400": { description: 'No name, or not on this computer (code model_missing).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'Nothing answers at its address. Nothing was saved.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [model]
+      summary: 'The owner''s model-slot settings'
+      description: 'Reply {"settings": {runtime, address, model, context, tool_budget, timeout_s, lan_hosts, pinned, effective: {context, tool_budget, think, where}}, "state": {state: not_downloaded|loading|ready|timed_out|error, model, reason, done_gb?, size_gb?, in_memory?}} (D36(d)).'
+      x-access: owner
+      x-lane: L2
+      responses:
+        "200": { description: 'Settings and the brain''s state.' }
+  /v1/model/menu:
+    get:
+      tags: [model]
+      summary: 'Models this computer can run, with download sizes (D36(e))'
+      description: 'Reply {"census", "menu": {options (strongest first, one recommended: true), recommended {id, label, reason, rule, installed, disk_gb, fit}, already_here, too_big, message, hardware_class, total_ram_gb, free_disk_gb}}.'
+      x-access: owner
+      x-lane: L2
+      responses:
+        "200": { description: 'The census and the brain menu.' }
+
+  /openai/v1/models:
+    get:
+      tags: [openai_api]
+      summary: 'The bot as one OpenAI-style model'
+      description: 'Reply {"object": "list", "data": [{"id": "puffpai", "object": "model", "created", "owned_by": "puffpai-local", "permission": [], "root": "puffpai", "parent": null}]}.'
+      x-access: program
+      x-lane: api-tools
+      responses:
+        "200": { description: 'The list.' }
+  /openai/v1/chat/completions:
+    post:
+      tags: [openai_api]
+      summary: 'One chat turn in the OpenAI shape (Home Assistant, OpenAI-style programs)'
+      description: 'Body {"messages": [{"role", "content"}], "stream"?, "conversation_id"?, "user"?}. The last user message is the question; system messages are dropped; earlier turns are not replayed (the bot keeps the conversation). Conversation: conversation_id, else user, else "api"; an id that can''t be used becomes a short hash. Reply {"id": "chatcmpl-...", "object": "chat.completion", "created", "model": "puffpai", "choices": [{"index": 0, "message": {"role": "assistant", "content"}, "finish_reason": "stop"}], "usage": zeros}. stream true: text/event-stream "data: {chat.completion.chunk}" lines with delta content per token, a final chunk with empty delta, finish_reason stop and puffpai_meta {"changed": [tool names], "notice"} or {"error"}, then "data: [DONE]". Never the owner''s "You" notes.'
+      x-access: program
+      x-lane: api-tools
+      responses:
+        "200": { description: 'The answer, or the event stream.' }
+        "400": { description: '{"error": {"message"}}: no messages, or no user message.' }
+        "503": { description: 'The brain cannot answer: {"error", "state"}, as /v1/chat.' }
+  /ollama/api/tags:
+    get:
+      tags: [openai_api]
+      summary: 'The bot as one Ollama-style model'
+      description: 'Reply {"models": [{"name": "puffpai", "model": "puffpai", "modified_at", "size": 0, "digest": "puffpai", "details": {...}}]}.'
+      x-access: program
+      x-lane: api-tools
+      responses:
+        "200": { description: 'The list.' }
+  /ollama/api/chat:
+    post:
+      tags: [openai_api]
+      summary: 'One chat turn in the Ollama shape'
+      description: 'Body {"messages", "stream"?, "conversation_id"?, "user"?}, the same rules as /openai/v1/chat/completions. Reply {"model": "puffpai", "created_at", "message": {"role": "assistant", "content"}, "done": true, "total_duration": 0, "load_duration": 0, "prompt_eval_count": 0, "eval_count": 0}. stream true: application/x-ndjson, one line per token with done false, then a last line with content "" and done true.'
+      x-access: program
+      x-lane: api-tools
+      responses:
+        "200": { description: 'The answer, or NDJSON lines.' }
+        "400": { description: '{"error"}: no messages, or no user message.' }
+        "503": { description: 'The brain cannot answer: {"error", "state"}.' }
+
+  /v1/models:
+    get:
+      tags: [models]
+      summary: 'The local models and what each one is used for (lane I17)'
+      description: 'Reply {"installed": [{name, size_gb, params, used_for: [roles]}], "roles": {chat, code, vision, fast}, "catalog": [{id, label, roles, params_b, strength, min_ram_gb, rec_ram_gb, disk_gb, tools, installed, fit, fits, download}], "recommended": {role: [ids, best first]}, "words", "pulls": {model: {state: asking|downloading|done|failed|declined|no_answer, line, consent_id, done_gb?, size_gb?}}, "problem", "pull_host", "bridge", "total_ram_gb", "free_disk_gb"}. Chat''s model is settings\model.json''s brain; the other roles are settings\models.json.'
+      x-access: owner_device
+      x-lane: I17
+      responses:
+        "200": { description: 'The models, the catalog rows per role and the role map.' }
+  /v1/models/roles:
+    put:
+      tags: [models]
+      summary: 'Set roles to installed models. Body {"<role>": "<model>"}; "" takes a role back to chat''s model; chat always has one (400)'
+      x-access: owner_device
+      x-lane: I17
+      responses:
+        "200": { description: 'The role map, {"roles": {...}}.' }
+        "400": { description: 'Not a role, a model not on this computer, or chat left with none.' }
+  /v1/models/pull:
+    post:
+      tags: [models]
+      summary: 'Download a catalog model that fits this computer, after its own Yes card (model, size, host). Body {"model"}'
+      description: 'Reply 202 {consent_id, card_sha, title, lines}. The download starts only after her Yes on that card; Ollama downloads it itself from registry.ollama.ai, around the Bridge. 400 not in the list or does not fit, 409 already here or being added, 503 no model server.'
+      x-access: owner_device
+      x-lane: I17
+      responses:
+        "202": { description: 'The Yes card is waiting (the same card when one waits already).' }
+  /v1/models/used:
+    get:
+      tags: [models]
+      summary: 'What each role''s model has done (lane I19b): for vision, how many pictures apps sent it'
+      description: 'Reply {"<role>": {model, own, count, last_at, last_by}} for chat, code, vision and fast. model is the model doing the role now (chat''s when the role has none of its own; own says which). count, last_at and last_by (the app''s id) are kept per model in settings\model_use.json: counts only, never a picture or an answer. No model server is asked.'
+      x-access: owner_device
+      x-lane: I19b
+      responses:
+        "200": { description: 'Per role, its model and what it has done.' }
+  /v1/models/pull/cancel:
+    post:
+      tags: [models]
+      summary: 'Stop a model being added. Body {"model"}: its Yes card closes, or its download stops; it is marked cancelled and no role is set. 404 when nothing is being added'
+      x-access: owner_device
+      x-lane: I17
+      responses:
+        "200": { description: '{"cancelled", "pull"}' }
+  /v1/vault/status:
+    get:
+      tags: [vault]
+      summary: 'not_set_up | open | locked | missing | throttled, ways in (labels only), store health, idle time left, inbox waiting'
+      x-access: owner
+      x-lane: L3
+      responses: { "200": { description: 'Vault status; never a value' } }
+  /v1/vault/setup:
+    post:
+      tags: [vault]
+      summary: 'Make the vault with a PIN or passphrase; returns the recovery code ONCE (no-store). 409 if already set up, 400 weak PIN'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultPin" }
+      responses: { "201": { $ref: "#/components/responses/RecoveryCodeOnce" } }
+  /v1/vault/unlock:
+    post:
+      tags: [vault]
+      summary: 'Unlock. Body {"method": "pin | recovery | factor:<id>", "secret": "..."}; 401 wrong, 429 + retry_after, 503 store missing, 409 rolled_back'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultUnlock" }
+      responses: { "200": { description: '{"state": "open"}' } }
+  /v1/vault/lock:
+    post:
+      tags: [vault]
+      summary: 'Lock; ends every lease'
+      x-access: owner
+      x-lane: L3
+      responses: { "200": { description: '{"state": "locked"}' } }
+  /v1/vault/recover:
+    post:
+      tags: [vault]
+      summary: 'Body {"code": "...", "new_pin": "..."}; re-keys the vault and returns the new recovery code once'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultRecover" }
+      responses: { "200": { $ref: "#/components/responses/RecoveryCodeOnce" } }
+  /v1/vault/pin:
+    post:
+      tags: [vault]
+      summary: 'Change the PIN (vault open). Body {"pin": "...", "new_pin": "..."}; a rewrap only'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultPinChange" }
+      responses: { "200": { description: '{"ok": true}' } }
+  /v1/vault/recovery-code/rotate:
+    post:
+      tags: [vault]
+      summary: 'New recovery code (vault open). Body {"pin": "..."}; returns the new code once'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultPin" }
+      responses: { "200": { $ref: "#/components/responses/RecoveryCodeOnce" } }
+  /v1/vault/recovery-code/test:
+    post:
+      tags: [vault]
+      summary: 'Check the recovery code without opening (own throttle). Body {"code": "..."}; reply {"ok": bool}, never the code'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultCode" }
+      responses: { "200": { description: '{"ok": true | false}' } }
+  /v1/vault/ways-in:
+    get:
+      tags: [vault]
+      summary: 'Ways in (id, kind, label only)'
+      x-access: owner
+      x-lane: L3
+      responses: { "200": { description: '{"ways_in": [{id, kind, label, added_at}]}' } }
+    post:
+      tags: [vault]
+      summary: 'Add a way in (vault open). Body {"kind": "passphrase", "label": "...", "secret": "...", "pin" or "code"}; needs the current PIN or the recovery code (D29)'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultWayIn" }
+      responses: { "201": { description: '{id, kind, label}' }, "401": { description: 'No current PIN or recovery code, or a wrong one' } }
+  /v1/vault/ways-in/{id}:
+    delete:
+      tags: [vault]
+      summary: 'Remove a way in. Body {"pin" or "code"}: needs the current PIN or the recovery code (D29); refused if fewer than two would be left, and the recovery code is never removed (X3)'
+      x-access: owner_device
+      x-lane: L3
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { $ref: "#/components/requestBodies/VaultCurrentSecret" }
+      responses: { "200": { description: '{"ok": true}' }, "401": { description: 'No current PIN or recovery code, or a wrong one' }, "409": { description: 'Refused (X3)' } }
+  /v1/vault/inbox/file:
+    post:
+      tags: [vault]
+      summary: 'File a waiting inbox box that would replace a key already saved under that name (vault open). Body {"name", "pin"}: floor-level (D29). A box never replaces a saved key without this'
+      x-access: owner_device
+      x-lane: L3
+      requestBody: { $ref: "#/components/requestBodies/VaultInboxFile" }
+      responses: { "200": { description: '{"replaced": true|false}' }, "401": { description: 'Wrong PIN' }, "423": { description: 'Locked' } }
+  /v1/vault/secrets/{name}:
+    put:
+      tags: [vault]
+      summary: 'Save a secret (write only). Body {"value", "unattended"?, "card_backed"?, "seal_if_locked"?}. 423 when locked unless seal_if_locked (then 202, sealed into the vault inbox, D36(a)). Never readable over HTTP'
+      x-access: owner
+      x-lane: L3
+      parameters: [ { name: name, in: path, required: true, schema: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" } } ]
+      requestBody: { $ref: "#/components/requestBodies/VaultSecret" }
+      responses: { "201": { description: '{"saved": true, "kept": "vault"}' }, "202": { description: '{"saved": false, "kept": "inbox"}' } }
+    delete:
+      tags: [vault]
+      summary: 'Delete a secret; works while locked (off is one step)'
+      x-access: owner
+      x-lane: L3
+      parameters: [ { name: name, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: '{"ok": true}' } }
+  /v1/vault/store/move:
+    post:
+      tags: [vault]
+      summary: 'Move the vault to another zone1.vault-store (copy, read back, commit once)'
+      x-access: owner_device
+      x-lane: L3
+      responses: { "501": { $ref: "#/components/responses/NotBuilt" } }
+  /v1/vault/backup/now:
+    post:
+      tags: [vault]
+      summary: 'Make a sealed backup now'
+      x-access: owner
+      x-lane: L3
+      responses: { "501": { $ref: "#/components/responses/NotBuilt" } }
+  /v1/vault/backup/list:
+    post:
+      tags: [vault]
+      summary: 'List backups'
+      x-access: owner
+      x-lane: L3
+      responses: { "501": { $ref: "#/components/responses/NotBuilt" } }
+  /v1/vault/backup/restore:
+    post:
+      tags: [vault]
+      summary: 'Restore a backup (asks the recovery code)'
+      x-access: owner_device
+      x-lane: L3
+      responses: { "501": { $ref: "#/components/responses/NotBuilt" } }
+  /v1/vault/backup/test:
+    post:
+      tags: [vault]
+      summary: 'Check a backup opens'
+      x-access: owner
+      x-lane: L3
+      responses: { "501": { $ref: "#/components/responses/NotBuilt" } }
+  /v1/vault/hold:
+    post:
+      tags: [vault]
+      summary: 'Write-only sealed box: hold(value, label, source_ref, expire_days) -> ref. Core only (Concierge, Archivist)'
+      description: 'Listed because Z1V section 8 names it. The Core calls it in process; over HTTP it is refused for every caller.'
+      x-access: core
+      x-lane: L3
+      responses: { "403": { $ref: "#/components/responses/Forbidden" } }
+
+  /v1/bridge:
+    get:
+      tags: [bridge]
+      summary: 'Open or closed, the per-host list'
+      description: |
+        Built by L4. The Bridge's posture: {"state": "open | closed", "damaged": bool, "version", "sha",
+        "grants": [{"id", "subject", "host", "port", "subhosts", "phase", "lan"}], "switches": {subject: bool},
+        "blocks": [{"pattern", "kind", "source"}], "note": the plain honest line, "cards": the last 20 cards}.
+        A policy edited outside PuffPAI (its MAC under the machine key fails) reads "damaged" and closed.
+      x-access: owner
+      x-lane: L4
+      responses:
+        "200": { description: 'The posture, grants, switches, blocks and recent cards. Never a key or a value.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/bridge/open:
+    post:
+      tags: [bridge]
+      summary: 'Open the Bridge'
+      description: |
+        Built by L4. Opens only what was granted on the owner's Yes cards. After an outside edit, opening
+        starts from the last good copy (or an empty policy) and keeps the damaged file aside. With no machine
+        key on this computer it stays closed and a card says why.
+      x-access: owner
+      x-lane: L4
+      responses:
+        "200": { description: 'The posture after the change (same shape as GET /v1/bridge, without note and cards).' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/bridge/close:
+    post:
+      tags: [bridge]
+      summary: 'Close the Bridge'
+      description: 'Built by L4. Always works, even while Drawbridge is down (X18: narrowing never fails).'
+      x-access: owner
+      x-lane: L4
+      responses:
+        "200": { description: 'The posture after the change; state is "closed".' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/bridge/ledger:
+    get:
+      tags: [bridge]
+      summary: 'What went out (hosts, counts, codes; never values)'
+      description: |
+        Built by L4. The outside log, newest first: [{"t", "subject", "host", "port", "method", "via", "phase",
+        "outcome", "code", "bytes_in", "bytes_out", "req_id"?, "rule"?}], plus {"event": "chain_restarted" |
+        "chain_rotated"} lines. Never a path, a header, a body or a key.
+      x-access: owner
+      x-lane: L4
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 200 } }
+      responses:
+        "200": { description: 'The newest ledger lines.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/consent:
+    get:
+      tags: [consent]
+      summary: 'Yes cards and what the owner answered'
+      description: |
+        Built by L4 (one store, lane L1's names). Every card, oldest first: {"consent_id", "scope", "floor",
+        "card", "card_sha", "status", "factor", "by", "created_at", "answered_at", "covers", "bound", "expires",
+        "title", "lines"}. "title" and "lines" are the card in plain words (consent.card_view), made only from
+        the stored card, which card_sha covers: what it is, its hosts, keys, setup steps, the tools that change
+        things, Drawbridge's notes and the files it could not check, and for a floor card that the PIN is needed.
+        scope.kind tool_call (integration lane I1): one package tool call from chat outside her approved scope;
+        the card shows the package, the tool and a gated summary of the arguments.
+        status: pending | granted | declined | expired | revoked | damaged (a record edited outside PuffPAI).
+      x-access: owner
+      x-lane: L4
+      parameters:
+        - { name: status, in: query, schema: { enum: [pending, granted, declined, expired, revoked, damaged, void] } }
+      responses:
+        "200": { description: 'The cards (as above), plus "note" on a card the Core expired (a card left waiting when the Core stopped expires at the next start); void = a card row edited outside PuffPAI, which can never be answered. Never a PIN.' }
+        "400": { description: 'An unknown status.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/consent/{id}:
+    delete:
+      tags: [consent]
+      summary: 'Revoke a consent'
+      description: 'Built by L4. Takes a Yes back; its grants stop at once. {"revoked": id}.'
+      x-access: owner
+      x-lane: L4
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"revoked": "<consent_id>"}' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such live Yes, or it was already taken back.' }
+  /v1/consent/{id}/answer:
+    post:
+      tags: [consent]
+      summary: 'The owner answers a Core Yes card (01 "Core API", 04 API table)'
+      description: |
+        Built by L4. The one way a Yes is given: the owner answering a Core card, from a paired device only
+        (never an API key or a package token; the app's Origin and X-PuffPAI check applies to cookie callers).
+        Body {"answer": "yes | no", "factor": "tap | pin | hello", "pin": "...", "card_sha": "..."}.
+        A tap on a floor-level card is refused (D29); the PIN is checked by zone1.archivist.verify_pin (lane L3);
+        Windows Hello is refused until it is built. card_sha is required on a Yes (400 no_card_sha without it,
+        409 card_changed for another card's); a No is checked when it sends one. A No is always allowed.
+        The PIN is never stored or echoed.
+        No route lets a program grant on its own.
+      x-access: owner_device
+      x-lane: L4
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The answered card (as in GET /v1/consent) plus "answer".' }
+        "400": { description: '{"error", "code"}: the answer is not yes or no, the factor is unknown, or a Yes without card_sha (no_card_sha).' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: '{"error", "code"}: a tap on a floor-level card (needs_pin), a wrong PIN (step_up_failed), Hello (hello_not_built), or not a paired device.' }
+        "404": { description: '{"error", "code": "no_card"}' }
+        "409": { description: '{"error", "code"}: already answered, expired, the card changed (card_changed), or a card row edited outside PuffPAI (void).' }
+        "503": { description: '{"error", "code"}: no PIN check yet (no_pin_check), or no machine key (no_machine_key).' }
+  /v1/audit:
+    get:
+      tags: [audit]
+      summary: 'The audit log, read only (names and codes, never values)'
+      description: 'Built by L4. {"chain_ok": bool, "bad_line": int, "lines": [newest first]}. The log is a hash chain with a sealed head.'
+      x-access: owner
+      x-lane: L4
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 200 } }
+      responses:
+        "200": { description: 'Whether the chain is whole, and the newest lines.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/checklist:
+    get:
+      tags: [checklist]
+      summary: 'Open "Your turn" steps (a package token sees its own only)'
+      description: 'Query all=1 adds closed steps. Majordomo keeps the list in checklist.json.'
+      x-access: package_ok
+      x-lane: L5
+      parameters:
+        - { name: all, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: 'Steps, oldest first, each with state open | done | skipped.'
+    post:
+      tags: [checklist]
+      summary: 'Raise a step (the one step shape; package and blocks filled in by the Core)'
+      description: 'A package token raises steps for itself only. An owner caller may name the package or agent it is for in "package" (default "core"). Over HTTP no caller may raise admin true or a command check (D49): admin steps come only from the Core in process (setup_steps approved on the package''s Yes, or Toolsmith and the other agents). A package''s url check may reach only http://127.0.0.1:<its own port>/, and its file check only packages/<id>, its linked folder and data/<id>. The stored step gets a random id (step_...), asked_id (the id sent) and raised_by (pkg:<id>, owner, setup_steps:<id> or the agent). 201 with the stored step; 400 with the plain reason.'
+      x-access: package_ok
+      x-lane: L5
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Step" }
+      responses:
+        "201": { description: 'The stored step.' }
+        "400": { description: 'Not the one step shape.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/checklist/{id}:
+    get:
+      tags: [checklist]
+      summary: 'One step (added by lane L5, so a waiting package can read its own step)'
+      x-access: package_ok
+      x-lane: L5
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The step.' }
+        "404": { description: 'No such step.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/checklist/{id}/done:
+    post:
+      tags: [checklist]
+      summary: 'Mark a step done (its check runs when it has one)'
+      description: '200 with the step when done; 409 with the plain reason when its check does not pass yet (the step stays open).'
+      x-access: package_ok
+      x-lane: L5
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done.' }
+        "409": { description: 'The check did not pass.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/checklist/{id}/skip:
+    post:
+      tags: [checklist]
+      summary: 'Skip a step'
+      x-access: package_ok
+      x-lane: L5
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Skipped.' }
+  /v1/checklist/{id}/run-admin:
+    post:
+      tags: [checklist]
+      summary: 'Run a step''s PowerShell command as administrator: one Windows UAC prompt she answers (added by lane L5, 03 3.5)'
+      description: 'Only for an open run_command step with admin true and shell powershell, raised by the Core (never by a package), on Windows, from a paired device. Body {"factor": "pin", "pin": "..."}: the PIN is needed in this same request (D29); 403 without it or when it is wrong, 501 (lane L3) while the PIN check is not built, and for factor hello. The command is the stored step''s own text, read again after the PIN, the one shown on the card. Reply 200 once the UAC prompt is started; she presses Done after it ran.'
+      x-access: owner_device
+      x-lane: L5
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The UAC prompt was started.' }
+        "400": { description: 'Not an admin PowerShell step, or not Windows.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: 'No PIN, or a wrong PIN.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "501": { description: 'The PIN check (lane L3) or Windows Hello is not built yet; reason says so.' }
+  /v1/events:
+    get:
+      tags: [events]
+      summary: 'Event stream, filtered by the caller''s audience and grants (contracts/events.json)'
+      description: |
+        Server-sent events. Each event has "id: <seq>", "event: <type>" and "data: <the Bus message JSON>".
+        Resume with the Last-Event-ID header or ?after=<seq>. The stream ends after ?timeout=<s>
+        (default 25, at most 60; 0 sends what is buffered and ends), and EventSource reconnects.
+        An owner sees what is visible to "ui"; a package token sees what is visible to "package",
+        and checklist.changed only for its own steps.
+      x-access: package_ok
+      x-lane: L5
+      parameters:
+        - { name: after, in: query, schema: { type: integer } }
+        - { name: timeout, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: 'text/event-stream' }
+  /v1/tools/servers:
+    get:
+      tags: [tool_servers]
+      summary: 'The outside MCP tool servers the owner added, never a password'
+      description: 'Built by api-tools (D137). Reply {"servers": [{"id", "name", "url", "kind": "http", "address", "where": "here" | "lan" | "internet", "where_said", "has_password", "added_at", "added_by": "owner" | "chat", "tools": [{"name", "description"}], "tool_count", "state": "ready" | "waiting", "line"}], "vault"}.'
+      x-access: owner
+      x-lane: api-tools
+      responses:
+        "200": { description: 'The rows.' }
+    post:
+      tags: [tool_servers]
+      summary: 'Add one outside MCP tool server by its web address'
+      description: 'Built by api-tools (D137). Body {"name", "address", "password"?}. http(s) only; no user name or password inside, no ? or # part. On this computer (127.0.0.1, localhost, ::1) it connects first (list_tools) and is kept only if it answers. Anywhere else it is saved "waiting" and the Bridge address card (D110) is raised for package outside-<id>; the reply carries {"consent_id", "card_sha", "title", "lines"}. A password goes to the vault as tool_server.<id>, never to the record or a reply; the vault must be open. A password in the query string is refused.'
+      x-access: owner_device
+      x-lane: api-tools
+      responses:
+        "200": { description: 'Added, with its tools.' }
+        "202": { description: 'Waiting for her Yes on the Bridge; its card is in the reply.' }
+        "400": { description: 'Refused, one plain line. Nothing kept.' }
+        "409": { description: 'Same name, a name in use, or the vault is not open for its password.' }
+        "502": { description: 'It did not answer. Nothing kept.' }
+        "503": { description: 'No card could be raised.' }
+  /v1/tools/servers/{server_id}:
+    delete:
+      tags: [tool_servers]
+      summary: 'Remove one: its record, its password in the vault, its address Yes and grant'
+      description: 'Built by api-tools (D137). Reply {"deleted": true, "line"}.'
+      x-access: owner_device
+      x-lane: api-tools
+      parameters:
+        - { name: server_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Removed.' }
+        "404": { description: 'No such server.' }
+        "423": { description: 'It has a password and the vault is locked. Nothing removed.' }
+  /v1/tools/servers/{server_id}/refresh:
+    post:
+      tags: [tool_servers]
+      summary: 'Ask it for its tools again; off this computer only after her Yes'
+      description: 'Built by api-tools (D137). Reply {"server", "state", "line"}; while waiting, its address card again.'
+      x-access: owner_device
+      x-lane: api-tools
+      parameters:
+        - { name: server_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Ready, with its tools.' }
+        "202": { description: 'Still waiting for her Yes; the card is in the reply.' }
+        "404": { description: 'No such server.' }
+        "409": { description: 'The Bridge refused (closed, or no live grant). Nothing sent.' }
+        "423": { description: 'Its password needs the vault open.' }
+        "502": { description: 'It did not answer.' }
+
+  /v1/toolsmith:
+    get:
+      tags: [toolsmith]
+      summary: 'Toolsmith now: its model (local, or a frontier provider with the cap), and the builds with each job''s status'
+      x-access: owner
+      x-lane: L6
+      description: 'Each build also carries library (lane I19b), its knowledge fetch: null when its plan reads none, else {state: waiting|fetching|done, done, of, up_to, sources: [names], now, line}. done counts what is in the library; of is what was found to read, or with up_to true the plan''s cap while it still searches.'
+      responses: { "200": { description: '{where, provider?, model?, company?, cost_cap_usd?, consent_changed? (D118: only when her saved Yes is for an earlier sentence, why it asks again), builds: [{id, goal, created_at, jobs: [{id, name, status}], library}]}' } }
+  /v1/toolsmith/providers:
+    get:
+      tags: [toolsmith]
+      summary: 'The zone3.toolsmith-model providers (wizard step 5): company, hosts, models and prices, the consent sentence and its sha, the key name. Never a key.'
+      x-access: owner
+      x-lane: L6
+      responses: { "200": { description: 'A list of providers.' } }
+  /v1/toolsmith/model:
+    put:
+      tags: [toolsmith]
+      summary: 'The owner picks Toolsmith''s model: {"where": "local"} or {"where": "cloud", provider, model, cost_cap_usd, consent_sha} (the sha of the consent sentence she read and said yes to, D35). Default cap $5 per build (D43).'
+      x-access: owner_device
+      x-lane: L6
+      responses:
+        "200": { description: 'The saved choice.' }
+        "400": { description: 'Not a provider, model or consent sentence the Core knows.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/plan:
+    post:
+      tags: [toolsmith]
+      summary: 'Goal (and the jobs from the goal step) -> the plan: per job the package reused or the apps to try (with "Not used" reasons), ONE setup list, the knowledge leg (topics the local brain picked, the hosts read after the Yes, Kiwix and Data.gov offered only), and ONE Yes card asked on the Core consent cards (scope = the plan sha)'
+      description: 'Body {goal, jobs: [{name, does, sample_ask, pasted: [github urls]}]}. 201 with the build. No company model is asked before the Yes.'
+      x-access: owner
+      x-lane: L6
+      responses:
+        "201": { description: 'The build with its plan, card and consent id.' }
+        "400": { description: 'No goal and no jobs.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/builds/{build_id}:
+    get:
+      tags: [toolsmith]
+      summary: 'One build: plan, Yes, cost so far, and each job''s live status (planned, waiting_yes, waiting_you, waiting_vault, held, building: <app>, working, not_yet, nothing_found)'
+      x-access: owner
+      x-lane: L6
+      parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The build.' }
+        "404": { description: 'No such build.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/builds/{build_id}/start:
+    post:
+      tags: [toolsmith]
+      summary: 'Start the build after the owner''s Yes. Body {consent_id}; runs only when that consent is a yes for exactly this plan sha.'
+      description: 'Lane I16: safe to call more than once, from any path (the Desktop, the chat, the wizard). When the plan has ticked PuffPAI store apps not on the bot yet, the Core adds them first (it also begins this when the plan card is granted): each gets its own Package Manager Yes card, and the Core waits until each card is answered and each install has a final status (never "installing"; "broken" is not added). This call then starts nothing, and the Core starts the build itself when the adds are done. The progress is the build''s "store_adds": {consent_id, state: adding | done, apps: [{package, name, job_name, state: waiting | asking | installing | added | not_added, card, line}], line, said: [every line in order]}, in GET /v1/toolsmith/builds/{build_id}.'
+      x-access: owner
+      x-lane: L6
+      parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The build: running (yes set), or still adding its ticked store apps (store_adds.state adding; the Core starts it after).' }
+        "404": { description: 'No such build.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'No Yes for this plan yet (plain reason).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/builds/{build_id}/again:
+    post:
+      tags: [toolsmith]
+      summary: '"Check again" (lane I18e): try the build''s unfinished jobs once more (held, not_yet, nothing_found). Jobs that work stay as they are; each job tried again starts its tries over, with her hold-card answers kept. Body {consent_id?}.'
+      description: 'Her Yes is reused only when the same plan sha has its Yes still live (not taken back, not past its end) for exactly this plan, and Toolsmith''s model and cost cap are what that card said. Otherwise ONE new Yes card is raised the normal way (kind package, this build''s target, bound to the plan sha) and the build''s "again" record says {consent_id, jobs, state: asking}; it covers only the jobs tried again and their install hosts from the plan, and the cost cap counts what the build spent already. POST again with that consent_id (or POST start with it, as the Desktop does after a plan card Yes) to start. When it starts, "again".state is started and that Yes is the build''s Yes.'
+      x-access: owner
+      x-lane: I18e
+      parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The build: its jobs tried again (planned, then building), or its "again" card waiting.' }
+        "404": { description: 'No such build.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Plain reason: Toolsmith is already working on it, safe mode (safe_mode true), the vault is locked and the cloud model needs its key ("Unlock your vault first."), no Yes yet, nothing left to check again, or a Yes that is not for this.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/builds/{build_id}/use:
+    put:
+      tags: [toolsmith]
+      summary: 'Her ticks on the plan card''s offers, before her Yes (lane I4b): {consent_id, use: [job numbers]}. An offer is an installed app one of the brain''s two asks picked; a ticked job reuses it at the Yes, an unticked one searches. Only offers the card shows; refused after the Yes.'
+      x-access: owner_device
+      x-lane: L6
+      parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Recorded: {ok, use: {job id: package id}}.' }
+        "400": { description: 'Not an offer on the card.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such build.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Not this plan''s card, or the plan has its Yes already.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/builds/{build_id}/holds/{consent_id}:
+    put:
+      tags: [toolsmith]
+      summary: 'Her ticks on a job''s hold card (lane I4b): {try: [candidate refs]}, which apps Drawbridge couldn''t fully check Toolsmith may try. Only while the card waits; only ticked apps are tried, and a Yes with no ticks recorded tries none.'
+      x-access: owner_device
+      x-lane: L6
+      parameters: [ { name: build_id, in: path, required: true, schema: { type: string } }, { name: consent_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Recorded: {ok, ticked}.' }
+        "400": { description: 'Not an app on the card.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Not one of this build''s hold cards, or already answered.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/jobs/{job_id}:
+    get:
+      tags: [toolsmith]
+      summary: 'One job: its candidates, what was tried and why it stopped, its result and proof'
+      x-access: owner
+      x-lane: L6
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The job.' }
+        "404": { description: 'No such job.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/jobs/{job_id}/next:
+    post:
+      tags: [toolsmith]
+      summary: '"Try next app": end the current try cleanly and move to the next candidate'
+      x-access: owner
+      x-lane: L6
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Asked.' }
+        "404": { description: 'No such job.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/build:
+    get:
+      tags: [toolsmith]
+      summary: 'Toolsmith reads its own build: goal, jobs and plan, whether it has the Yes, its budgets and timing, its model choice (never a key), the shell the Core runs, search_places (the hosts it may ask right now, read with no line in the outside log; can''t tell: none) and web_ready (the web rows that are on: her Yes, the search on, the vault lends the key)'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/plan:
+    put:
+      tags: [toolsmith]
+      summary: 'Toolsmith sends its plan (jobs, candidates, Not used reasons, knowledge {topics}); the Core keeps only the plan fields, checks the topics again (the outbound privacy screen), adds the knowledge sources, hosts and caps itself, rebuilds every address from owner/repo, works out the setup list, the envelope and its sha, writes the ONE Yes card itself and raises it'
+      description: 'Once per build. No sentence on the card comes from Toolsmith.'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/fits:
+    post:
+      tags: [toolsmith]
+      summary: 'Does an installed package fit a job? {ask (the job''s words), package (optional)}: the local brain gets the ask with the Concierge''s normal tools, the table chat would use (a dry run, nothing runs); {ok, package (whose tool it called, or the one asked about), asked, called, reason}'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/now:
+    put:
+      tags: [toolsmith]
+      summary: 'What Toolsmith does now while it plans: {line}, one plain progress line kept on the build (the wizard and the Desktop show it); never on the Yes card'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/jobs/{job_id}/status:
+    post:
+      tags: [toolsmith]
+      summary: 'A job status write: {state (the one status set), line, trying, say, now (what it does right now: one line, replaced each time), tried, not_used, result}; the answer carries {stop, next} (Stop, and "Try next app")'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/jobs/{job_id}/holds:
+    post:
+      tags: [toolsmith]
+      summary: 'Ask the Core for the job''s ONE hold card (lane I4b): every candidate set aside because Drawbridge couldn''t check some of its files. Raised only once no fully checked candidate worked; the same card while it waits. Toolsmith never answers it.'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{consent_id, title, names}, or {consent_id: "", said} when nothing was set aside or no card could be shown.' }
+        "409": { description: 'It could not be done: {error, kind, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [toolsmith]
+      summary: 'Her answer to the job''s hold card: {state: none|pending|answered, try: [refs she let Toolsmith try], skipped: [{name, ref, why}]}.'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The state.' }
+        "409": { description: 'It could not be done: {error, kind, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/registry:
+    get:
+      tags: [toolsmith]
+      summary: 'Registry rows (id, name, kind, origin, status, port, ui, health) and the jobs packages were proven for'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/web:
+    post:
+      tags: [toolsmith]
+      summary: 'One https GET under subject toolsmith:search (search and README reads), only with the Bridge yes. Body {url, accept, max_bytes, timeout_s (1 to 30, default 30, in all), web_key (a sources.json web row id: the owner''s own key, only on that row''s search while planning; reply key: sent | refused; a refused key is off for the plan)}. On a search place (a row in sources.json) only an address shaped like its row is sent: its words go through the screen, any other query key or path is refused. Only a row''s exact list URL may read past 3,000,000 bytes, up to its own max_bytes; reply {status, text, headers} (headers: GitHub''s rate-limit ones only), or {status: 0, error: <error class>, said: <plain reason>} when it was sent and no answer came (lane I15). Body {keyed: true} asks for the owner''s GitHub key (vault name toolsmith.github): the Core adds it only on GET api.github.com /search/repositories and /repos/{owner}/{repo}, only when it has a token''s strict shape, and drops private projects from the answer; reply key: sent | unusable, never the key. Only the canonical form of the address is sent; one with no plain form, or a GitHub search whose q words the Core''s screen would not send, is refused (409) before anything is sent. GitHub searches sent while the build plans are listed on its plan card.'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/jobs/{job_id}/found:
+    post:
+      tags: [toolsmith]
+      summary: 'A project found after her Yes on a cloud build, or an app to build, kept under job.run.found, never in the plan or envelope (D121). Body {url, name, description, stars, language, branch, archived, fork, topics, listed, known} or {made: true, what}. Reply {ok, cand}. Refused: not a cloud build, not a plain project address, a junk filter.'
+      x-access: toolsmith
+      x-lane: i25a
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/mcp:
+    post:
+      tags: [toolsmith]
+      summary: 'One program of the try started as an MCP server over stdio, under the same rules as any program: its tools listed and one real call, then it stops (D124, a cloud build only). Body {program, args, cwd, tool, tool_args}. Reply {ok, tools, answer, said}, or not_run.'
+      x-access: toolsmith
+      x-lane: i25a
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/read:
+    post:
+      tags: [toolsmith]
+      summary: 'One public page read for a cloud build under her plan Yes (D121), subject toolsmith:read, https and a public address only, GET, redirects checked by hand (5 at most), 2 MB at most. Body {url, job_id, start}. Reply {ok: true, status, url, title, text (15000 characters from start), links: [{text, url}] (first window only, 200 at most), cut, total} or {ok: false, said}. Text kinds only; lines aimed at an AI hidden; keys scrubbed.'
+      x-access: toolsmith
+      x-lane: i25a
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/queries:
+    post:
+      tags: [toolsmith]
+      summary: 'The app search queries this computer''s brain gave for a job, screened like the knowledge topics: no household names, numbers, key or address shapes, nothing the outbound privacy screen would change; no screen or no household list: none. Body {queries: [text]}; reply {queries: [kept]}'
+      x-access: toolsmith
+      x-lane: I15
+      responses:
+        "200": { description: 'The queries kept, in order.' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/knowledge:
+    post:
+      tags: [toolsmith]
+      summary: 'One step of the build''s knowledge fetch, only after her plan Yes: one search or one article or book. The Core itself reads en.wikipedia.org and www.gutenberg.org under the build''s own subject (pkg:toolsmith-build-<id>, build phase), granted only from her plan Yes and only while this build runs; it screens the text (Drawbridge''s text rules), keeps it under the data folder''s knowledge\<source>\ and indexes it. Toolsmith never names an address. Reply {done, now, line, stop?}'
+      x-access: toolsmith
+      x-lane: I11
+      responses:
+        "200": { description: 'One step done, or {done: true, line} when the fetch has ended (its last line says what was read and why a source failed).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}. No Yes yet is refused.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/knowledge/find:
+    post:
+      tags: [toolsmith]
+      summary: 'While planning (D99): the Core asks the catalogs (Kiwix, Data.gov, Hugging Face) about these topics at the same time, each topic through the same screen, under her search Yes, within its own time. The finds go on the plan card.'
+      x-access: toolsmith
+      x-lane: I11
+      responses:
+        "200": { description: '{ok, found: {source: count}}.' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.' }
+  /v1/toolsmith/agent/jobs/{job_id}/library:
+    post:
+      tags: [toolsmith]
+      summary: 'After the build''s jobs and its knowledge fetch have ended (D71): a job no app works for (nothing found or not working yet, no pasted or ticked app) is searched for in this build''s fetched items only, with the brain''s own search_knowledge search and the job''s own words. At least 3 passages from at least 2 fetched items: the Core marks the job working, with how many passages, from which sources and their titles, and adds library: true to that job in the build view and the build list (D123), so each screen says no app yet, your library has some reading on this. Fewer: the job keeps its state, and its line says how little the library has so far. Local only, nothing goes out.'
+      x-access: toolsmith
+      x-lane: I19e
+      parameters: [ { name: job_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{ok, working, line?}: working false leaves the job as it was.' }
+        "409": { description: 'It could not be done: {error, kind, code}. No Yes yet is refused.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/model:
+    post:
+      tags: [toolsmith]
+      summary: 'One model turn: this computer''s model, or lend and send to the frontier provider the owner chose. The Core hides AI-aimed lines, screens keys and personal details, translates, screens the FINAL wire body again, reserves the worst case against the cap (full maximum reply length), adds the key and sends. The key never reaches Toolsmith. Body {system, messages, tools: [{name}], max_tokens, purpose, local_only} or {probe: true}'
+      description: 'Tools must be Toolsmith''s own fixed tools.'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/brain/json:
+    post:
+      tags: [toolsmith]
+      summary: 'A small JSON ask of this computer''s model (search phrases, the rank); {answer} or {answer: null}, never a veto'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/brain/answer:
+    post:
+      tags: [toolsmith]
+      summary: 'The brain answers the job''s sample ask from what an app''s page shows (prove); AI-aimed lines hidden first'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/page:
+    post:
+      tags: [toolsmith]
+      summary: 'Read what a page on 127.0.0.1 shows (the page reader); {ok, title, text, said}'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/apps/{pkg_id}/read:
+    get:
+      tags: [toolsmith]
+      summary: 'What read_app returns for a package this build installed or reused'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: pkg_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries:
+    post:
+      tags: [toolsmith]
+      summary: 'Open a try for one candidate on the job''s plan (by ref); the Core gives its port. Body {job_id, ref}'
+      description: 'Only after the Yes; a candidate not on the plan is refused.'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/download:
+    post:
+      tags: [toolsmith]
+      summary: 'The Core downloads the candidate (git clone --depth 1, in its own job object) into packages/.staging, after the Bridge yes for toolsmith:search to the candidate''s own host (github.com or codeberg.org)'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/check:
+    post:
+      tags: [toolsmith]
+      summary: 'Drawbridge checks the downloaded folder in the Core; a pass renames it to packages/<id> before any setup, a block removes it. Nothing runs in a try before this passes'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/run:
+    post:
+      tags: [toolsmith]
+      summary: 'Run ONE program to its end with no shell (D60), only from the allowlist (D61: the try''s own .venv python and python -m pip, node, npm, npx, docker compose behind the Docker wall, native programs from the checked download; matched by the resolved file). Zone checked in the Core; deny refuses, ask pauses for her Yes on the Checklist ({ask: {step_id}}); its own job object. Body {program, args, cwd} or {command: one plain program line}'
+      description: 'Not run: {ok: false, refused: true, said} and, for a program not on the allowlist, not_run {program, args, cwd, resolved, why, use?}, which Toolsmith turns into a Your turn step (or a Core tool, when use names one). Shell syntax in a command line answers "Send one program and its arguments; BuildBot doesn''t use a shell."; inline code (python -c, node -e/-p/--eval) is refused.'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/start:
+    post:
+      tags: [toolsmith]
+      summary: 'Start a server on the try''s port: ONE program, no shell, from the allowlist (as run), zone checked, its own job object. Body {program, args, cwd} or {command}'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/stop:
+    post:
+      tags: [toolsmith]
+      summary: 'Stop a server this try started, by its job object (stop_server). Body {pid} (optional: none stops all)'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/log:
+    get:
+      tags: [toolsmith]
+      summary: 'The last lines its servers printed, and how many still run'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/files:
+    post:
+      tags: [toolsmith]
+      summary: 'Write one file inside the try folder (zone checked; ask pauses for her Yes). Body {path, text}. Never puffpai.json at the top of the folder or anything in .buildbot (the Core''s: the manifest goes with add).'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/fs:
+    post:
+      tags: [toolsmith]
+      summary: 'The Core''s file tools for the try folder only (D60, in place of shell builtins). Body {op: read|list|copy|move|mkdir|delete, path} or {op, from, to}'
+      description: 'Every path inside the try folder and zone checked; nothing goes through a junction or link (delete removes a link itself, never what it points at); .venv is the Core''s (only a delete of the whole of it).'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/end:
+    post:
+      tags: [toolsmith]
+      summary: 'End the try: what it started stops (job objects, its own compose project down) and its folder is removed, never through a junction'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/tries/{try_id}/add:
+    post:
+      tags: [toolsmith]
+      summary: 'Hand the working try to the Package Manager (lane L1). Body {built_with, manifest}: the Core stops the try, checks the manifest (valid, this app''s id, origin adopted:<the plan''s address>) and writes it itself as .buildbot/puffpai.json, the only manifest an adopted app runs from; the Package Manager copies it into staging, checks it with Drawbridge bound to that tree hash and raises its ONE Yes card (answered by the plan''s Yes only when everything, every command the Core will start included, is inside the plan); the try folder is removed. The answer says it waits for her Yes.'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [toolsmith]
+      summary: 'Where the install stands after the Package Manager took the try: waiting for her Yes on its card, installed (and started by Steward), or her No. Toolsmith never answers the card.'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: try_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/steps:
+    post:
+      tags: [toolsmith]
+      summary: 'Raise a "Your turn" Checklist step for a job (a run_command step is zone checked first). Body {job_id, step, try_id}; reply {id}'
+      x-access: toolsmith
+      x-lane: L6
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/steps/{step_id}:
+    get:
+      tags: [toolsmith]
+      summary: 'The state of a step this build raised: open, done, skipped or gone'
+      x-access: toolsmith
+      x-lane: L6
+      parameters: [ { name: step_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Done (plain words in said where it says no).' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/wizard:
+    get:
+      tags: [wizard]
+      summary: 'Wizard steps and progress'
+      description: 'Reply {"steps": [{id, title, required, state}], "current": "<step id or null>", "complete": bool, "platform": "windows | mac | linux"}. state is todo, done, waiting or not_built.'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'Steps and progress.' }
+  /v1/wizard/{step}:
+    post:
+      tags: [wizard]
+      summary: 'Answer one wizard step'
+      description: |
+        Body {"answers": {"<field id>": value}, "renderer": "browser"}. Send {} to start a step.
+        Reply, one screen: {"status": "ask | show | done | waiting | not_built", "step", "title",
+        "lines": [plain lines], "answered": [{field, label, shown}], "field": the field to ask now
+        (resolved for this platform), "show": {"field", "value"} for show_once only, "error",
+        "clear": bool, "next"}. A field that show_when hides is never asked; a hidden answer that
+        arrives anyway is dropped with a line. Secrets are never echoed and never kept in wizard
+        progress (D36).
+      x-access: owner
+      x-lane: L5
+      parameters: [ { name: step, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The next screen.' }
+        "404": { description: 'No such step.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/knowledge/upload:
+    post:
+      tags: [knowledge]
+      summary: 'One file from the device she is at, into her data folder (D134)'
+      description: |
+        Query name=<file name>; the body is the file's bytes (application/octet-stream). It lands in the data folder's
+        uploads folder under that name. No path from the client is ever used. The name must be plain and end in .txt, .md,
+        .docx or .pdf; the same check as a pinned file runs (folders.file_problem). At most 50 MB, enforced while reading.
+        A second upload of one name replaces the first, whole, and the reply says so. Answers
+        {"ok": true, "name", "path", "size", "replaced": bool, "pinned": bool, "line"}. A paired browser with both halves
+        (with its Origin and X-PuffPAI: 1), or this computer's terminal key; never an owner API key or a package token.
+      x-access: owner_device
+      x-lane: D134
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Saved.' }
+        "400": { description: 'A name that can not be used, the wrong kind of file, an empty file, or a place that can not be checked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "413": { description: 'Over 50 MB. On the network listener a declared size over 86 MB is refused from its headers, in plain text.' }
+        "507": { description: 'It could not be saved (out of room).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/knowledge/sources:
+    get:
+      tags: [knowledge]
+      summary: 'What Toolsmith''s builds read into the bot''s knowledge: per item its source, title, url, license, size and date'
+      description: |
+        Built by I11. Read from the data folder's knowledge\<source>\meta.json files only (nothing reaches the
+        network). Reply {"items": [{"source": "wikipedia | gutenberg", "title", "url", "license", "size",
+        "fetched_at", "file"}], "count", "bytes", "libraries": [{"source", "title", "size", "zim", "line"}], "waiting":
+        [{"name", "line"}], "drop_folder"}, newest first (D136). An address that is not its source's own is "". The owner
+        on a paired device only: an owner API key, a package token and a Toolsmith token are refused.
+      x-access: owner_device
+      x-lane: I11
+      responses:
+        "200": { description: 'The items.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/owner-files:
+    get:
+      tags: [knowledge]
+      summary: 'Where a package with needs.owner_files makes files, or where one file is'
+      description: 'Query ?path=. No path: {"made"}. A path: {"path", "place": "made | mine | linked"} or {"line"}. 403 for a package token whose manifest has no needs.owner_files.'
+      x-access: package_ok
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/files:
+    get:
+      tags: [knowledge]
+      summary: 'The newest 30 files in My files'
+      description: 'Reply {"files": [{"name", "folder", "path", "modified"}]}.'
+      x-access: owner
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/files/open:
+    post:
+      tags: [knowledge]
+      summary: 'Open one file in its own app, on the bot''s computer. On the home network: the file itself, as a download (D130)'
+      description: 'Body {"path"}: in her data folder or a linked folder, never a file that runs as a program. Reply {"opened": true}. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/find:
+    post:
+      tags: [knowledge]
+      summary: 'Find more books: a plan for books only, up to its Yes card'
+      description: 'Body {"words"}. No app is looked for and no model asked. Nothing downloads before her Yes on the plan card (D99). Reply: the build, as POST /v1/toolsmith/plan.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/books/remove:
+    post:
+      tags: [knowledge]
+      summary: 'Remove one item, or a whole source, from the disk and the index'
+      description: 'Body {"source", "file"?}. Reply {"removed"}. 400 {"error"}: not one of hers, gone, a link, or a move is running. 409: Toolsmith is downloading.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/books/look:
+    post:
+      tags: [knowledge]
+      summary: 'Look for a dropped .zim now'
+      description: 'Reply {"looking", "waiting": [{"name", "line"}]}.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/books/read:
+    get:
+      tags: [knowledge]
+      summary: 'Read one kept text, a part at a time'
+      description: 'Query ?source&file&part. Reply {"title", "text", "part", "parts"}. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/books/articles:
+    get:
+      tags: [knowledge]
+      summary: 'A page of an offline library''s articles by title'
+      description: 'Query ?source&q&page. Reply {"articles": [{"title", "url"}], "has_more"}. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/books/article:
+    get:
+      tags: [knowledge]
+      summary: 'One article of an offline library, as plain text'
+      description: 'Query ?source&url. Reply {"title", "url", "text"}. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: D136
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/pinned:
+    get:
+      tags: [knowledge]
+      summary: 'The documents pinned to this bot'
+      description: 'Reply {"pinned": [{"name", "path", "line"}], "line"}.'
+      x-access: owner
+      x-lane: D125
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [knowledge]
+      summary: 'Pin one file, and read it through the gate now'
+      description: 'Body {"path"}. Reply: as the GET. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: D125
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/pinned/remove:
+    post:
+      tags: [knowledge]
+      summary: 'Unpin one file. The file is never changed'
+      description: 'Body {"path"}. Reply: as the GET.'
+      x-access: owner_device
+      x-lane: D125
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/pick:
+    post:
+      tags: [knowledge]
+      summary: 'Windows''s own Open dialog, on this computer'
+      description: 'Body {"kind": "file | folder"}. Reply {"path"}, "" if she closed it, or {"path": "", "typed": true, "line"} from another device or off Windows. 409 {"error"}: one is open already.'
+      x-access: owner_device
+      x-lane: D127
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/packages/sendable:
+    get:
+      tags: [knowledge]
+      summary: 'The installed packages that take files'
+      description: 'Reply [{"id", "name", "types", "status"}].'
+      x-access: owner
+      x-lane: D127
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/packages/{id}/send:
+    post:
+      tags: [knowledge]
+      summary: 'Send one file to a package that takes files'
+      description: 'Body {"file_name", "content_b64"} or {"path"}, a pinned file or one inside a linked folder and no other. Reply {"line"}. 400 or 409 {"error"}.'
+      x-access: owner_device
+      x-lane: D127
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/edits:
+    get:
+      tags: [settings]
+      summary: 'May the bot change her documents? Off until she turns it on'
+      description: 'D140. Reply {"on": false}.'
+      x-access: owner
+      x-lane: D140
+      responses:
+        "200": { description: 'The setting.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [settings]
+      summary: 'Turn changing her documents on or off'
+      description: 'D140. Body {"on": true}. Reply {"on"}. On also lets such a tool put her real private details in the file. One audit line per change (the setting only). If that line can''t be written it does not turn on (503); off always works.'
+      x-access: owner_device
+      x-lane: D140
+      responses:
+        "200": { description: 'The setting.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: 'The audit line could not be written, so it stays off.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/move:
+    get:
+      tags: [settings]
+      summary: 'What does not travel when a bot moves to another computer'
+      description: 'D141. Reply {"stays": ["..."]}.'
+      x-access: owner
+      x-lane: D141
+      responses:
+        "200": { description: 'The lines.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/move/export:
+    post:
+      tags: [settings]
+      summary: 'Export this bot to a folder that can go in a git repo'
+      description: 'D141. Body {"path"}. Everything is scanned first; a private detail in the record writes nothing, and one in an app leaves that app out. Reply {"folder", "apps", "left_out", "stays"}.'
+      x-access: owner_device
+      x-lane: D141
+      responses:
+        "200": { description: 'Written.' }
+        "400": { description: 'A plain reason. Nothing was written.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/move/check:
+    post:
+      tags: [settings]
+      summary: 'Check a moved bot, every hash, and say what it holds. Nothing changes'
+      description: 'D141. Body {"path"}. Reply {"name", "apps", "not_here", "left_out", "books", "linked", "pinned", "added", "stays"}.'
+      x-access: owner_device
+      x-lane: D141
+      responses:
+        "200": { description: 'What it holds.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/move/import:
+    post:
+      tags: [settings]
+      summary: 'Bring in its name, look, who the bot is and Home. Each app is then added with its own Yes'
+      description: 'D141. Body {"path"}. Reply: as /check, with "said", and each app with the source for POST /v1/packages.'
+      x-access: owner_device
+      x-lane: D141
+      responses:
+        "200": { description: 'Brought in.' }
+        "400": { description: 'A plain reason. Nothing was changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/place:
+    get:
+      tags: [knowledge]
+      summary: 'Where her books and downloads are kept, how much room is there, and how a move goes'
+      description: |
+        D103. Reply {"where", "store", "default", "drive", "there", "free_bytes", "free", "line", "warning", "move"}.
+        "line" is the one plain line when the drive is gone or full, else "". "move" is null, or {"phase":
+        "copying | switching | cleaning | stopped | done", "running", "from", "to", "done_files", "total_files",
+        "done_bytes", "total_bytes", "percent", "now", "line", "can_resume", "can_cancel", "switched", "left"}.
+      x-access: owner
+      x-lane: D103
+      responses:
+        "200": { description: 'Where they are.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [knowledge]
+      summary: 'Move her books and downloads to another folder or drive, in the background'
+      description: |
+        D103. Body {"path": "<a folder>", "leave_old": false}. "path" "" is back to the data folder. The folder goes
+        through the one check first (zone1.knowledge_folder.problem). An interrupted move loses nothing. "leave_old"
+        uses the new place and leaves what is at the old one there, for an old drive that is gone for good. Reply:
+        the same view as the GET. 400 {"error", "code"}: the folder can't be used. 409 {"error", "code"}: "running",
+        "unfinished", "source_away", "downloading".
+      x-access: owner_device
+      x-lane: D103
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string }
+                leave_old: { type: boolean }
+      responses:
+        "202": { description: 'The move runs.' }
+        "400": { description: 'That folder can''t be used, with the plain line.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Not now, with the plain line.' }
+  /v1/knowledge/place/resume:
+    post:
+      tags: [knowledge]
+      summary: 'Pick a stopped move up again, where it stopped'
+      description: 'D103. Reply: the view of GET /v1/knowledge/place. 409 when no move is waiting or one is running.'
+      x-access: owner_device
+      x-lane: D103
+      responses:
+        "202": { description: 'The move runs again.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Nothing to pick up, with the plain line.' }
+  /v1/knowledge/place/cancel:
+    post:
+      tags: [knowledge]
+      summary: 'Stop a move and put everything back, until it has switched to the new place'
+      description: 'D103. Takes back only what the move itself put in the new place. Reply: the view of GET /v1/knowledge/place. 409 when no move is waiting or the new place is in use already.'
+      x-access: owner_device
+      x-lane: D103
+      responses:
+        "200": { description: 'Cancelled.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Not now, with the plain line.' }
+  /v1/settings:
+    get:
+      tags: [settings]
+      summary: 'Active Desktop, avatar, Bridge posture'
+      description: 'Reply {"ui": "<id>", "avatar": {"id", "name", "preview"} or null, "bridge": "open | closed | not_set", "wizard_complete": bool, "pages": "http://127.0.0.1:8422", "bot": {"name", "theme"}, "opens": "window | chat | dashboard"}. bot is the bot''s own name and look (lane I10c, settings\bot.json), "Puff" and "clean" until she picks (D90; a bot whose setup finished with no look saved reads "puff"). opens is what opens when BuildBot starts (D94, settings\opens.json), "window" until she picks (D81). preview is a /pkg/<id>/<file> path on the pages address ("pages", D49) or null.'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'The settings.' }
+  /v1/settings/ui:
+    put:
+      tags: [settings]
+      summary: 'Pick the active ui package'
+      description: 'Body {"id": "<ui package id>"}. 400 if no installed or built-in ui package has that id.'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'The new settings.' }
+        "400": { description: 'Not a ui package.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/avatar:
+    put:
+      tags: [settings]
+      summary: 'Pick the active avatar package (not named in the docs; 01 says settings holds the avatar)'
+      description: 'Body {"id": "<avatar package id>"}, or {"id": null} for none.'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'The new settings.' }
+        "400": { description: 'Not an avatar package.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/bot:
+    put:
+      tags: [settings]
+      summary: 'Name the bot or pick its look (added by lane I10c; the wizard''s two steps save through the same code)'
+      description: 'Body {"name"?, "theme"?}, one or both, never null. name: 1 to 40 characters of plain text, trimmed, with at least one letter, number, symbol or emoji you can see, no control or hidden characters (blank fillers too), no markup, no link. theme: an id from GET /v1/settings/themes. Saved in settings\bot.json. Reply: the settings, as GET /v1/settings.'
+      x-access: owner_device
+      x-lane: I10c
+      responses:
+        "200": { description: 'The new settings.' }
+        "400": { description: 'A name or look that can''t be used, in plain words.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/opens:
+    put:
+      tags: [settings]
+      summary: 'Pick what opens when BuildBot starts: the PuffPAI window, the chat in a terminal or the dashboard (added for D94, D81)'
+      description: 'Body {"opens": "window"}, {"opens": "chat"} or {"opens": "dashboard"}. Saved in settings\opens.json; Start BuildBot.cmd (puffpai start) reads it, and puffpai start --opens saves it too. A missing or broken file reads as "window". Reply: the settings, as GET /v1/settings.'
+      x-access: owner
+      x-lane: cli-default
+      responses:
+        "200": { description: 'The new settings.' }
+        "400": { description: 'Not chat or dashboard, in plain words.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/window/open:
+    post:
+      tags: [settings]
+      summary: 'Open the PuffPAI window from the dashboard (D81, the owner 10-30)'
+      description: 'Starts this bot''s own window as its own process and returns at once. One window per bot: a second open brings the first one forward. It takes nothing from the request. Only a paired-device token: her paired browsers, and this computer''s terminal key, which is one by design. The window always shows PuffPAI''s own page, whatever Desktop is active (D108). A window already starting is left to start, so repeated calls start one. Reply {"ok": bool, "line": "<one plain line>"}; a computer that can''t show the window (no WebView2, no pywebview) is ok false with its line, not an error.'
+      x-access: owner_device
+      x-lane: window
+      responses:
+        "200": { description: 'Whether it opened, in one plain line.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/terminal/open:
+    post:
+      tags: [settings]
+      summary: 'Open the real terminal chat from the window''s switch (D115)'
+      description: 'Starts this bot''s own terminal chat in a console window of its own and returns at once, in the chat named by the body {"conversation": "<id>"} (optional, "main" when left out). It takes nothing else from the request: an id that is not letters, digits, - and _ is a 400, never a command, a path or a folder. Only a paired-device token, as /v1/window/open. Two presses in one chat within 3 seconds open one; another chat opens its own. Reply {"ok": bool, "line": "<one plain line>"}; a computer that can''t open one here is ok false with its line, not an error. Safe mode: a 409, and no console starts, as /v1/dev/shell.'
+      x-access: owner_device
+      x-lane: window-switch
+      responses:
+        "200": { description: 'Whether it opened, in one plain line.' }
+        "400": { description: 'Not a chat''s id.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Safe mode: {"error", "code": "safe_mode"}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/drawbridge:
+    get:
+      tags: [settings]
+      summary: 'The owner''s setting for files Drawbridge can''t read (added for D95)'
+      description: 'Reply {"files": "normal | locked", "title", "choices": [{"id", "name", "line", "on"}]}. Kept in settings\drawbridge.json. A missing file reads as "normal" (the default); a broken file or any other value reads as "locked".'
+      x-access: owner
+      x-lane: i23a
+      responses:
+        "200": { description: 'The setting and both choices in plain words.' }
+    put:
+      tags: [settings]
+      summary: 'Change it: Normal or Locked down (D95)'
+      description: 'Body {"files": "normal"} or {"files": "locked"}. Only the owner at a paired device; the terminal key this computer''s CLI uses is refused (403), as are owner API keys, package and Toolsmith tokens. One audit line per change (the two setting names only); no event carries it. If the audit line can''t be written, the change is undone (503). Reply: as GET.'
+      x-access: owner_device
+      x-lane: i23a
+      responses:
+        "200": { description: 'The setting now.' }
+        "400": { description: 'Not normal or locked, in plain words.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: 'Not the owner at a paired device.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The audit line could not be written; nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/themes:
+    get:
+      tags: [settings]
+      summary: 'The looks this bot has (added by lane I10c)'
+      description: 'Reply [{"id", "name", "mode": "night | day | both", "line", "tokens": {"--token-name": "value"}}]. The token names are the Desktop''s own (desktop.css). A "both" look follows the Desktop''s day and night switch: tokens is its night palette and day_tokens its day palette. line is one plain sentence about it.'
+      x-access: owner
+      x-lane: I10c
+      responses:
+        "200": { description: 'The looks.' }
+  /v1/settings/layout:
+    get:
+      tags: [settings]
+      summary: 'How the owner arranged her Home page (added by lane I8b; harvested from v1 dashboard_widgets.py get_layout, 06 "Desktop layout")'
+      description: 'Reply {"version": 1, "tiles": {"order", "hidden", "pinned", "names"}, "seen": {"tiles": {id: name}}, "apps": {"view": "tiles | pages", "pages": [package id]}, "updated_at", "updated_by"}. Kept in data\desktop\layout.json; a missing or broken file gives the defaults. Tile ids are the Desktop''s own: its core tiles (apps, running, building, your-turn, bridge, brain), <package id>:<widget id>, and app/<package id> for an app whose own page is on Home (D82).'
+      x-access: owner
+      x-lane: I8b
+      responses:
+        "200": { description: 'The layout.' }
+    put:
+      tags: [settings]
+      summary: 'Save the layout (v1 save_layout): each section given (tiles, seen, apps) replaces the saved one'
+      x-access: owner
+      x-lane: I8b
+      responses:
+        "200": { description: 'The saved layout.' }
+        "400": { description: 'Not an object.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/layout/arrange:
+    post:
+      tags: [settings]
+      summary: 'One change to Home (v1 arrange): pin, unpin, hide, show, move or rename one tile; put an app''s own page on Home or take it off; apps as tiles or pages (D82)'
+      description: 'Body {"action", "tile": "<id or her name for it>", "position": "first | last | <number from 1>", "name"}. D82 (PROPOSED): {"action": "add_app | remove_app", "app": "<installed package id>"} puts that app''s own page on Home as the tile app/<id> (first), or takes it off; {"action": "apps_as", "view": "tiles | pages"} shows every app as its own page tile, or only as small tiles in Your apps. Reply {"ok", "line", "id", "name", "layout"}.'
+      x-access: owner
+      x-lane: I8b
+      responses:
+        "200": { description: 'Done, with one plain line.' }
+        "400": { description: 'Not done: {"ok": false, "line"}.' }
+  /v1/settings/persona:
+    get:
+      tags: [settings]
+      summary: 'Who your bot is: the role written from her goal at the end of the plan step (added by lane I12)'
+      description: 'Reply {"text", "source": "brain | owner | none", "build", "goal_sha", "built_with": "local | <company>:<model> | empty", "written_at", "role", "knows": [..], "first_question", "flag", "in_use": "persona | plain default | none", "max_chars": 4000}. Kept in settings\persona.json. text is "" until it is written. flag is "" or why Drawbridge''s screen for owner text (text_rules.owner_text_flag) would not use it; then in_use is "plain default" and the chat uses a plain role instead. The chat puts the role at the top of its system message, ahead of the tool and safety rules, which stay last and win.'
+      x-access: owner_device
+      x-lane: I12
+      responses:
+        "200": { description: 'The persona.' }
+    put:
+      tags: [settings]
+      summary: 'Her own words for who the bot is (added by lane I12)'
+      description: 'Body {"text"}: plain text, 1 to 4000 characters, no control or hidden characters (tabs and line breaks allowed). Reply: the same as GET; source becomes "owner". Text her screen flags is kept but not used (see flag).'
+      x-access: owner_device
+      x-lane: I12
+      responses:
+        "200": { description: 'Saved.' }
+        "400": { description: 'Not plain text, empty or too long.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/persona/redo:
+    post:
+      tags: [settings]
+      summary: 'Write who the bot is again from her goal (added by lane I12)'
+      description: 'Always on this computer''s brain, even when Toolsmith uses a cloud company: nothing is sent (D66). Replaces her own words. No body. Reply: the same as GET.'
+      x-access: owner_device
+      x-lane: I12
+      responses:
+        "200": { description: 'Written again.' }
+        "409": { description: 'No goal yet, no Toolsmith, or the brain gave nothing usable (the reason in plain words).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/settings/you:
+    get:
+      tags: [settings]
+      summary: 'What she tells her bot about herself (added by lane I12)'
+      description: 'Reply {"name", "call_me", "about", "timezone"}; each is "" until she answers. Kept as one held vault item (label owner.you, P3); settings\you.json keeps only its ref. The chat uses call_me in greetings and about as her own words, only for the brain on this computer, only while the vault is open, and only when the chat caller is her paired device (never an owner API key). The reply also has "flag": {"call_me", "about"}, each "" or why Drawbridge''s screen for owner text keeps that value out of the brain (it is still saved).'
+      x-access: owner_device
+      x-lane: I12
+      responses:
+        "200": { description: 'Her answers.' }
+        "423": { description: 'The vault is locked and something is kept: never an empty form ({"error", "code": "locked"}).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    put:
+      tags: [settings]
+      summary: 'Save what she tells her bot about herself (added by lane I12)'
+      description: 'Body {"name", "call_me", "about", "timezone"}: name and call_me 1 to 40 characters each, about at most 1000, timezone an IANA name (like America/Chicago) or "". Plain text only; other fields are refused. While the vault is locked it is sealed into the vault inbox and filed at the next unlock. Plain text means no control or hidden characters (variation selectors, blank fillers and tag characters included). Reply {"name", "call_me", "about", "timezone", "kept": "vault | inbox", "flag": {"call_me", "about"}}.'
+      x-access: owner_device
+      x-lane: I12
+      responses:
+        "200": { description: 'Kept.' }
+        "400": { description: 'A field is missing, too long, not plain text, or not a time zone.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'No vault here, or not set up yet.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/notify:
+    post:
+      tags: [notify]
+      summary: 'A package asks the Core to tell the owner something. Body {title, text, sound, speak, urgency} (05)'
+      description: 'title is required (at most 120 characters), text at most 600, urgency low | normal | high. sound and speak are kept for UIs that can use them (voice is not in this week''s build). Reply 201 {"id"}.'
+      x-access: package_ok
+      x-lane: L5
+      responses:
+        "201": { description: 'Posted.' }
+        "400": { description: 'Bad body.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [notify]
+      summary: 'Notices not yet dismissed, newest first (added by lane L5, so a UI can read what was posted)'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'Notices.' }
+  /v1/notify/{id}:
+    delete:
+      tags: [notify]
+      summary: 'Dismiss a notice (added by lane L5)'
+      x-access: owner
+      x-lane: L5
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Dismissed.' }
+        "404": { description: 'No such notice.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/theme:
+    get:
+      tags: [theme]
+      summary: 'Look tokens so package pages match the Desktop'
+      description: 'Reply {"name", "colors", "fonts", "radius", "css"}; css is a ":root { ... }" block of custom properties. The active ui package may ship theme.json; settings/theme.json overrides single tokens.'
+      x-access: package_ok
+      x-lane: L5
+      responses:
+        "200": { description: 'Theme tokens.' }
+  /v1/people:
+    get:
+      tags: [people]
+      summary: 'The shared people list (D12): id, name, emoji, adult | child'
+      description: 'A package token may read it (02 PUFFPAI_TOKEN, D48); only the owner changes it (PUT).'
+      x-access: package_ok
+      x-lane: L5
+      responses:
+        "200": { description: 'People, as [{id, name, emoji, role}].' }
+    put:
+      tags: [people]
+      summary: 'Replace the people list (added by lane L5 for "GET and edit", D12; the people page is not in this week''s build)'
+      description: 'Body [{id, name, emoji, role}]; role is adult or child; ids unique.'
+      x-access: owner
+      x-lane: L5
+      responses:
+        "200": { description: 'The stored list.' }
+        "400": { description: 'Bad list.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/pair:
+    post:
+      tags: [ui]
+      summary: 'Trade a one-time pairing code for the paired-device cookie (added by lane L5)'
+      description: |
+        Body {"code": "..."}. The code comes from `puffpai pair` on this computer; it works once,
+        for 10 minutes. 200 sets the puffpai_device cookie (puffpai_device_<port> when the Core is not on 8420, D129; HttpOnly, SameSite=Strict, host-only) for a
+        new paired device and answers {"ok": true, "device_key": "ppb_..."}: the second half of the
+        login, shown once, which the Desktop keeps in localStorage and sends as X-PuffPAI-Device
+        (D79); 401 for a wrong, used or old code. Only at puffpai.localhost:<port>; on any
+        other Host it answers 403 and the code is not used (D79). On the home network (D130) it answers too, with the
+        cookie named puffpai_device_<port>, on the address that device uses, and 429 after too many wrong codes.
+      x-access: public
+      x-lane: L5
+      security: []
+      responses:
+        "200": { description: 'Paired.' }
+        "401": { description: 'Wrong, used or old code (code "pair_code").', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: 'Not at puffpai.localhost:<port>; the code is not used (D79).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 'On the home network only: too many wrong codes (code "pair_wait").', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /pair:
+    get:
+      tags: [ui]
+      summary: 'The pair screen on the home network (D130)'
+      description: |
+        Only on the home network's listener: a plain page where a device types a code. It holds no secret. On this
+        computer there is no such route (404).
+      x-access: public
+      x-lane: D130
+      security: []
+      responses:
+        "200": { description: 'text/html' }
+        "404": { description: 'On this computer.' }
+  /v1/network:
+    get:
+      tags: [network]
+      summary: 'Is this bot on the home network, and the addresses to type (D130)'
+      x-access: owner_device
+      x-lane: D130
+      responses:
+        "200": { description: '{"on": bool, "open": bool, "port": int, "line": "", "urls": ["http://..."], "worth_knowing": "..."}' }
+    put:
+      tags: [network]
+      summary: 'Turn the home network off or on, at once (D130).'
+      description: |
+        Body {"on": true} or {"on": false}. Saved in the bot's settings\network.json, and writes one audit line. Off closes
+        every socket of it. From a paired device on the network too: it answers first, then closes.
+      x-access: owner_device
+      x-lane: D130
+      responses:
+        "200": { description: 'The same answer as GET.' }
+        "400": { description: 'Not {"on": true} or {"on": false}.' }
+        "503": { description: 'The audit line could not be written, so it did not start listening.' }
+  /v1/network/code:
+    post:
+      tags: [network]
+      summary: 'A pairing code to type on another device (D130)'
+      x-access: owner_device
+      x-lane: D130
+      responses:
+        "200": { description: '{"code": "XXXX-XXXX-XXXX", "minutes": 10, "urls": [...]}. One use.' }
+  /v1/network/pages:
+    get:
+      tags: [network]
+      summary: 'On the home network: each package page port, and its page pass as a cookie (D130)'
+      description: |
+        Needs both halves. Opens the page listeners, answers {"ports": {"<id>": <port>}} and sets one HttpOnly, host-only
+        cookie per port, puffpai_page_<port>, for that one package, for 12 hours, signed with this device's binding. Never
+        forwarded to a package. Adopted apps have no port. 404 on this computer.
+      x-access: owner_device
+      x-lane: D130
+      responses:
+        "200": { description: 'The ports.' }
+        "404": { description: 'On this computer.' }
+  /v1/devices:
+    get:
+      tags: [network]
+      summary: 'Every paired browser (D130)'
+      x-access: owner_device
+      x-lane: D130
+      responses:
+        "200": { description: '{"devices": [{"id": "<16 hex>", "label": "...", "created_at": "...", "this": bool}]}' }
+  /v1/devices/{id}:
+    delete:
+      tags: [network]
+      summary: 'Remove one paired browser. It stops on its very next request (D130)'
+      x-access: owner_device
+      x-lane: D130
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: '{"removed": "<id>"}' }
+        "404": { description: 'Not paired.' }
+  /v1/signin:
+    get:
+      tags: [ui]
+      summary: 'Where the owner signs a browser in: Sign in a browser.cmd and its folder (D92)'
+      description: |
+        {"file": "Sign in a browser.cmd", "folder": "<the install folder>"} when install.ps1 wrote that
+        file next to Start BuildBot.cmd, else both empty (run from source). Not secret: the Desktop's
+        sign-in screen names them. Only at puffpai.localhost:<port>, like /v1/recover.
+      x-access: public
+      x-lane: L5
+      security: []
+      responses:
+        "200":
+          description: 'The file and its folder, or empty strings.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file, folder]
+                properties:
+                  file: { type: string }
+                  folder: { type: string }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79).' }
+  /v1/recover:
+    get:
+      tags: [ui]
+      summary: 'A plain recovery page, so a broken UI can''t lock the owner out (04 section 5)'
+      x-access: public
+      x-lane: L5
+      security: []
+      responses:
+        "200": { description: 'text/html' }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79). No cookie set or read.' }
+  /:
+    get:
+      tags: [ui]
+      summary: 'The active ui package, served at the Core''s root address'
+      x-access: public
+      x-lane: L5
+      security: []
+      responses:
+        "200": { description: 'The active static ui package''s index page, or a redirect to /pkg/<id>/ for a ui with its own process.' }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79). No cookie set or read.' }
+  /window/:
+    get:
+      tags: [ui]
+      summary: 'The PuffPAI window''s page (D108)'
+      description: 'window.html from the built-in default Desktop, never from the active ui package and never from a Registry row, so a third-party Desktop never runs in the window. Static files hold no owner data, so this is public like "/". Only at http://puffpai.localhost:<port> (D79).'
+      x-access: public
+      x-lane: window-key
+      security: []
+      responses:
+        "200": { description: 'The page.' }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79). No cookie set or read.' }
+        "404": { description: 'No such file.' }
+  /window/{path}:
+    get:
+      tags: [ui]
+      summary: 'The files of the PuffPAI window''s page (D108)'
+      description: 'From the built-in default Desktop only, as /window/, decided on what the path really is on disk. Its one page is window.html; only its .js, .css, .woff2, .jpg and .webp files are served, each with its own type and nosniff. Any other page or type, another spelling of a file, a trailing slash and paths outside the folder are refused.'
+      x-access: public
+      x-lane: window-key
+      security: []
+      parameters: [ { name: path, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The file.' }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79). No cookie set or read.' }
+        "404": { description: 'No such file.' }
+  /ui/{path}:
+    get:
+      tags: [ui]
+      summary: 'Files of the active static ui package (added by lane L5; "/" serves only its index)'
+      description: 'Static files hold no owner data, so this is public like "/". Paths outside the package folder are refused.'
+      x-access: public
+      x-lane: L5
+      security: []
+      parameters: [ { name: path, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'The file.' }
+        "302": { description: 'On 127.0.0.1 or localhost: the same path at http://puffpai.localhost:<port> (D79). No cookie set or read.' }
+        "404": { description: 'No such file.' }
+  /v1/programs:
+    get:
+      tags: [programs]
+      summary: 'Her own programs (D16, D138): {"programs": [row], "installed_desktop": [{"name", "path"}]}'
+      description: 'A row: id, name, kind (cli or desktop), path, command, added_at, help, commands, always_allow. Only the owner at a paired device, as /v1/dev/shell. Works in safe mode. PROPOSED, not tested by the owner.'
+      x-access: owner_device
+      x-lane: chat-tools
+      responses:
+        "200": { description: 'The list.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [programs]
+      summary: 'Add a program she chose, by its full path or a name on PATH'
+      description: 'Body {"kind": "cli" | "desktop", "path" | "command", "name"?}. A command line program''s own help runs once, 10 seconds at most, no shell (never for a shell or interpreter). Audit line. Refused in safe mode.'
+      x-access: owner_device
+      x-lane: chat-tools
+      responses:
+        "200": { description: '{"ok": true, "program": row}' }
+        "400": { description: 'Not there, or not a program.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Safe mode.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The audit line could not be written, so nothing was added.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/programs/{id}:
+    delete:
+      tags: [programs]
+      summary: 'Remove a program from her list. Works in safe mode (it only narrows).'
+      x-access: owner_device
+      x-lane: chat-tools
+      responses:
+        "200": { description: '{"ok": true}' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such program.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    patch:
+      tags: [programs]
+      summary: 'Always allow on or off for one program (D16)'
+      description: 'Body {"always_allow": bool}. Reply {"ok": true, "program": row, "warning"?: line}: the warning when this program can start any other. A batch file can''t be on. Turning on is refused in safe mode; turning off always works.'
+      x-access: owner_device
+      x-lane: chat-tools
+      responses:
+        "200": { description: '{"ok": true, "program": row, "warning"?}' }
+        "400": { description: 'Not a bool, or this program can''t be on.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such program.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Safe mode.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The audit line could not be written, so nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/programs/{id}/launch:
+    post:
+      tags: [programs]
+      summary: 'Open her desktop program in its own window, optionally with a file'
+      description: 'Body {"file"?}: inside her data folder, a linked folder, or a file she pinned. Audit line. Refused in safe mode.'
+      x-access: owner_device
+      x-lane: chat-tools
+      responses:
+        "200": { description: '{"ok": true}' }
+        "400": { description: 'Not a desktop program of hers, or a file it may not open.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such program.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Safe mode.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: 'It did not start.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The audit line could not be written, so nothing started.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/dev/shell:
+    post:
+      tags: [dev]
+      summary: 'Open the Developer page''s command line: a FULL shell on the owner''s computer, no Yes before each command'
+      description: |
+        Built by lane i8c (the owner's rule, 2026-10-06). Body {"shell": "powershell" | "cmd"} (default powershell).
+        One persistent shell process in a Job Object the Core makes, started in the owner's home folder with the
+        Core's environment minus every PUFFPAI* name and any value holding one of the Core's tokens. PowerShell
+        starts with -NoProfile, cmd with /D (no AutoRun). At most 2 open at once. 30 minutes with no input closes
+        it; a Core stop closes every shell; entering safe mode closes every shell. What runs here is not checked
+        by the Bridge (the Desktop says so). Chat's own command running keeps its per-command Yes.
+        Only the owner at a paired device: never an owner API key, a package token, a Toolsmith token, or the
+        terminal key the Core writes for its own CLI. The shell belongs to the device that opened it.
+        Audit: one line when it opens and one when it closes.
+      x-access: owner_device
+      x-lane: I8c
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shell: { type: string, enum: [powershell, cmd], default: powershell }
+      responses:
+        "201": { description: '{"id", "cwd"}' }
+        "400": { description: 'Not "powershell" or "cmd".', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'Safe mode: {"error", "code": "safe_mode"}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 'Already 2 open: {"error", "code": "too_many"}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The shell could not start, or the audit line could not be written (then nothing started).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [dev]
+      summary: 'The open command lines: [{"id", "shell", "started", "idle_s", "mine"}]'
+      description: 'Built by lane i8c. "started" is ISO 8601 UTC; "idle_s" is whole seconds since the last input; "mine" is true for a shell this device opened. Works in safe mode.'
+      x-access: owner_device
+      x-lane: I8c
+      responses:
+        "200": { description: 'A list of open shells.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/dev/shell/{id}/input:
+    post:
+      tags: [dev]
+      summary: 'Send one line (with Enter) or Ctrl+C to a command line'
+      description: |
+        Built by lane i8c. Body {"text": "..."} (one line, at most 8000 characters, no line breaks; Enter is added)
+        or {"signal": "ctrl_c"}. A line sent while a command runs goes to that command as typed input
+        (an answer to its prompt). Ctrl+C ends what the shell is running (every process in its job but the
+        shell and its console host); if the shell itself stays busy it starts again in the same folder and
+        says so in its output ({"result": "restarted"}). Audit: one line per line sent, with only its length
+        and first word (a first word shaped like a key is "[hidden]"); typed input with only its length.
+        Never the text, never any output.
+      x-access: owner_device
+      x-lane: I8c
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: 'Text: {"ok": true, "kind": "line" | "typed"}. Ctrl+C: {"ok": true, "result": "stopped" | "idle" | "restarted"}.' }
+        "400": { description: 'Not one line, or not a known signal.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such shell, it ended, or another device opened it.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Safe mode.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'The audit line could not be written, so nothing was sent.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/dev/shell/{id}/events:
+    get:
+      tags: [dev]
+      summary: 'A command line''s output as server-sent events'
+      description: |
+        Built by lane i8c. Each event is "id: <seq>" and "data: <json>": {"t", "stream": "out" | "err", "text"}
+        ("t" is ISO 8601 UTC), then {"exit": code} when the shell ends (the stream then ends). From the start of
+        what is kept (the last 256000 characters, in memory only) unless Last-Event-ID or ?after=<seq> says
+        otherwise. The stream also ends after ?timeout=<s> (default 25, at most 60); EventSource reconnects
+        with Last-Event-ID, so nothing is lost. An ended shell's events stay readable for 60 seconds.
+      x-access: owner_device
+      x-lane: I8c
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, schema: { type: integer } }
+        - { name: timeout, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: 'text/event-stream' }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such shell, or another device opened it.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Safe mode.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/dev/shell/{id}:
+    delete:
+      tags: [dev]
+      summary: 'Close a command line: its job ends, so everything the shell started ends with it'
+      description: 'Built by lane i8c. Any of the owner''s paired devices may close any open shell (closing only narrows). Works in safe mode. Audit: one closed line.'
+      x-access: owner_device
+      x-lane: I8c
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"ok": true}' }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No such shell.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/folders:
+    get:
+      tags: [zones]
+      summary: 'Zone 1: the data folder and linked folders the Library reads (settings\folders.json)'
+      description: |
+        Built by I18f. Reply {"data", "data_there", "default", "linked": [{"path", "there"}], "from_setup", "line"}.
+        from_setup is what Setup's vault step saved in settings\data.json ({"data", "linked"}) while
+        folders.json is not there yet, else null. Every one of these folders is a "never" place for Toolsmith.
+      x-access: owner
+      x-lane: I18f
+      responses:
+        "200": { description: 'The folders.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/folders/link:
+    post:
+      tags: [zones]
+      summary: 'Link one of her folders: read where it is, never copied or changed'
+      description: 'Built by I18f. Body {"path"}: a whole path to a folder that is there; not PuffPAI''s own folder, the data folder or the vault''s folder. Reply: the folders, as GET /v1/folders. No card: the wizard''s vault step links folders the same way.'
+      x-access: owner_device
+      x-lane: I18f
+      responses:
+        "200": { description: 'The folders.' }
+        "400": { description: 'Not a folder that may be linked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Linked already.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/folders/unlink:
+    post:
+      tags: [zones]
+      summary: 'Unlink a folder (its index rows go; the folder itself is never touched)'
+      description: 'Built by I18f. Body {"path"}. Reply: the folders.'
+      x-access: owner_device
+      x-lane: I18f
+      responses:
+        "200": { description: 'The folders.' }
+        "404": { description: 'Not linked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/folders/from-setup:
+    post:
+      tags: [zones]
+      summary: 'Use the folders Setup saved in settings\data.json'
+      description: 'Built by I18f. Writes them into settings\folders.json (the data folder, and each linked folder that is there). Reply: the folders plus {"lines"}.'
+      x-access: owner_device
+      x-lane: I18f
+      responses:
+        "200": { description: 'The folders and what was done.' }
+        "409": { description: 'Nothing from Setup to use.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/keys:
+    get:
+      tags: [zones]
+      summary: 'Zone 3: per Toolsmith provider, whether its key is kept in the vault (never a value)'
+      description: 'Built by I18f. Reply [{"provider", "company", "vault_name", "kept": true | false | null, "get_it"}]. null: the vault is locked or not set up, so it can''t be told.'
+      x-access: owner
+      x-lane: I18f
+      responses:
+        "200": { description: 'The providers.' }
+  /v1/toolsmith/keys/{provider}:
+    put:
+      tags: [zones]
+      summary: 'Keep Toolsmith''s key for one provider in the vault (toolsmith.<provider>)'
+      description: 'Built by I18f. Body {"value"}. Vault open: saved (200); locked: sealed into the vault inbox (202), as the wizard does. The value is never echoed. A key alone sends nothing: Toolsmith uses a company only after her Yes to its sentence (PUT /v1/toolsmith/model).'
+      x-access: owner_device
+      x-lane: I18f
+      parameters: [ { name: provider, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"saved": true, "line"}' }
+        "202": { description: '{"saved": false, "line"}: sealed into the inbox.' }
+        "400": { description: 'No key in the body.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such provider.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'The vault is not set up, or can''t take a key now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [zones]
+      summary: 'Take Toolsmith''s key for one provider out of the vault'
+      description: 'Built by I18f. The vault must be open.'
+      x-access: owner_device
+      x-lane: I18f
+      parameters: [ { name: provider, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: '{"deleted": true, "line"}' }
+        "404": { description: 'No such provider, or no key kept.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "423": { description: 'The vault is locked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/cap:
+    put:
+      tags: [zones]
+      summary: 'Lower Toolsmith''s cost cap at once'
+      description: 'Built by I18f. Body {"cost_cap_usd"}: at most the cap in use. A higher cap is a widening: 409 {"code": "needs_yes"}, and it goes through PUT /v1/toolsmith/model with her Yes to the sentence again.'
+      x-access: owner_device
+      x-lane: I18f
+      responses:
+        "200": { description: 'The saved choice.' }
+        "400": { description: 'Not a number of dollars.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Toolsmith is local, or the cap would go up.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/hosts:
+    get:
+      tags: [zones]
+      summary: 'The places Toolsmith may reach, as v2 models them (read only)'
+      description: 'Built by I18f. Reply {"search": {"hosts", "on", "switch"}, "search_yes_names": [the hosts her live search Yes names], "web": {"hosts": {id: host}}, "cloud": {"company", "hosts", "on"}, "knowledge": {"hosts", "also"}, "known": {company: [hosts]}, "grants": [{"subject", "host", "phase"}], "line"}.'
+      x-access: owner
+      x-lane: I18f
+      responses:
+        "200": { description: 'The hosts.' }
+  /v1/bridge/search:
+    post:
+      tags: [zones]
+      summary: 'Toolsmith''s build-time search: on raises a Yes card, off is at once'
+      description: 'Built by I18f. Body {"on"}. On: 202 with a host Yes card naming every place and exactly the wizard''s search hosts (build phase); her Yes on it turns the switch on (the Bridge''s own Yes listener). Off: 200, the switch is off (the Bridge view).'
+      x-access: owner_device
+      x-lane: I18f
+      responses:
+        "200": { description: 'Off: the Bridge view.' }
+        "202": { description: '{"consent_id", "card_sha", "title", "lines"}' }
+        "400": { description: 'No on in the body.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/bridge/addresses:
+    get:
+      tags: [addresses]
+      summary: 'The addresses the owner allowed for packages, and the installed packages her form may pick'
+      description: 'Built by lan-address (D110). Reply {"addresses": [{"consent_id", "package", "name", "address", "port", "where": "lan" | "internet", "where_said": "home network" | "internet", "state": "on" | "waiting", "line"}], "setting": "open" | "closed", "note", "packages": [{"id", "name"}]}. on: it can be used now (the Bridge open, its switch on, its Yes live, not on a block list). note: why the rows are empty when the machine key is missing.'
+      x-access: owner
+      x-lane: lan-address
+      responses:
+        "200": { description: 'The rows.' }
+    post:
+      tags: [addresses]
+      summary: 'The owner''s own form: raise the Yes card for one address and port for one package. It never grants'
+      description: 'Built by lan-address (D110). Body {"package", "address"}. Any installed package but BuildBot''s own parts, a build''s tries and a raw reader; either kind; no manifest field needed and no limit. It replaces any waiting card of that package, and takes over a package''s card for the same address. address is host:port, or a scheme that implies the port (https 443, http 80), with no path, user part, wildcard or space. Reply {"state": "allowed" | "waiting" | "not_needed" | "refused", "line"}, and for a card also {"consent_id", "card_sha", "title", "lines"}. The grant comes only from her Yes on POST /v1/consent/{id}/answer.'
+      x-access: owner_device
+      x-lane: lan-address
+      responses:
+        "200": { description: 'Allowed already, not needed (a service on this computer), or her Yes stands and its grant can not be read now. No card.' }
+        "202": { description: 'Waiting: its Yes card is in the reply.' }
+        "400": { description: 'Refused, with one plain line that never repeats what was typed. No card.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'That package is not installed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'No machine key, so no card can be sealed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/bridge/addresses/ask:
+    post:
+      tags: [addresses]
+      summary: 'A package asks for one address and port for itself. It never grants'
+      description: 'Built by lan-address (D110). A package token only, and always for that package: nothing in the body can name another. Body {"address"}, as in the owner''s form. Its installed manifest must declare needs.addresses, and it may ask only for the kind it declared ("lan" or "internet"). Reply {"state": "allowed" | "waiting" | "not_needed" | "refused", "line"}: its own state, never a card''s id or fingerprint. A refusal also carries "error", the same words as "line". One waiting card per package: a different address replaces the package''s own waiting card, but never one the owner raised (429, no card). At most 5 new cards an hour that the package raised, and an address she declined is not raised again for an hour.'
+      x-access: package_ok
+      x-lane: lan-address
+      responses:
+        "200": { description: 'Allowed (her Yes stands), or not needed (a service on this computer).' }
+        "202": { description: 'Waiting for her Yes.' }
+        "400": { description: 'The address is refused, with one plain line. No card.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: 'Not a package token, not declared, the other kind, or a package that may not hold an address.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 'No card now: a limit, an address she declined, or the owner has another address waiting for this package.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'No card could be raised right now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/bridge/addresses/{consent_id}:
+    delete:
+      tags: [addresses]
+      summary: 'Remove one address: its Yes and its grant, one action'
+      description: 'Built by lan-address (D110). consent_id is the row''s, for a card still waiting or a Yes. Reply {"deleted": true, "line"}.'
+      x-access: owner_device
+      x-lane: lan-address
+      parameters:
+        - { name: consent_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Removed.' }
+        "404": { description: 'No such address.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'That Yes could not be taken back.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/search-key/{row_id}:
+    get:
+      tags: [github]
+      summary: 'Whether the owner''s own web search key is kept in the vault (toolsmith.<id>) and her Yes for it is live, never a value'
+      description: 'Reply {"linked": true | false | null, "yes", "vault", "vault_name", "host", "says", "line"}. null: the vault is locked or not set up, so it can''t be told.'
+      x-access: owner
+      x-lane: I18g
+      parameters:
+        - { name: row_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Linked or not.' }
+        "404": { description: 'No such row in sources.json web.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    put:
+      tags: [github]
+      summary: 'Keep the owner''s own web search key in the vault as toolsmith.<id> and raise its own Yes card'
+      description: 'Body {"value"}. Refused (400) unless it has a key''s strict shape (web_key_ok). Vault open: saved (200); locked: sealed into the vault inbox (202). Reply {"saved", "line", "yes", "consent_id", "card_sha", "title", "lines"}: a host card, subject toolsmith:search, exactly that row''s one host, build phase; no card when her Yes for it already stands. The value is never echoed.'
+      x-access: owner_device
+      x-lane: I18g
+      parameters:
+        - { name: row_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Saved in the vault.' }
+        "202": { description: 'Sealed into the vault inbox.' }
+        "400": { description: 'Not a key''s shape; nothing was saved.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such row in sources.json web.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'No vault yet.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [github]
+      summary: 'Take back her Yes for this key and take the key out of the vault'
+      description: 'Her Yes goes whatever else happens. The vault locked: 423, the key stays until she unlocks and removes it again.'
+      x-access: owner_device
+      x-lane: I18g
+      parameters:
+        - { name: row_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Removed.' }
+        "404": { description: 'No such row, or nothing kept.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "423": { description: 'Her Yes is taken back; the vault is locked, so the key stays for now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/apis:
+    get:
+      tags: [owner_apis]
+      summary: 'The search APIs the owner added herself, with their state, never a key'
+      description: 'Reply {"apis": [{"id", "name", "host", "search", "key_in", "key_name", "key_prefix", "fields", "tested", "yes", "linked", "on", "line"}], "vault"}. linked null: no key, or the vault is locked. linked false: no key kept, or one kept for another address (save it again). on: tested, her Yes live, its key kept, Toolsmith''s search on.'
+      x-access: owner
+      x-lane: add-api
+      responses:
+        "200": { description: 'The rows.' }
+    post:
+      tags: [owner_apis]
+      summary: 'Add one search API. Only the owner, only here: it stays off until her Yes and a Test that reads results'
+      description: 'Body {"name", "search", "n", "key_in", "key_name", "key_prefix", "fields"}. key_prefix: "", "Bearer" or "Token", only with key_in header. search: https, a public host, {q} once as a whole query value or path part, {n} optional. A row with no key raises its Yes card here; a row with a key raises it when the key is saved. Reply {"id", "line", "yes", "consent_id", "card_sha", "title", "lines"}. Her Yes never turns Toolsmith''s search on.'
+      x-access: owner_device
+      x-lane: add-api
+      responses:
+        "201": { description: 'Added, off.' }
+        "400": { description: 'Refused, with one plain line. Nothing was kept.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/apis/{api_id}:
+    put:
+      tags: [owner_apis]
+      summary: 'Edit one API she added; a new address or key place takes her Yes back and ends its Test'
+      description: 'Body as the add, any part. Reply {"id", "line", "yes", "consent_id", "card_sha", "title", "lines"}: with no live Yes it asks again if it takes no key or its key is already saved.'
+      x-access: owner_device
+      x-lane: add-api
+      parameters:
+        - { name: api_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Saved.' }
+        "400": { description: 'Refused, with one plain line. Nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such row.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [owner_apis]
+      summary: 'Remove one API she added and take its Yes back; remove_key says whether its key goes too'
+      description: 'Body {"remove_key": true | false}, needed for a row with a key (else 400 with ask_remove_key). The vault locked: 423, the row and its Yes are gone, the key stays until she removes it.'
+      x-access: owner_device
+      x-lane: add-api
+      parameters:
+        - { name: api_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Removed.' }
+        "400": { description: 'Say whether its key goes too. Nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such row.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "423": { description: 'Removed; the vault is locked, so the key stays for now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/apis/{api_id}/key:
+    put:
+      tags: [owner_apis]
+      summary: 'Keep its key in the vault as toolsmith.api.<id> and raise its own Yes card'
+      description: 'Body {"value"}. Refused (400) unless it has a key''s strict shape (web_key_ok). Vault open: saved (200); locked: sealed into the vault inbox (202). Reply {"saved", "line", "yes", "consent_id", "card_sha", "title", "lines"}. The value is never echoed.'
+      x-access: owner_device
+      x-lane: add-api
+      parameters:
+        - { name: api_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Saved in the vault.' }
+        "202": { description: 'Sealed into the vault inbox.' }
+        "400": { description: 'Not a key''s shape; nothing was saved.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such row.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'No vault yet, or this row takes no key.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [owner_apis]
+      summary: 'Take back her Yes for this API and take its key out of the vault'
+      description: 'Her Yes goes whatever else happens. Also takes out a key she kept when she removed the row.'
+      x-access: owner_device
+      x-lane: add-api
+      parameters:
+        - { name: api_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Removed.' }
+        "404": { description: 'No such row, or nothing kept.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "423": { description: 'Her Yes is taken back; the vault is locked, so the key stays for now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/apis/{api_id}/test:
+    post:
+      tags: [owner_apis]
+      summary: 'One search with her own word, under her own act of pressing Test'
+      description: 'Body {"word"}, through the Core''s screen. No plan and no search Yes: her press is recorded as a Yes for this one send, on its own Bridge subject, and taken back when it ends. The Bridge still decides: closed or blocked refuses, on the line. Any private answer for the host refuses; the send uses the address that passed. Reply {"ok", "line", "rows": [{"name", "url", "description"}]}, at most 5, and "answered": true only when it answered 200 and nothing read. Only a Test that reads results turns tested on.'
+      x-access: owner_device
+      x-lane: add-api
+      parameters:
+        - { name: api_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 'Its answer, or a plain line when it was refused or read nothing.' }
+        "404": { description: 'No such row.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'Safe mode: Toolsmith is paused until restart.' }
+  /v1/github/key:
+    get:
+      tags: [github]
+      summary: 'Whether the owner''s GitHub key is kept in the vault (toolsmith.github), never a value'
+      description: 'Built by I18g. Reply {"linked": true | false | null, "vault", "vault_name", "line"}. null: the vault is locked or not set up, so it can''t be told.'
+      x-access: owner
+      x-lane: I18g
+      responses:
+        "200": { description: 'Linked or not.' }
+    put:
+      tags: [github]
+      summary: 'Link GitHub: keep the owner''s GitHub key in the vault as toolsmith.github'
+      description: 'Built by I18g. Body {"value"}. Refused (400) unless it has a token''s strict shape (github_key_ok). Vault open: saved (200); locked: sealed into the vault inbox (202), as PUT /v1/toolsmith/keys/<provider> does. The value is never echoed. The key is lent only by Toolsmith''s own GitHub search, through the Bridge, to api.github.com, while a build she said Yes to runs.'
+      x-access: owner_device
+      x-lane: I18g
+      responses:
+        "200": { description: '{"saved": true, "line"}' }
+        "202": { description: '{"saved": false, "line"}: sealed into the inbox.' }
+        "400": { description: 'Not a token''s shape.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'The vault is not set up, or can''t take a key now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [github]
+      summary: 'Unlink GitHub: take the owner''s GitHub key out of the vault'
+      description: 'Built by I18g. The vault must be open.'
+      x-access: owner_device
+      x-lane: I18g
+      responses:
+        "200": { description: '{"deleted": true, "line"}' }
+        "404": { description: 'No GitHub key kept.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "423": { description: 'The vault is locked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/github/code:
+    post:
+      tags: [github]
+      summary: 'Add code from GitHub for the build: a new app from one GitHub project, or that project for a job that is held or found nothing'
+      description: 'Built by I18g. Body {"address"} (any common form of a GitHub project address): a new plan, as POST /v1/toolsmith/plan makes, with that project as its only try. Body {"address", "job_id"}: the job (of an earlier build, status held, not_yet or nothing_found) gets a one-job plan with that address as its only try, and the reply adds {"for_job": {"build", "job", "name"}}. Always a new plan with its own card and the ONE Yes: no Yes given before is reused.'
+      x-access: owner
+      x-lane: I18g
+      responses:
+        "201": { description: 'The build with its plan, card and consent id.' }
+        "400": { description: 'Not a GitHub project address.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 'No such job.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'The job is not held or empty, or Toolsmith is paused (safe mode).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }

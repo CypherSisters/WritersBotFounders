@@ -1,0 +1,152 @@
+{
+ "state": "running",
+ "done": 1,
+ "total": 23,
+ "now": "Quill Asher",
+ "started_at": "2026-11-01T15:00:00Z",
+ "finished_at": "",
+ "problems": [],
+ "line": "Painting 2 of 23: Quill Asher. About 16 minutes left.",
+ "eta_s": 935,
+ "avg_s": 42.5,
+ "items": [
+  {
+   "id": "p-20261101-150000-portrait-1",
+   "slot": "portrait:tamsin",
+   "label": "Tamsin Dray",
+   "state": "ready"
+  },
+  {
+   "id": "p-20261101-150000-portrait-2",
+   "slot": "portrait:quill",
+   "label": "Quill Asher",
+   "state": "painting"
+  },
+  {
+   "id": "p-20261101-150000-portrait-3",
+   "slot": "portrait:halden",
+   "label": "Halden Roe",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-portrait-4",
+   "slot": "portrait:mira",
+   "label": "Mira Dray",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-portrait-5",
+   "slot": "portrait:oren",
+   "label": "Oren Dray",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-portrait-6",
+   "slot": "portrait:pell",
+   "label": "Pell Dray",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-place-7",
+   "slot": "place:brine-station",
+   "label": "Brine Station",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-place-8",
+   "slot": "place:salt-flats",
+   "label": "The salt flats",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-place-9",
+   "slot": "place:the-lantern",
+   "label": "The Lantern",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-worldmap-10",
+   "slot": "worldmap",
+   "label": "the world map",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-11",
+   "slot": "scene:e1",
+   "label": "The Brine Bell rings early.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-12",
+   "slot": "scene:e2",
+   "label": "Oren counts the ration chits and says nothing about the debt",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-13",
+   "slot": "scene:e3",
+   "label": "Tamsin walks the flats on the survey line.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-14",
+   "slot": "scene:e4",
+   "label": "She finds a stranger's boot prints heading to the dead pumps",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-15",
+   "slot": "scene:e5",
+   "label": "Tamsin finds Quill in the pump house and hides him.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-16",
+   "slot": "scene:e6",
+   "label": "The Lantern goes dark.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-17",
+   "slot": "scene:e7",
+   "label": "Halden tells the station help is coming.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-18",
+   "slot": "scene:e8",
+   "label": "Tamsin finds Mira holding a badge in another name.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-19",
+   "slot": "scene:e9",
+   "label": "Tamsin learns the Lantern is a meter for the debt.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-20",
+   "slot": "scene:e10",
+   "label": "Pell's map shows every channel ends at the dome.",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-21",
+   "slot": "scene:e11",
+   "label": "Tamsin swims under the gate and finds Mira cutting the meter",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-scene-22",
+   "slot": "scene:e12",
+   "label": "The Lantern comes back white and sends only what the station",
+   "state": "waiting"
+  },
+  {
+   "id": "p-20261101-150000-cover-23",
+   "slot": "cover",
+   "label": "the cover",
+   "state": "waiting"
+  }
+ ]
+}

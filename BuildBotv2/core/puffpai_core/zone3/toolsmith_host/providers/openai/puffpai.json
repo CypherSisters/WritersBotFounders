@@ -1,0 +1,64 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "openai",
+  "kind": "provider",
+  "name": "OpenAI for Toolsmith",
+  "version": "1.0.0",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "description": "Lets Toolsmith use OpenAI models while it finds and installs apps. Data only: the Core runs its request mapping (Responses API).",
+  "provides": [
+    {
+      "slot": "zone3.toolsmith-model",
+      "contract": 1
+    }
+  ],
+  "consent": "Lets Toolsmith use OpenAI when you pick it. Nothing is sent until you do.",
+  "toolsmith_model": {
+    "company": "OpenAI",
+    "hosts": [
+      "api.openai.com"
+    ],
+    "wire": "openai-responses",
+    "key": {
+      "name": "OPENAI_API_KEY",
+      "header": "Authorization",
+      "format": "Bearer {key}",
+      "shape": "^sk-[A-Za-z0-9_-]{20,}$",
+      "get_it": "https://platform.openai.com/api-keys"
+    },
+    "models": [
+      {
+        "id": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "context_tokens": 1050000,
+        "prices": {
+          "in": 10.0,
+          "out": 50.0,
+          "cache_read": 1.0,
+          "cache_write": 12.5
+        },
+        "source": "https://developers.openai.com/api/docs/models/gpt-6-astra (read 2026-10-22)"
+      },
+      {
+        "id": "gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "context_tokens": 1050000,
+        "prices": {
+          "in": 2.0,
+          "out": 10.0,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        },
+        "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol (read 2026-10-22)"
+      }
+    ],
+    "default_model": "gpt-6-astra",
+    "prices_checked": "2026-10-22",
+    "prices_note": "Standard tier, prompts under 272K input tokens. Longer prompts cost more (2x input, 1.5x output), so the estimate is low for them.",
+    "cost_cap": {
+      "per_build_usd": 5
+    },
+    "consent": "When Toolsmith finds and installs apps, it sends OpenAI your goal and your bot's jobs, the names and descriptions of the apps it found, each app's README, docs and file list, the start of its setup files and other text files from the app's own download, the commands it runs with their output, and what the app's pages show. If you point it at a folder of your own, it reads that folder the same way. A try runs as a program on this computer, as you, so it can read your files, and what it shows goes to OpenAI. Keys and personal details it spots are taken out first, but it can miss some. Everything else stays on this computer."
+  }
+}

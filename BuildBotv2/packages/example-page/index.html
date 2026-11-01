@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My notes</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; background: #faf7fc; color: #2a1838; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p { margin: 0 0 16px; color: #6b5a78; font-size: .9rem; }
+  textarea { width: 100%; min-height: 60vh; box-sizing: border-box; padding: 12px; border: 1px solid #d9c8e6;
+             border-radius: 8px; font: inherit; background: #fff; }
+</style>
+</head>
+<body>
+<h1>My notes</h1>
+<p id="status">Notes stay in this browser on this computer.</p>
+<textarea id="notes" placeholder="Write anything here."></textarea>
+<script>
+  // A static page has no server of its own, so the notes are kept in this browser.
+  const KEY = "puffpai.example-page.notes";
+  const box = document.getElementById("notes");
+  box.value = localStorage.getItem(KEY) || "";
+  let timer = null;
+  box.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      localStorage.setItem(KEY, box.value);
+      document.getElementById("status").textContent = "Saved in this browser.";
+    }, 400);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "cloud-avatar",
+  "kind": "avatar",
+  "name": "Puff",
+  "version": "2.0.0",
+  "description": "Puff, Puff, hand drawn by Cypher Sisters, as the bot's face. A small mouth opens over her smile while the bot answers in chat. The one avatar that ships; owners can make or upload their own.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "puff.webp",
+  "avatar": { "preview": "preview.png", "voice": null },
+  "ui": {
+    "pages": [ { "id": "face", "title": "Puff", "file": "face.html", "show": "in_desktop" } ]
+  },
+  "consent": "A face for your bot. It runs nothing and uses no internet."
+}

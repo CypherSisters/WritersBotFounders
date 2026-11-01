@@ -1,0 +1,670 @@
+{
+ "about": "Lane I18b: six unrelated goals for the plan-time candidate fixes. The space jobs, their search words, the list rows and the GitHub finds are the ones in the owner's live test3 build 20261027-155349-af5ae7 (names and descriptions as the projects publish them, shortened; topics filled in so the fake search finds them as GitHub did; example/issue-tracker stands in for the issue trackers it found). The other five goals are made the same way. 'yes' is what the brain double says yes to on the app ask, 'code_yes' on the code ask; everything else gets a no, as the live brain answered.",
+ "goals": {
+  "space": {
+   "jobs": [
+    {
+     "name": "Celestial event tracker",
+     "does": "Notifies you of cool upcoming celestial events and tells you when the sky is clear enough to observe them",
+     "phrases": [
+      [
+       "celestial",
+       "event",
+       "scheduler"
+      ],
+      [
+       "celestial",
+       "event"
+      ],
+      [
+       "sky",
+       "visibility",
+       "calculator"
+      ]
+     ]
+    },
+    {
+     "name": "ISS locator",
+     "does": "Shows you exactly where the International Space Station is in the sky right now",
+     "phrases": [
+      [
+       "iss",
+       "tracker"
+      ],
+      [
+       "iss",
+       "locator"
+      ],
+      [
+       "space",
+       "station",
+       "locator"
+      ]
+     ]
+    },
+    {
+     "name": "Space photo gallery",
+     "does": "Shows you cool new pictures from space telescopes and missions",
+     "phrases": [
+      [
+       "space",
+       "telescope",
+       "images"
+      ],
+      [
+       "space",
+       "photo"
+      ],
+      [
+       "astronomy",
+       "picture",
+       "archive"
+      ],
+      [
+       "photo",
+       "gallery"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Ticketing",
+     "EventSchedule",
+     "eventschedule/eventschedule",
+     "Share events, sell tickets, and bring communities together.",
+     true
+    ],
+    [
+     "Ticketing",
+     "Hi.Events",
+     "HiEventsDev/hi.events",
+     "Event management and ticketing platform for conferences, concerts, and more. Offering customizable event pages and embeddable ticket widgets.",
+     true
+    ],
+    [
+     "Ticketing",
+     "Alf.io",
+     "alfio-event/alf.io",
+     "Ticket reservation system.",
+     true
+    ],
+    [
+     "Ticketing",
+     "Chobble Tickets",
+     "chobble/tickets",
+     "Event ticketing with QR check-in and encrypted attendee records.",
+     true
+    ],
+    [
+     "Booking and Scheduling",
+     "Bracket",
+     "evroon/bracket",
+     "Flexible tournament system to build a tournament setup, add teams, schedule matches, keep track of scores and present ranking live to the public.",
+     true
+    ],
+    [
+     "Analytics",
+     "ANALOG",
+     "analog-dev/analog",
+     "A minimal analytics tool. Tracks events in a span of 10-30 days.",
+     true
+    ],
+    [
+     "Archiving and Digital Preservation",
+     "ArchivesSpace",
+     "archivesspace/archivesspace",
+     "Archives information management application for managing and providing Web access to archives, manuscripts and digital objects.",
+     true
+    ],
+    [
+     "Task Management",
+     "OpenHabitTracker",
+     "Jinjinov/OpenHabitTracker",
+     "Track habits, tasks and notes with time tracking, calendar view and completion statistics.",
+     true
+    ],
+    [
+     "Health and Fitness",
+     "FitTrackee",
+     "SamR1/FitTrackee",
+     "Simple workout/activity tracker.",
+     true
+    ],
+    [
+     "Monitoring",
+     "Speedtest Tracker",
+     "alexjustesen/speedtest-tracker",
+     "Monitor the performance and uptime of your internet connection.",
+     true
+    ],
+    [
+     "File Transfer",
+     "Peergos",
+     "Peergos/web-ui",
+     "Secure and private space online where you can store, share and view your photos, videos, music and documents.",
+     true
+    ],
+    [
+     "Photo Galleries",
+     "photoview",
+     "photoview/photoview",
+     "Photo gallery for self-hosted personal servers.",
+     true
+    ],
+    [
+     "Photo Galleries",
+     "HomeGallery",
+     "xemle/home-gallery",
+     "Browse personal photos and videos featuring tagging, mobile-friendly, and AI powered image discovery.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "wwwescape/sky-tonight-card",
+     "description": "A card that shows the planets, moon and celestial events in the sky tonight",
+     "language": "JavaScript",
+     "stars": 60,
+     "topics": [
+      "astronomy",
+      "sky",
+      "celestial-events"
+     ]
+    },
+    {
+     "full_name": "andrmoel/astronomy-bundle-js",
+     "description": "Astronomical calculations: sun, moon, planets, eclipses and celestial event times",
+     "language": "TypeScript",
+     "stars": 90,
+     "topics": [
+      "astronomy",
+      "celestial",
+      "event"
+     ]
+    },
+    {
+     "full_name": "example/issue-tracker",
+     "description": "Issues for our ISS tracker",
+     "language": "",
+     "stars": 300,
+     "topics": []
+    },
+    {
+     "full_name": "tagspaces/tagspaces",
+     "description": "An offline, open source file organizer for your spaces, with a station of tags",
+     "language": "JavaScript",
+     "stars": 4000,
+     "topics": [
+      "space",
+      "station",
+      "locator",
+      "iss",
+      "tracker"
+     ]
+    },
+    {
+     "full_name": "weewx/weewx",
+     "description": "Software for your weather station: the sky, wind and rain right now",
+     "language": "Python",
+     "stars": 900,
+     "topics": [
+      "iss",
+      "tracker",
+      "station"
+     ]
+    },
+    {
+     "full_name": "LycheeOrg/Lychee",
+     "description": "A great looking and easy-to-use photo-management-system you can run on your server, to manage and share photos.",
+     "language": "PHP",
+     "stars": 3500,
+     "topics": [
+      "photo-gallery",
+      "space-photo"
+     ],
+     "runs": "docker"
+    },
+    {
+     "full_name": "dimsemenov/PhotoSwipe",
+     "description": "JavaScript image gallery for mobile and desktop, modular, framework independent",
+     "language": "JavaScript",
+     "stars": 24000,
+     "topics": [
+      "photo-gallery",
+      "space-photo"
+     ]
+    },
+    {
+     "full_name": "JohnEdChristensen/WebbCompare",
+     "description": "Compare James Webb and Hubble space telescope images side by side",
+     "language": "JavaScript",
+     "stars": 150,
+     "topics": [
+      "space",
+      "telescope",
+      "images"
+     ]
+    },
+    {
+     "full_name": "HavenFeng/photometric_optimization",
+     "description": "Photometric optimization code for photo face reconstruction",
+     "language": "Python",
+     "stars": 800,
+     "topics": [
+      "photo",
+      "gallery",
+      "space-photo"
+     ]
+    }
+   ],
+   "yes": [
+    "EventSchedule"
+   ],
+   "code_yes": [
+    "sky-tonight-card",
+    "astronomy-bundle-js",
+    "WebbCompare",
+    "PhotoSwipe"
+   ]
+  },
+  "garden": {
+   "jobs": [
+    {
+     "name": "Plant care tracker",
+     "does": "Reminds you when to water and feed each plant in the garden",
+     "phrases": [
+      [
+       "plant",
+       "care"
+      ],
+      [
+       "plant",
+       "tracker"
+      ],
+      [
+       "garden",
+       "planner"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Miscellaneous",
+     "HortusFox",
+     "danielbrendel/hortusfox-web",
+     "A self-hosted collaborative plant management and tracking system for plant enthusiasts.",
+     true
+    ],
+    [
+     "Task Management",
+     "OpenHabitTracker",
+     "Jinjinov/OpenHabitTracker",
+     "Track habits, tasks and notes with time tracking, calendar view and completion statistics.",
+     true
+    ],
+    [
+     "Maps and Global Positioning System",
+     "TRIP",
+     "itskovacs/trip",
+     "Minimalist POI Map Tracker and Trip Planner.",
+     true
+    ],
+    [
+     "Health and Fitness",
+     "Care Planner",
+     "example/careplanner",
+     "Plan shifts and visits for home care staff.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "example/plant-it",
+     "description": "Self-hosted gardening companion to care for your plants",
+     "language": "Java",
+     "stars": 1200,
+     "topics": [
+      "plant",
+      "care",
+      "garden"
+     ],
+     "runs": "docker"
+    },
+    {
+     "full_name": "example/garden-planner-js",
+     "description": "A JavaScript library to plan garden beds and planting dates",
+     "language": "JavaScript",
+     "stars": 80,
+     "topics": [
+      "garden",
+      "planner"
+     ]
+    }
+   ],
+   "yes": [
+    "HortusFox",
+    "plant-it"
+   ],
+   "code_yes": [
+    "garden-planner-js"
+   ]
+  },
+  "homework": {
+   "jobs": [
+    {
+     "name": "Homework planner",
+     "does": "Keeps track of homework assignments and due dates for school",
+     "phrases": [
+      [
+       "homework",
+       "tracker"
+      ],
+      [
+       "assignment",
+       "planner"
+      ],
+      [
+       "school",
+       "planner"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Learning and Courses",
+     "Gibbon",
+     "GibbonEdu/core",
+     "A flexible school management platform designed to make life better for teachers, students, parents and leaders.",
+     true
+    ],
+    [
+     "Task Management",
+     "Planka",
+     "plankanban/planka",
+     "Kanban board planner for teams.",
+     true
+    ],
+    [
+     "Calendar and Contacts",
+     "Due",
+     "example/due",
+     "Due dates for invoices and bills.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "example/homework-board",
+     "description": "Track homework assignments and due dates for school",
+     "language": "TypeScript",
+     "stars": 400,
+     "topics": [
+      "homework",
+      "tracker",
+      "school"
+     ],
+     "runs": "node"
+    },
+    {
+     "full_name": "example/assignment-calendar",
+     "description": "Python library that turns school assignment due dates into a calendar",
+     "language": "Python",
+     "stars": 70,
+     "topics": [
+      "assignment",
+      "planner"
+     ]
+    }
+   ],
+   "yes": [
+    "homework-board"
+   ],
+   "code_yes": [
+    "assignment-calendar"
+   ]
+  },
+  "bookclub": {
+   "jobs": [
+    {
+     "name": "Book club reading list",
+     "does": "Keeps the book club's reading list, the next book and meeting notes",
+     "phrases": [
+      [
+       "book",
+       "club"
+      ],
+      [
+       "reading",
+       "list"
+      ],
+      [
+       "book",
+       "tracker"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Document Management - E-books",
+     "BookLogr",
+     "Mozzo1000/booklogr",
+     "Simple, self-hosted service for keeping track of your personal library and reading list.",
+     true
+    ],
+    [
+     "Read it Later Lists",
+     "wallabag",
+     "wallabag/wallabag",
+     "Save and classify articles. Read them later.",
+     true
+    ],
+    [
+     "Booking and Scheduling",
+     "Booked Scheduler",
+     "LibreBooking/app",
+     "Resource booking and scheduling for rooms and equipment.",
+     true
+    ],
+    [
+     "Events",
+     "Mobilizon",
+     "framasoft/mobilizon",
+     "Federated tool to organize events for groups and clubs.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "example/bookclub-app",
+     "description": "Run your book club: pick the next book, vote and keep meeting notes",
+     "language": "JavaScript",
+     "stars": 300,
+     "topics": [
+      "book",
+      "club",
+      "reading"
+     ],
+     "runs": "node"
+    },
+    {
+     "full_name": "example/reading-list-parser",
+     "description": "Read and convert reading list exports from book apps",
+     "language": "Python",
+     "stars": 60,
+     "topics": [
+      "reading",
+      "books"
+     ]
+    }
+   ],
+   "yes": [
+    "BookLogr",
+    "bookclub-app"
+   ],
+   "code_yes": [
+    "reading-list-parser"
+   ]
+  },
+  "car": {
+   "jobs": [
+    {
+     "name": "Car maintenance log",
+     "does": "Keeps a log of oil changes, repairs and fuel for the car",
+     "phrases": [
+      [
+       "car",
+       "maintenance"
+      ],
+      [
+       "vehicle",
+       "maintenance"
+      ],
+      [
+       "fuel",
+       "log"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Miscellaneous",
+     "Hammond",
+     "akhilrex/hammond",
+     "Self-hosted car maintenance and fuel log, with expense tracking for multiple users and vehicles.",
+     true
+    ],
+    [
+     "Miscellaneous",
+     "LubeLogger",
+     "hargata/lubelog",
+     "Vehicle maintenance and fuel mileage tracker.",
+     true
+    ],
+    [
+     "Log Management",
+     "Graylog",
+     "Graylog2/graylog2-server",
+     "Log management and analysis for your servers.",
+     true
+    ],
+    [
+     "Maps and Global Positioning System",
+     "Traccar",
+     "traccar/traccar",
+     "Modern GPS tracking platform for every vehicle.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "akhilrex/hammond",
+     "description": "Self-hosted car maintenance and fuel log, with expense tracking for multiple users and vehicles.",
+     "language": "Go",
+     "stars": 600,
+     "topics": [
+      "car",
+      "maintenance",
+      "fuel",
+      "log"
+     ],
+     "name": "Hammond"
+    },
+    {
+     "full_name": "example/obd-reader",
+     "description": "Read car engine fault codes and maintenance data over OBD-II",
+     "language": "Python",
+     "stars": 500,
+     "topics": [
+      "car",
+      "maintenance"
+     ]
+    }
+   ],
+   "needs_make": [
+    "akhilrex/hammond"
+   ],
+   "yes": [
+    "Hammond",
+    "LubeLogger"
+   ],
+   "code_yes": [
+    "obd-reader"
+   ]
+  },
+  "coder": {
+   "jobs": [
+    {
+     "name": "Code snippet keeper",
+     "does": "Saves and searches code snippets I reuse",
+     "phrases": [
+      [
+       "code",
+       "snippet"
+      ],
+      [
+       "snippet",
+       "manager"
+      ],
+      [
+       "pastebin"
+      ]
+     ]
+    }
+   ],
+   "awesome": [
+    [
+     "Pastebins",
+     "SnippetBox",
+     "pawelmalak/snippet-box",
+     "Simple snippet manager to organize your code snippets.",
+     true
+    ],
+    [
+     "Pastebins",
+     "PrivateBin",
+     "PrivateBin/PrivateBin",
+     "A minimalist, open source online pastebin.",
+     true
+    ],
+    [
+     "Software Development - IDE and Tools",
+     "code-server",
+     "coder/code-server",
+     "VS Code in the browser.",
+     true
+    ],
+    [
+     "Software Development - Project Management",
+     "Gitea",
+     "go-gitea/gitea",
+     "Painless self-hosted Git service with code review.",
+     true
+    ]
+   ],
+   "github": [
+    {
+     "full_name": "example/snippet-search-lib",
+     "description": "Full-text search for code snippets",
+     "language": "Python",
+     "stars": 90,
+     "topics": [
+      "code",
+      "snippet"
+     ]
+    }
+   ],
+   "yes": [
+    "SnippetBox",
+    "PrivateBin"
+   ],
+   "code_yes": [
+    "snippet-search-lib"
+   ]
+  }
+ }
+}

@@ -1,0 +1,14 @@
+{
+  "goal": "A wedding planner bot: vendors, budget, guest lists, colors and themes.",
+  "jobs": [
+    {"n": 0, "name": "Vendor Tracker", "does": "Manages your list of vendors and keeps them organized for the wedding",
+     "sample_ask": "Who are we planning to hire for catering and photography?", "pasted": [],
+     "phrases": [["vendor", "tracking"]]},
+    {"n": 1, "name": "Budget Monitor", "does": "Keeps track of your spending limits across all wedding categories",
+     "sample_ask": "How much have we spent so far on the reception venue?", "pasted": [],
+     "phrases": [["budget", "tracking"], ["budget", "monitor"]]},
+    {"n": 2, "name": "Theme Designer", "does": "Helps you define and maintain the color palette, ambiance, and overall feel of the event",
+     "sample_ask": "What colors and design themes do you want to stick to for the invitations?", "pasted": [],
+     "phrases": [["theme", "design"]]}
+  ]
+}

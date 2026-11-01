@@ -1,0 +1,42 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "__ID__",
+  "kind": "tool",
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "Say in one sentence what this tool does.",
+  "author": "you",
+  "license": "MIT",
+  "icon": "icons/icon.svg",
+  "run": {
+    "default": {
+      "type": "command",
+      "start": [
+        "{python}",
+        "server.py"
+      ]
+    }
+  },
+  "health": {
+    "url": "http://127.0.0.1:{port}/health",
+    "expect": 200,
+    "every_s": 60
+  },
+  "abilities": {
+    "mcp": {
+      "transport": "http",
+      "url": "http://127.0.0.1:{port}/mcp"
+    },
+    "changes": [],
+    "examples": {
+      "say_hello": [
+        "say hello to Sam"
+      ]
+    }
+  },
+  "needs": {
+    "hosts": [],
+    "keys": []
+  },
+  "consent": "__NAME__ runs on this computer. It does not use the internet."
+}

@@ -1,0 +1,210 @@
+{
+  "blocks": [
+    {
+      "type": "timeline",
+      "items": [
+        {
+          "label": "The Brine Bell rings early.",
+          "when": "supper, the first day",
+          "section": 1,
+          "who": [
+            "Tamsin Dray",
+            "Pell Dray"
+          ]
+        },
+        {
+          "label": "Oren counts the ration chits and says nothing about the debt.",
+          "when": "supper, the first day",
+          "section": 1,
+          "who": [
+            "Oren Dray",
+            "Tamsin Dray"
+          ]
+        },
+        {
+          "label": "Tamsin walks the flats on the survey line.",
+          "when": "the morning after the surge",
+          "section": 2,
+          "who": [
+            "Tamsin Dray"
+          ]
+        },
+        {
+          "label": "She finds a stranger's boot prints heading to the dead pumps.",
+          "when": "the same morning",
+          "section": 2,
+          "who": [
+            "Tamsin Dray"
+          ]
+        },
+        {
+          "label": "Tamsin finds Quill in the pump house and hides him.",
+          "when": "the second day",
+          "section": 3,
+          "who": [
+            "Tamsin Dray",
+            "Quill Asher"
+          ]
+        },
+        {
+          "label": "The Lantern goes dark.",
+          "when": "the fourth night",
+          "section": 4,
+          "who": []
+        },
+        {
+          "label": "Halden tells the station help is coming.",
+          "when": "the fourth night",
+          "section": 4,
+          "who": [
+            "Halden Roe"
+          ]
+        },
+        {
+          "label": "Tamsin finds Mira holding a badge in another name.",
+          "when": "the fourth night",
+          "section": 4,
+          "who": [
+            "Tamsin Dray",
+            "Mira Dray"
+          ]
+        },
+        {
+          "label": "Tamsin learns the Lantern is a meter for the debt.",
+          "when": "the fifth day",
+          "section": 5,
+          "who": [
+            "Tamsin Dray",
+            "Halden Roe"
+          ]
+        },
+        {
+          "label": "Pell's map shows every channel ends at the dome.",
+          "when": "the fifth day",
+          "section": 6,
+          "who": [
+            "Pell Dray",
+            "Tamsin Dray"
+          ]
+        },
+        {
+          "label": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+          "when": "low tide",
+          "section": 7,
+          "who": [
+            "Tamsin Dray",
+            "Mira Dray",
+            "Quill Asher"
+          ]
+        },
+        {
+          "label": "The Lantern comes back white and sends only what the station chooses.",
+          "when": "the next tide",
+          "section": 8,
+          "who": [
+            "Halden Roe",
+            "Oren Dray",
+            "Pell Dray",
+            "Quill Asher",
+            "Tamsin Dray"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Thread",
+        "Kind",
+        "Sections",
+        "Open or paid off"
+      ],
+      "rows": [
+        [
+          "The Lantern",
+          "main plot",
+          "1, 3, 4, 5, 7, 8",
+          "paid off"
+        ],
+        [
+          "Mira's other name",
+          "subplot",
+          "4, 5, 7",
+          "open"
+        ],
+        [
+          "Why Quill ran",
+          "subplot",
+          "3, 7, 8",
+          "open"
+        ]
+      ]
+    },
+    {
+      "type": "list",
+      "items": [
+        {
+          "text": "Mismatch: Pell is ten in section 1 and twelve in section 6, with only days between.",
+          "section": 6
+        },
+        {
+          "text": "Mismatch: Quill's ship is the Wren in section 3 and the Heron in section 7.",
+          "section": 7
+        },
+        {
+          "text": "Gap: Tamsin has the administrator's key in section 5, but the story never shows how she got it.",
+          "section": 5
+        }
+      ]
+    },
+    {
+      "type": "quote",
+      "text": "the one line between Brine Station and the company that owned it",
+      "section": 1,
+      "note": "Where the Lantern is first set up. It pays off in section 5."
+    }
+  ],
+  "views": [
+    {
+      "id": "v-20261031-2338-lantern",
+      "tab": "plot",
+      "title": "Where the Lantern shows up",
+      "asked": "show me where the Lantern is mentioned",
+      "made_at": "2026-10-31T23:38:00Z",
+      "made_by": "page",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            {
+              "text": "the Lantern blinked its slow green light",
+              "section": 1
+            },
+            {
+              "text": "The Lantern isn't sending what you think it's sending",
+              "section": 3
+            },
+            {
+              "text": "On the fourth night the Lantern went dark",
+              "section": 4
+            },
+            {
+              "text": "the dome where the Lantern's power came from",
+              "section": 6
+            },
+            {
+              "text": "it was white instead of green",
+              "section": 8
+            }
+          ]
+        },
+        {
+          "type": "quote",
+          "text": "The Lantern had never been a line home. It was a meter.",
+          "section": 5,
+          "note": "The turn of the book: the light everyone trusted is counting them."
+        }
+      ]
+    }
+  ]
+}

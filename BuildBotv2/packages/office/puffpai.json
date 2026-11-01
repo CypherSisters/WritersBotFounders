@@ -1,0 +1,45 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "office",
+  "kind": "tool",
+  "name": "Office files",
+  "version": "1.0.1",
+  "description": "Makes Word, Excel and PowerPoint files from chat. The files are yours, in My files in your data folder, and open in Office. It can also change them, once you turn that on in Settings.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "icons/office.svg",
+
+  "run": {
+    "default": { "type": "command", "python": true,
+                 "setup": ["{python} -m pip install -r requirements.txt"],
+                 "start": ["{python}", "server.py", "--port", "{port}"] }
+  },
+  "health": { "url": "http://127.0.0.1:{port}/health", "expect": 200, "every_s": 60 },
+
+  "abilities": {
+    "mcp": { "transport": "http", "url": "http://127.0.0.1:{port}/mcp" },
+    "changes": ["make_document", "edit_document"],
+    "tools": {
+      "make_document": "Make a Word, Excel or PowerPoint file on this computer, in the owner's files.",
+      "edit_document": "Change a Word, Excel or PowerPoint file in the owner's files or a folder she linked: add paragraphs, rows or slides, or replace text."
+    },
+    "examples": {
+      "make_document": ["make a packing list spreadsheet", "write my letter to the school as a Word document", "make slides for my talk on gardening"],
+      "edit_document": ["add a row for sunscreen to my packing list", "replace Bob with Ann in my letter"]
+    }
+  },
+
+  "needs": {
+    "packages": [],
+    "hosts": [],
+    "install_hosts": ["pypi.org", "files.pythonhosted.org"],
+    "keys": [],
+    "hardware": { "ram_gb": 0.2, "disk_gb": 0.1 },
+    "owner_files": "write",
+    "brain": { "text": false, "images": false }
+  },
+
+  "setup_steps": [],
+  "data": { "keep_on_remove": "keep" },
+  "consent": "Office files makes Word, Excel and PowerPoint files in My files in your data folder. It doesn't use the internet once it is installed, and removing it never removes your files."
+}

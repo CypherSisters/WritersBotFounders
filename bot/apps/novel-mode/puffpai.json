@@ -1,0 +1,12 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "novel-mode",
+  "kind": "skill",
+  "name": "Novel mode",
+  "version": "1.0.2",
+  "description": "Teaches your bot to be the writer's editor-in-chief for a whole novel or short story with the Manuscript and Maps apps: ask for the book, read it, walk the tabs, take corrections and notes, read the editor's desk, show and draw on request, and never write the book itself. It adds no tools of its own and fetches nothing itself.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "icons/novel.svg",
+  "consent": "This skill is text your bot reads. It runs nothing and uses no internet. It only tells your bot how to use Manuscript and Maps for a book."
+}

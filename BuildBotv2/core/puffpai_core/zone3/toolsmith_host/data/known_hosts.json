@@ -1,0 +1,14 @@
+{
+  "about": "The Core's known list of frontier model companies and their exact API hosts (D42, 09 section 4). A data-only zone3.toolsmith-model provider installs from the community shelf only when its company and every host are listed here; anything else needs Verified. Shipped and signed with each release (signing is PROPOSED, 09 section 3).",
+  "companies": {
+    "Anthropic": [
+      "api.anthropic.com"
+    ],
+    "OpenAI": [
+      "api.openai.com"
+    ],
+    "Google": [
+      "generativelanguage.googleapis.com"
+    ]
+  }
+}

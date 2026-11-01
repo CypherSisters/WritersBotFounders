@@ -1,0 +1,50 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "__ID__",
+  "kind": "app",
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "Say in one sentence what this app does.",
+  "author": "you",
+  "license": "MIT",
+  "icon": "icons/icon.svg",
+  "run": {
+    "default": {
+      "type": "command",
+      "start": [
+        "{python}",
+        "app.py"
+      ]
+    }
+  },
+  "health": {
+    "url": "http://127.0.0.1:{port}/health",
+    "expect": 200,
+    "every_s": 60
+  },
+  "ui": {
+    "pages": [
+      {
+        "id": "main",
+        "title": "__NAME__",
+        "path": "/",
+        "show": "in_desktop"
+      }
+    ],
+    "tray": [
+      {
+        "label": "__NAME__",
+        "icon": "icons/icon.svg",
+        "opens": "main"
+      }
+    ]
+  },
+  "needs": {
+    "hosts": [],
+    "keys": []
+  },
+  "data": {
+    "keep_on_remove": "ask"
+  },
+  "consent": "__NAME__ keeps what it saves in its own folder on this computer. It does not use the internet."
+}

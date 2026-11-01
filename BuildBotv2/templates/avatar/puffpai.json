@@ -1,0 +1,16 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "__ID__",
+  "kind": "avatar",
+  "name": "__NAME__",
+  "version": "1.1.0",
+  "description": "__NAME__, a round coral stone with a small smile, as the bot's face. Flat colours that go with the Paper look.",
+  "author": "you",
+  "license": "MIT",
+  "icon": "face.svg",
+  "avatar": {
+    "preview": "face.svg",
+    "voice": null
+  },
+  "consent": "A face for your bot. It runs nothing and uses no internet."
+}

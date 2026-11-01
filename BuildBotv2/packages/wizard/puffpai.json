@@ -1,0 +1,123 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "wizard",
+  "kind": "wizard",
+  "name": "BuildBot setup",
+  "version": "0.3.3",
+  "description": "The first-run steps: scan this computer, pick the brain, set up the vault and data folder, the Bridge, Toolsmith's model, the goal, the bot's name and look, the plan and one Yes. The steps are data; the Desktop and puffpai setup draw the same ones.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "consent": "The setup steps run on this computer. Nothing leaves your computer without your consent.",
+  "steps": [
+    { "id": "scan", "title": "Scan this computer", "fields": [], "writes": ["settings/hardware.json"] },
+    { "id": "brain", "title": "Pick the brain", "required": true, "writes": ["settings/model.json"],
+      "fields": [
+        { "id": "model", "type": "choice", "from": "/v1/model/menu", "label": "Which brain should your bot use?",
+          "help": "Local models that fit this computer, strongest first. The download starts when you pick and runs while you do the next steps.",
+          "required": true },
+        { "id": "other", "type": "text", "label": "Which model?",
+          "help": "An Ollama name, a GGUF file or link, or the address of a local OpenAI-compatible server.",
+          "examples": "qwen3:8b", "show_when": { "model": ["other"] }, "required": true }
+      ] },
+    { "id": "vault", "title": "Vault and your data folder", "required": true,
+      "writes": ["vault/", "settings/data.json"],
+      "fields": [
+        { "id": "where", "type": "choice", "label": "Where should the vault live?",
+          "help": "The vault holds your keys and private details, encrypted.",
+          "options": [
+            { "value": "here", "label": "On this computer", "note": "Recommended" },
+            { "value": "folder", "label": "A drive or folder I choose", "hidden": true },
+            { "value": "existing", "label": "A vault I already have", "hidden": true } ],
+          "required": true },
+        { "id": "folder", "type": "path", "label": "Which folder?",
+          "help": "The folder that holds the vault you already have.",
+          "show_when": { "where": ["folder", "existing"] },
+          "examples": { "windows": "E:\\PuffPAI Vault", "mac": "/Volumes/MyDrive/PuffPAI Vault",
+                        "linux": "/media/you/MyDrive/PuffPAI Vault" },
+          "required": true },
+        { "id": "pin", "type": "secret", "home": "vault:pin", "label": "Pick a PIN for your vault, at least 8 characters",
+          "help": "You type it to open the vault and to say Yes to the biggest steps.", "required": true },
+        { "id": "pin_again", "type": "secret", "home": "vault:pin", "label": "Type your PIN again",
+          "help": "So a typo can't lock you out of your own vault.",
+          "show_when": { "where": ["here", "folder"] }, "required": true },
+        { "id": "recovery", "type": "show_once", "label": "Your recovery code",
+          "show_when": { "where": ["here", "folder"] } },
+        { "id": "recovery_confirm", "type": "secret_confirm", "label": "Type the recovery code back",
+          "show_when": { "where": ["here", "folder"] }, "required": true },
+        { "id": "data_folder", "type": "path", "label": "Your data folder",
+          "help": "The ONE folder for your bot's own data. Books and downloads go with it unless you pick another place next.",
+          "examples": { "windows": "%USERPROFILE%\\PuffPAI Data", "mac": "~/PuffPAI Data", "linux": "~/PuffPAI Data" },
+          "required": false },
+        { "id": "knowledge_folder", "type": "path", "label": "Where should books and downloads go?",
+          "help": "An offline library can run to 100 GB, so it may suit another drive.",
+          "examples": { "windows": "E:\\PuffPAI Books", "mac": "/Volumes/MyDrive/PuffPAI Books", "linux": "/media/you/MyDrive/PuffPAI Books" },
+          "required": false },
+        { "id": "linked", "type": "text", "label": "Link folders you already have (optional)",
+          "help": "Folders are read where they are, never copied or changed. Put a ; between folders.",
+          "examples": { "windows": "%USERPROFILE%\\Documents\\Recipes", "mac": "~/Documents/Recipes",
+                        "linux": "~/Documents/Recipes" },
+          "required": false }
+      ] },
+    { "id": "bridge", "title": "The Bridge", "writes": ["settings/bridge.json"],
+      "fields": [
+        { "id": "posture", "type": "choice", "label": "While Toolsmith builds, may it search?",
+          "help": "The Bridge is closed. Nothing leaves your computer without your consent.",
+          "options": [
+            { "value": "search", "label": "Let Toolsmith search for apps and knowledge while it builds: GitHub, Codeberg, npm, PyPI, the MCP server list, HACS, ClawHub, skills.sh, the Hermes skills index, Hugging Face, Kiwix and Data.gov",
+              "note": "Recommended for a first build. It sends search words like \"world news map\", nothing else." },
+            { "value": "closed", "label": "Keep it closed; I'll add things myself" } ],
+          "required": true }
+      ] },
+    { "id": "toolsmith", "title": "Toolsmith's model", "writes": ["settings/toolsmith.json"],
+      "fields": [
+        { "id": "where", "type": "choice", "label": "Which model should Toolsmith use?",
+          "help": "Toolsmith installs apps. It uses the brain on this computer.",
+          "options": [
+            { "value": "local", "label": "This computer", "note": "Recommended" },
+            { "value": "cloud", "label": "Use a cloud model for Toolsmith only" } ],
+          "required": true },
+        { "id": "provider", "type": "choice", "from": "/v1/providers?slot=zone3.toolsmith-model",
+          "label": "Which company?", "show_when": { "where": ["cloud"] }, "required": true },
+        { "id": "consent", "type": "confirm", "label": "Do you agree to send this?",
+          "show_when": { "where": ["cloud"] }, "required": true },
+        { "id": "key", "type": "secret", "home": "vault:toolsmith.<provider-id>", "label": "Paste your key",
+          "help": "It goes into your vault. Nothing is sent to the company before you say Yes to a plan.",
+          "show_when": { "where": ["cloud"] }, "required": true },
+        { "id": "cost_cap", "type": "number", "label": "Cost cap for each build, in US dollars",
+          "help": "Toolsmith pauses and asks before it goes over.", "show_when": { "where": ["cloud"] },
+          "required": false },
+        { "id": "github", "type": "secret", "home": "vault:toolsmith.github",
+          "label": "Your GitHub key (optional)",
+          "help": "A personal access token from github.com. It lets Toolsmith search GitHub more: 30 searches a minute instead of 10. It stays in your vault, and only Toolsmith's GitHub searches use it. You can add it later on the Developer page.",
+          "required": false }
+      ] },
+    { "id": "goal", "title": "The goal", "writes": ["builds/<build-id>/build.json"],
+      "fields": [
+        { "id": "goal", "type": "text", "label": "What do you want your bot to do?",
+          "help": "Say it in your own words. For example: a garden helper for my vegetable beds, or a bot that knows every dinosaur.",
+          "examples": "A meal helper for our family: plan dinners for the week, make the shopping list, and find recipes for what is already in the fridge.",
+          "required": true }
+      ] },
+    { "id": "name", "title": "Name your bot", "writes": ["settings/bot.json"],
+      "fields": [
+        { "id": "name", "type": "text", "label": "What should your bot be called?",
+          "help": "Pick one of the names below, or type your own. Up to 40 characters.", "required": true }
+      ] },
+    { "id": "look", "title": "Pick its look", "writes": ["settings/bot.json"],
+      "fields": [
+        { "id": "theme", "type": "theme", "label": "Which look should your Desktop wear?",
+          "help": "You can change it later in Looks.", "required": true }
+      ] },
+    { "id": "plan", "title": "The plan",
+      "fields": [
+        { "id": "project", "type": "text", "label": "Use a project you know (optional): paste a GitHub address",
+          "examples": "https://github.com/koala73/worldmonitor", "required": false }
+      ] },
+    { "id": "yes", "title": "One Yes", "required": true,
+      "fields": [ { "id": "use", "type": "choice", "label": "Use an app already on your bot? Nothing is ticked unless you pick it.", "required": false },
+                  { "id": "yes", "type": "confirm", "label": "Build this plan?", "required": true } ] },
+    { "id": "build", "title": "Build", "fields": [] },
+    { "id": "prove", "title": "Prove", "fields": [] },
+    { "id": "done", "title": "Done", "fields": [] }
+  ]
+}

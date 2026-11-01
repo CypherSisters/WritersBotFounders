@@ -1,0 +1,6 @@
+{"title": "Storm Harbor", "open": 3, "items": [
+ {"id": "d-0a1b2c3d4e", "kind": "character", "severity": "high", "sections": [1, 9], "note": "Jennifer wants to leave the harbor, and the want never pays off.", "fix": "Let her try to leave once, in section 5.", "state": "open", "writer_note": ""},
+ {"id": "d-1b2c3d4e5f", "kind": "continuity", "severity": "medium", "sections": [2, 8], "note": "Tom's eyes are grey in 2 and brown in 8.", "fix": "Pick one version and make the other section match.", "state": "open", "writer_note": ""},
+ {"id": "d-2c3d4e5f6a", "kind": "timeline", "severity": "low", "sections": [3, 4], "note": "\"The wedding\" (section 4) happens before \"The storm\" (section 3), but it is told after it.", "fix": "If it is a flashback, make the jump clear (a date, a season, years before). If not, move it or change when it happens.", "state": "open", "writer_note": ""},
+ {"id": "d-3d4e5f6a7b", "kind": "question", "severity": "low", "sections": [6], "note": "Who sent the letter?", "fix": "", "state": "dismissed", "writer_note": ""}
+]}

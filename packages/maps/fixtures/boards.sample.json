@@ -1,0 +1,3325 @@
+{
+ "boards": [
+  {
+   "id": "std-family",
+   "kind": "family",
+   "title": "Family tree",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "family",
+    "width": 276,
+    "height": 269,
+    "note": "",
+    "legend": [
+     {
+      "text": "lines down: parent to child",
+      "cls": "parent"
+     },
+     {
+      "text": "line across: partners",
+      "cls": "partner"
+     }
+    ],
+    "draggable": false,
+    "nodes": [
+     {
+      "id": "mira",
+      "label": "Mira Dray",
+      "lines": [
+       "Mira Dray"
+      ],
+      "x": 92.7,
+      "y": 80,
+      "r": 16,
+      "cls": "supporting",
+      "title": "Mira Dray, supporting",
+      "point": {
+       "section": 1,
+       "quote": "Mira Dray",
+       "note": "Mira Dray first comes in here."
+      }
+     },
+     {
+      "id": "oren",
+      "label": "Oren Dray",
+      "lines": [
+       "Oren Dray"
+      ],
+      "x": 183.3,
+      "y": 80,
+      "r": 16,
+      "cls": "supporting",
+      "title": "Oren Dray, supporting",
+      "point": {
+       "section": 1,
+       "quote": "Oren Dray",
+       "note": "Oren Dray first comes in here."
+      }
+     },
+     {
+      "id": "pell",
+      "label": "Pell Dray",
+      "lines": [
+       "Pell Dray"
+      ],
+      "x": 77.3,
+      "y": 210,
+      "r": 16,
+      "cls": "supporting",
+      "title": "Pell Dray, supporting",
+      "point": {
+       "section": 1,
+       "quote": "Pell Dray",
+       "note": "Pell Dray first comes in here."
+      }
+     },
+     {
+      "id": "tamsin",
+      "label": "Tamsin Dray",
+      "lines": [
+       "Tamsin Dray"
+      ],
+      "x": 191.3,
+      "y": 210,
+      "r": 16,
+      "cls": "protagonist",
+      "title": "Tamsin Dray, protagonist",
+      "point": {
+       "section": 1,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray first comes in here."
+      }
+     }
+    ],
+    "edges": [],
+    "lines": [],
+    "paths": [
+     {
+      "points": [
+       [
+        108.7,
+        80.0
+       ],
+       [
+        167.3,
+        80.0
+       ]
+      ],
+      "cls": "partner",
+      "smooth": false,
+      "title": "partners"
+     },
+     {
+      "points": [
+       [
+        138.0,
+        80.0
+       ],
+       [
+        138.0,
+        151.0
+       ],
+       [
+        191.3,
+        151.0
+       ],
+       [
+        191.3,
+        194.0
+       ]
+      ],
+      "cls": "parent",
+      "smooth": false,
+      "title": ""
+     },
+     {
+      "points": [
+       [
+        138.0,
+        80.0
+       ],
+       [
+        138.0,
+        151.0
+       ],
+       [
+        77.3,
+        151.0
+       ],
+       [
+        77.3,
+        194.0
+       ]
+      ],
+      "cls": "parent",
+      "smooth": false,
+      "title": ""
+     }
+    ],
+    "rects": [],
+    "texts": [
+     {
+      "x": 138.0,
+      "y": 36,
+      "lines": [
+       "The Dray family"
+      ],
+      "cls": "head",
+      "anchor": "middle"
+     }
+    ],
+    "pins": []
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-relationships",
+   "kind": "relationships",
+   "title": "Relationship map",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "relationships",
+    "width": 540,
+    "height": 460,
+    "note": "",
+    "legend": [
+     {
+      "text": "circle size: how many sections they are in",
+      "cls": "muted"
+     },
+     {
+      "text": "solid line: a tie the story names",
+      "cls": "rel"
+     }
+    ],
+    "draggable": true,
+    "nodes": [
+     {
+      "id": "tamsin",
+      "label": "Tamsin Dray",
+      "lines": [
+       "Tamsin Dray"
+      ],
+      "x": 271.6,
+      "y": 223.2,
+      "r": 16.5,
+      "cls": "protagonist",
+      "title": "Tamsin Dray, protagonist. In 8 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray first comes in here."
+      }
+     },
+     {
+      "id": "pell",
+      "label": "Pell Dray",
+      "lines": [
+       "Pell Dray"
+      ],
+      "x": 364.8,
+      "y": 58.1,
+      "r": 13.2,
+      "cls": "supporting",
+      "title": "Pell Dray, supporting. In 3 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Pell Dray",
+       "note": "Pell Dray first comes in here."
+      }
+     },
+     {
+      "id": "mira",
+      "label": "Mira Dray",
+      "lines": [
+       "Mira Dray"
+      ],
+      "x": 206.2,
+      "y": 380.6,
+      "r": 14.0,
+      "cls": "supporting",
+      "title": "Mira Dray, supporting. In 4 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Mira Dray",
+       "note": "Mira Dray first comes in here."
+      }
+     },
+     {
+      "id": "oren",
+      "label": "Oren Dray",
+      "lines": [
+       "Oren Dray"
+      ],
+      "x": 88.4,
+      "y": 270.8,
+      "r": 13.2,
+      "cls": "supporting",
+      "title": "Oren Dray, supporting. In 3 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Oren Dray",
+       "note": "Oren Dray first comes in here."
+      }
+     },
+     {
+      "id": "quill",
+      "label": "Quill Asher",
+      "lines": [
+       "Quill Asher"
+      ],
+      "x": 444.2,
+      "y": 194.0,
+      "r": 14.7,
+      "cls": "ally",
+      "title": "Quill Asher, ally. In 5 sections.",
+      "point": {
+       "section": 3,
+       "quote": "Quill Asher",
+       "note": "Quill Asher first comes in here."
+      }
+     },
+     {
+      "id": "halden",
+      "label": "Halden Roe",
+      "lines": [
+       "Halden Roe"
+      ],
+      "x": 373.7,
+      "y": 357.9,
+      "r": 13.2,
+      "cls": "antagonist",
+      "title": "Halden Roe, antagonist. In 3 sections.",
+      "point": {
+       "section": 4,
+       "quote": "Halden Roe",
+       "note": "Halden Roe first comes in here."
+      }
+     }
+    ],
+    "edges": [
+     {
+      "from": "halden",
+      "to": "mira",
+      "label": "former colleague",
+      "cls": "rel",
+      "title": "they built the system together"
+     },
+     {
+      "from": "halden",
+      "to": "quill",
+      "label": "opponent",
+      "cls": "rel",
+      "title": "knows what the Lantern sends"
+     },
+     {
+      "from": "halden",
+      "to": "tamsin",
+      "label": "opponent",
+      "cls": "rel",
+      "title": "confronts him over the files"
+     },
+     {
+      "from": "mira",
+      "to": "oren",
+      "label": "partner",
+      "cls": "rel",
+      "title": "partner"
+     },
+     {
+      "from": "mira",
+      "to": "tamsin",
+      "label": "daughter",
+      "cls": "rel",
+      "title": "senses her mother is hiding something"
+     },
+     {
+      "from": "oren",
+      "to": "tamsin",
+      "label": "daughter",
+      "cls": "rel",
+      "title": "reads his silences"
+     },
+     {
+      "from": "pell",
+      "to": "quill",
+      "label": "friend",
+      "cls": "rel",
+      "title": "shows Quill his map"
+     },
+     {
+      "from": "pell",
+      "to": "tamsin",
+      "label": "sister",
+      "cls": "rel",
+      "title": "watches over him"
+     },
+     {
+      "from": "quill",
+      "to": "tamsin",
+      "label": "ally",
+      "cls": "rel",
+      "title": "hides him from section 3"
+     }
+    ],
+    "lines": [],
+    "paths": [],
+    "rects": [],
+    "texts": [],
+    "pins": []
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-timeline",
+   "kind": "timeline",
+   "title": "Timeline",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "timeline",
+    "width": 1301,
+    "height": 240,
+    "note": "Events in the order the story tells them.",
+    "legend": [],
+    "draggable": false,
+    "nodes": [],
+    "edges": [],
+    "lines": [
+     {
+      "x1": 60.0,
+      "y1": 120.0,
+      "x2": 1270.6,
+      "y2": 120.0,
+      "cls": "rail"
+     }
+    ],
+    "paths": [],
+    "rects": [],
+    "texts": [
+     {
+      "x": 90,
+      "y": 106.0,
+      "lines": [
+       "section 1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 90,
+      "y": 73.8,
+      "lines": [
+       "The Brine Bell",
+       "rings early."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 190,
+      "y": 144.0,
+      "lines": [
+       "section 1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 190,
+      "y": 162.0,
+      "lines": [
+       "Oren counts the",
+       "ration chits and",
+       "says nothing ab..."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 290,
+      "y": 106.0,
+      "lines": [
+       "section 2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 290,
+      "y": 57.5,
+      "lines": [
+       "Tamsin walks the",
+       "flats on the",
+       "survey line."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 390,
+      "y": 144.0,
+      "lines": [
+       "section 2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 390,
+      "y": 162.0,
+      "lines": [
+       "She finds a",
+       "stranger's boot",
+       "prints heading..."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 490,
+      "y": 106.0,
+      "lines": [
+       "section 3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 490,
+      "y": 57.5,
+      "lines": [
+       "Tamsin finds Quill",
+       "in the pump house",
+       "and hides him."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 590,
+      "y": 144.0,
+      "lines": [
+       "section 4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 590,
+      "y": 162.0,
+      "lines": [
+       "The Lantern goes",
+       "dark."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 690,
+      "y": 106.0,
+      "lines": [
+       "section 4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 690,
+      "y": 57.5,
+      "lines": [
+       "Halden tells the",
+       "station help is",
+       "coming."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 790,
+      "y": 144.0,
+      "lines": [
+       "section 4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 790,
+      "y": 162.0,
+      "lines": [
+       "Tamsin finds Mira",
+       "holding a badge in",
+       "another name."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 890,
+      "y": 106.0,
+      "lines": [
+       "section 5"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 890,
+      "y": 57.5,
+      "lines": [
+       "Tamsin learns the",
+       "Lantern is a meter",
+       "for the debt."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 990,
+      "y": 144.0,
+      "lines": [
+       "section 6"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 990,
+      "y": 162.0,
+      "lines": [
+       "Pell's map shows",
+       "every channel ends",
+       "at the dome."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 1090,
+      "y": 106.0,
+      "lines": [
+       "section 7"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 1090,
+      "y": 57.5,
+      "lines": [
+       "Tamsin swims under",
+       "the gate and finds",
+       "Mira cutting th..."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     },
+     {
+      "x": 1190,
+      "y": 144.0,
+      "lines": [
+       "section 8"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 1190,
+      "y": 162.0,
+      "lines": [
+       "The Lantern comes",
+       "back white and",
+       "sends only what..."
+      ],
+      "cls": "label",
+      "anchor": "middle"
+     }
+    ],
+    "pins": [
+     {
+      "id": "e1",
+      "label": "The Brine Bell rings early.",
+      "x": 90,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 1: The Brine Bell rings early. (supper, the first day)",
+      "point": {
+       "section": 1,
+       "quote": "The Brine Bell rings early.",
+       "note": "The Brine Bell rings early."
+      }
+     },
+     {
+      "id": "e2",
+      "label": "Oren counts the ration chits and says nothing about the debt.",
+      "x": 190,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 1: Oren counts the ration chits and says nothing about the debt. (supper, the first day)",
+      "point": {
+       "section": 1,
+       "quote": "Oren counts the ration chits and says nothing about the debt.",
+       "note": "Oren counts the ration chits and says nothing about the debt."
+      }
+     },
+     {
+      "id": "e3",
+      "label": "Tamsin walks the flats on the survey line.",
+      "x": 290,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 2: Tamsin walks the flats on the survey line. (the morning after the surge)",
+      "point": {
+       "section": 2,
+       "quote": "Tamsin walks the flats on the survey line.",
+       "note": "Tamsin walks the flats on the survey line."
+      }
+     },
+     {
+      "id": "e4",
+      "label": "She finds a stranger's boot prints heading to the dead pumps.",
+      "x": 390,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 2: She finds a stranger's boot prints heading to the dead pumps. (the same morning)",
+      "point": {
+       "section": 2,
+       "quote": "She finds a stranger's boot prints heading to the dead pumps.",
+       "note": "She finds a stranger's boot prints heading to the dead pumps."
+      }
+     },
+     {
+      "id": "e5",
+      "label": "Tamsin finds Quill in the pump house and hides him.",
+      "x": 490,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 3: Tamsin finds Quill in the pump house and hides him. (the second day)",
+      "point": {
+       "section": 3,
+       "quote": "Tamsin finds Quill in the pump house and hides him.",
+       "note": "Tamsin finds Quill in the pump house and hides him."
+      }
+     },
+     {
+      "id": "e6",
+      "label": "The Lantern goes dark.",
+      "x": 590,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 4: The Lantern goes dark. (the fourth night)",
+      "point": {
+       "section": 4,
+       "quote": "The Lantern goes dark.",
+       "note": "The Lantern goes dark."
+      }
+     },
+     {
+      "id": "e7",
+      "label": "Halden tells the station help is coming.",
+      "x": 690,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 4: Halden tells the station help is coming. (the fourth night)",
+      "point": {
+       "section": 4,
+       "quote": "Halden tells the station help is coming.",
+       "note": "Halden tells the station help is coming."
+      }
+     },
+     {
+      "id": "e8",
+      "label": "Tamsin finds Mira holding a badge in another name.",
+      "x": 790,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 4: Tamsin finds Mira holding a badge in another name. (the fourth night)",
+      "point": {
+       "section": 4,
+       "quote": "Tamsin finds Mira holding a badge in another name.",
+       "note": "Tamsin finds Mira holding a badge in another name."
+      }
+     },
+     {
+      "id": "e9",
+      "label": "Tamsin learns the Lantern is a meter for the debt.",
+      "x": 890,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 5: Tamsin learns the Lantern is a meter for the debt. (the fifth day)",
+      "point": {
+       "section": 5,
+       "quote": "Tamsin learns the Lantern is a meter for the debt.",
+       "note": "Tamsin learns the Lantern is a meter for the debt."
+      }
+     },
+     {
+      "id": "e10",
+      "label": "Pell's map shows every channel ends at the dome.",
+      "x": 990,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 6: Pell's map shows every channel ends at the dome. (the fifth day)",
+      "point": {
+       "section": 6,
+       "quote": "Pell's map shows every channel ends at the dome.",
+       "note": "Pell's map shows every channel ends at the dome."
+      }
+     },
+     {
+      "id": "e11",
+      "label": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+      "x": 1090,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 7: Tamsin swims under the gate and finds Mira cutting the meter loose. (low tide)",
+      "point": {
+       "section": 7,
+       "quote": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+       "note": "Tamsin swims under the gate and finds Mira cutting the meter loose."
+      }
+     },
+     {
+      "id": "e12",
+      "label": "The Lantern comes back white and sends only what the station chooses.",
+      "x": 1190,
+      "y": 120,
+      "r": 7,
+      "shape": "dot",
+      "cls": "event",
+      "title": "Section 8: The Lantern comes back white and sends only what the station chooses. (the next tide)",
+      "point": {
+       "section": 8,
+       "quote": "The Lantern comes back white and sends only what the station chooses.",
+       "note": "The Lantern comes back white and sends only what the station chooses."
+      }
+     }
+    ]
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-touchpoints",
+   "kind": "touchpoints",
+   "title": "Character touchpoints",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "touchpoints",
+    "width": 454,
+    "height": 318,
+    "note": "A dot where a character is in a section; a line down a column joins everyone in that section.",
+    "legend": [],
+    "draggable": false,
+    "nodes": [],
+    "edges": [],
+    "lines": [
+     {
+      "x1": 128.4,
+      "y1": 60.0,
+      "x2": 128.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 166.4,
+      "y1": 60.0,
+      "x2": 166.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 204.4,
+      "y1": 60.0,
+      "x2": 204.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 242.4,
+      "y1": 60.0,
+      "x2": 242.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 280.4,
+      "y1": 60.0,
+      "x2": 280.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 318.4,
+      "y1": 60.0,
+      "x2": 318.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 356.4,
+      "y1": 60.0,
+      "x2": 356.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 394.4,
+      "y1": 60.0,
+      "x2": 394.4,
+      "y2": 288.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 79.0,
+      "x2": 413.4,
+      "y2": 79.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 117.0,
+      "x2": 413.4,
+      "y2": 117.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 155.0,
+      "x2": 413.4,
+      "y2": 155.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 193.0,
+      "x2": 413.4,
+      "y2": 193.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 231.0,
+      "x2": 413.4,
+      "y2": 231.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 109.4,
+      "y1": 269.0,
+      "x2": 413.4,
+      "y2": 269.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 128.4,
+      "y1": 79.0,
+      "x2": 128.4,
+      "y2": 193.0,
+      "cls": "join"
+     },
+     {
+      "x1": 204.4,
+      "y1": 79.0,
+      "x2": 204.4,
+      "y2": 231.0,
+      "cls": "join"
+     },
+     {
+      "x1": 242.4,
+      "y1": 79.0,
+      "x2": 242.4,
+      "y2": 269.0,
+      "cls": "join"
+     },
+     {
+      "x1": 280.4,
+      "y1": 79.0,
+      "x2": 280.4,
+      "y2": 269.0,
+      "cls": "join"
+     },
+     {
+      "x1": 318.4,
+      "y1": 79.0,
+      "x2": 318.4,
+      "y2": 231.0,
+      "cls": "join"
+     },
+     {
+      "x1": 356.4,
+      "y1": 79.0,
+      "x2": 356.4,
+      "y2": 231.0,
+      "cls": "join"
+     },
+     {
+      "x1": 394.4,
+      "y1": 79.0,
+      "x2": 394.4,
+      "y2": 269.0,
+      "cls": "join"
+     }
+    ],
+    "paths": [],
+    "rects": [],
+    "texts": [
+     {
+      "x": 128.4,
+      "y": 46,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 166.4,
+      "y": 46,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 204.4,
+      "y": 46,
+      "lines": [
+       "3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 242.4,
+      "y": 46,
+      "lines": [
+       "4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 280.4,
+      "y": 46,
+      "lines": [
+       "5"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 318.4,
+      "y": 46,
+      "lines": [
+       "6"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 356.4,
+      "y": 46,
+      "lines": [
+       "7"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 394.4,
+      "y": 46,
+      "lines": [
+       "8"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 109.4,
+      "y": 26,
+      "lines": [
+       "Sections"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 97.4,
+      "y": 83.0,
+      "lines": [
+       "Tamsin Dray"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     },
+     {
+      "x": 97.4,
+      "y": 121.0,
+      "lines": [
+       "Mira Dray"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     },
+     {
+      "x": 97.4,
+      "y": 159.0,
+      "lines": [
+       "Oren Dray"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     },
+     {
+      "x": 97.4,
+      "y": 197.0,
+      "lines": [
+       "Pell Dray"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     },
+     {
+      "x": 97.4,
+      "y": 235.0,
+      "lines": [
+       "Quill Asher"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     },
+     {
+      "x": 97.4,
+      "y": 273.0,
+      "lines": [
+       "Halden Roe"
+      ],
+      "cls": "label",
+      "anchor": "end"
+     }
+    ],
+    "pins": [
+     {
+      "id": "tamsin@1",
+      "label": "Tamsin Dray",
+      "x": 128.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 1, with Mira, Oren, Pell",
+      "point": {
+       "section": 1,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 1."
+      }
+     },
+     {
+      "id": "mira@1",
+      "label": "Mira Dray",
+      "x": 128.4,
+      "y": 117.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Mira Dray in section 1, with Tamsin, Oren, Pell",
+      "point": {
+       "section": 1,
+       "quote": "Mira Dray",
+       "note": "Mira Dray in section 1."
+      }
+     },
+     {
+      "id": "oren@1",
+      "label": "Oren Dray",
+      "x": 128.4,
+      "y": 155.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Oren Dray in section 1, with Tamsin, Mira, Pell",
+      "point": {
+       "section": 1,
+       "quote": "Oren Dray",
+       "note": "Oren Dray in section 1."
+      }
+     },
+     {
+      "id": "pell@1",
+      "label": "Pell Dray",
+      "x": 128.4,
+      "y": 193.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Pell Dray in section 1, with Tamsin, Mira, Oren",
+      "point": {
+       "section": 1,
+       "quote": "Pell Dray",
+       "note": "Pell Dray in section 1."
+      }
+     },
+     {
+      "id": "tamsin@2",
+      "label": "Tamsin Dray",
+      "x": 166.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 2, alone",
+      "point": {
+       "section": 2,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 2."
+      }
+     },
+     {
+      "id": "tamsin@3",
+      "label": "Tamsin Dray",
+      "x": 204.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 3, with Quill",
+      "point": {
+       "section": 3,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 3."
+      }
+     },
+     {
+      "id": "quill@3",
+      "label": "Quill Asher",
+      "x": 204.4,
+      "y": 231.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "ally",
+      "title": "Quill Asher in section 3, with Tamsin",
+      "point": {
+       "section": 3,
+       "quote": "Quill Asher",
+       "note": "Quill Asher in section 3."
+      }
+     },
+     {
+      "id": "tamsin@4",
+      "label": "Tamsin Dray",
+      "x": 242.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 4, with Mira, Oren, Halden",
+      "point": {
+       "section": 4,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 4."
+      }
+     },
+     {
+      "id": "mira@4",
+      "label": "Mira Dray",
+      "x": 242.4,
+      "y": 117.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Mira Dray in section 4, with Tamsin, Oren, Halden",
+      "point": {
+       "section": 4,
+       "quote": "Mira Dray",
+       "note": "Mira Dray in section 4."
+      }
+     },
+     {
+      "id": "oren@4",
+      "label": "Oren Dray",
+      "x": 242.4,
+      "y": 155.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Oren Dray in section 4, with Tamsin, Mira, Halden",
+      "point": {
+       "section": 4,
+       "quote": "Oren Dray",
+       "note": "Oren Dray in section 4."
+      }
+     },
+     {
+      "id": "halden@4",
+      "label": "Halden Roe",
+      "x": 242.4,
+      "y": 269.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "antagonist",
+      "title": "Halden Roe in section 4, with Tamsin, Mira, Oren",
+      "point": {
+       "section": 4,
+       "quote": "Halden Roe",
+       "note": "Halden Roe in section 4."
+      }
+     },
+     {
+      "id": "tamsin@5",
+      "label": "Tamsin Dray",
+      "x": 280.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 5, with Mira, Quill, Halden",
+      "point": {
+       "section": 5,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 5."
+      }
+     },
+     {
+      "id": "mira@5",
+      "label": "Mira Dray",
+      "x": 280.4,
+      "y": 117.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Mira Dray in section 5, with Tamsin, Quill, Halden",
+      "point": {
+       "section": 5,
+       "quote": "Mira Dray",
+       "note": "Mira Dray in section 5."
+      }
+     },
+     {
+      "id": "quill@5",
+      "label": "Quill Asher",
+      "x": 280.4,
+      "y": 231.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "ally",
+      "title": "Quill Asher in section 5, with Tamsin, Mira, Halden",
+      "point": {
+       "section": 5,
+       "quote": "Quill Asher",
+       "note": "Quill Asher in section 5."
+      }
+     },
+     {
+      "id": "halden@5",
+      "label": "Halden Roe",
+      "x": 280.4,
+      "y": 269.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "antagonist",
+      "title": "Halden Roe in section 5, with Tamsin, Mira, Quill",
+      "point": {
+       "section": 5,
+       "quote": "Halden Roe",
+       "note": "Halden Roe in section 5."
+      }
+     },
+     {
+      "id": "tamsin@6",
+      "label": "Tamsin Dray",
+      "x": 318.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 6, with Pell, Quill",
+      "point": {
+       "section": 6,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 6."
+      }
+     },
+     {
+      "id": "pell@6",
+      "label": "Pell Dray",
+      "x": 318.4,
+      "y": 193.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Pell Dray in section 6, with Tamsin, Quill",
+      "point": {
+       "section": 6,
+       "quote": "Pell Dray",
+       "note": "Pell Dray in section 6."
+      }
+     },
+     {
+      "id": "quill@6",
+      "label": "Quill Asher",
+      "x": 318.4,
+      "y": 231.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "ally",
+      "title": "Quill Asher in section 6, with Tamsin, Pell",
+      "point": {
+       "section": 6,
+       "quote": "Quill Asher",
+       "note": "Quill Asher in section 6."
+      }
+     },
+     {
+      "id": "tamsin@7",
+      "label": "Tamsin Dray",
+      "x": 356.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 7, with Mira, Quill",
+      "point": {
+       "section": 7,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 7."
+      }
+     },
+     {
+      "id": "mira@7",
+      "label": "Mira Dray",
+      "x": 356.4,
+      "y": 117.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Mira Dray in section 7, with Tamsin, Quill",
+      "point": {
+       "section": 7,
+       "quote": "Mira Dray",
+       "note": "Mira Dray in section 7."
+      }
+     },
+     {
+      "id": "quill@7",
+      "label": "Quill Asher",
+      "x": 356.4,
+      "y": 231.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "ally",
+      "title": "Quill Asher in section 7, with Tamsin, Mira",
+      "point": {
+       "section": 7,
+       "quote": "Quill Asher",
+       "note": "Quill Asher in section 7."
+      }
+     },
+     {
+      "id": "tamsin@8",
+      "label": "Tamsin Dray",
+      "x": 394.4,
+      "y": 79.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "protagonist",
+      "title": "Tamsin Dray in section 8, with Oren, Pell, Quill, Halden",
+      "point": {
+       "section": 8,
+       "quote": "Tamsin Dray",
+       "note": "Tamsin Dray in section 8."
+      }
+     },
+     {
+      "id": "oren@8",
+      "label": "Oren Dray",
+      "x": 394.4,
+      "y": 155.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Oren Dray in section 8, with Tamsin, Pell, Quill, Halden",
+      "point": {
+       "section": 8,
+       "quote": "Oren Dray",
+       "note": "Oren Dray in section 8."
+      }
+     },
+     {
+      "id": "pell@8",
+      "label": "Pell Dray",
+      "x": 394.4,
+      "y": 193.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "supporting",
+      "title": "Pell Dray in section 8, with Tamsin, Oren, Quill, Halden",
+      "point": {
+       "section": 8,
+       "quote": "Pell Dray",
+       "note": "Pell Dray in section 8."
+      }
+     },
+     {
+      "id": "quill@8",
+      "label": "Quill Asher",
+      "x": 394.4,
+      "y": 231.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "ally",
+      "title": "Quill Asher in section 8, with Tamsin, Oren, Pell, Halden",
+      "point": {
+       "section": 8,
+       "quote": "Quill Asher",
+       "note": "Quill Asher in section 8."
+      }
+     },
+     {
+      "id": "halden@8",
+      "label": "Halden Roe",
+      "x": 394.4,
+      "y": 269.0,
+      "r": 7,
+      "shape": "dot",
+      "cls": "antagonist",
+      "title": "Halden Roe in section 8, with Tamsin, Oren, Pell, Quill",
+      "point": {
+       "section": 8,
+       "quote": "Halden Roe",
+       "note": "Halden Roe in section 8."
+      }
+     }
+    ]
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-arcs",
+   "kind": "arcs",
+   "title": "Arcs",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "arcs",
+    "width": 676,
+    "height": 520,
+    "note": "Each curve climbs through a character's arc, one point per beat. Hover a point for the beat.",
+    "legend": [
+     {
+      "text": "Mira Dray: wants to keep her children out of the company's books; fears being recognised",
+      "cls": "line-0"
+     },
+     {
+      "text": "Tamsin Dray: wants to see what lies past the station's lights; fears being owned by the debt the way her parents are",
+      "cls": "line-1"
+     },
+     {
+      "text": "Quill Asher: wants to stay far from the company; fears being caught",
+      "cls": "line-2"
+     }
+    ],
+    "draggable": false,
+    "nodes": [],
+    "edges": [],
+    "lines": [
+     {
+      "x1": 60.0,
+      "y1": 150.0,
+      "x2": 646.0,
+      "y2": 150.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 60.0,
+      "y1": 300.0,
+      "x2": 646.0,
+      "y2": 300.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 60.0,
+      "y1": 450.0,
+      "x2": 646.0,
+      "y2": 450.0,
+      "cls": "grid"
+     }
+    ],
+    "paths": [
+     {
+      "points": [
+       [
+        96.0,
+        144.0
+       ],
+       [
+        312.0,
+        119.3
+       ],
+       [
+        384.0,
+        94.7
+       ],
+       [
+        528.0,
+        70.0
+       ]
+      ],
+      "cls": "line-0",
+      "smooth": true,
+      "title": "Mira Dray"
+     },
+     {
+      "points": [
+       [
+        96.0,
+        294.0
+       ],
+       [
+        168.0,
+        279.2
+       ],
+       [
+        240.0,
+        264.4
+       ],
+       [
+        384.0,
+        249.6
+       ],
+       [
+        528.0,
+        234.8
+       ],
+       [
+        600.0,
+        220.0
+       ]
+      ],
+      "cls": "line-1",
+      "smooth": true,
+      "title": "Tamsin Dray"
+     },
+     {
+      "points": [
+       [
+        240.0,
+        444.0
+       ],
+       [
+        384.0,
+        425.5
+       ],
+       [
+        456.0,
+        407.0
+       ],
+       [
+        528.0,
+        388.5
+       ],
+       [
+        600.0,
+        370.0
+       ]
+      ],
+      "cls": "line-2",
+      "smooth": true,
+      "title": "Quill Asher"
+     }
+    ],
+    "rects": [],
+    "texts": [
+     {
+      "x": 12,
+      "y": 34,
+      "lines": [
+       "Mira Dray"
+      ],
+      "cls": "head",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 52,
+      "lines": [
+       "Wants to keep her children out of the company's books"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 162,
+      "lines": [
+       "Fears being recognised"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 184,
+      "lines": [
+       "Tamsin Dray"
+      ],
+      "cls": "head",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 202,
+      "lines": [
+       "Wants to see what lies past the station's lights"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 312,
+      "lines": [
+       "Fears being owned by the debt the way her parents are"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 334,
+      "lines": [
+       "Quill Asher"
+      ],
+      "cls": "head",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 352,
+      "lines": [
+       "Wants to stay far from the company"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 462,
+      "lines": [
+       "Fears being caught"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 96.0,
+      "y": 486,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 168.0,
+      "y": 486,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 240.0,
+      "y": 486,
+      "lines": [
+       "3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 312.0,
+      "y": 486,
+      "lines": [
+       "4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 384.0,
+      "y": 486,
+      "lines": [
+       "5"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 456.0,
+      "y": 486,
+      "lines": [
+       "6"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 528.0,
+      "y": 486,
+      "lines": [
+       "7"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 600.0,
+      "y": 486,
+      "lines": [
+       "8"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 60,
+      "y": 506,
+      "lines": [
+       "Sections"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     }
+    ],
+    "pins": [
+     {
+      "id": "mira-beat-1",
+      "label": "Buried in pump schematics.",
+      "x": 96.0,
+      "y": 144.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "Section 1: Buried in pump schematics.",
+      "point": {
+       "section": 1,
+       "quote": "Mira Dray",
+       "note": "Buried in pump schematics."
+      }
+     },
+     {
+      "id": "mira-beat-2",
+      "label": "Found alone with a badge in another name.",
+      "x": 312.0,
+      "y": 119.3,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "Section 4: Found alone with a badge in another name.",
+      "point": {
+       "section": 4,
+       "quote": "Mira Dray",
+       "note": "Found alone with a badge in another name."
+      }
+     },
+     {
+      "id": "mira-beat-3",
+      "label": "Named by Halden as one of the meter's makers.",
+      "x": 384.0,
+      "y": 94.7,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "Section 5: Named by Halden as one of the meter's makers.",
+      "point": {
+       "section": 5,
+       "quote": "Mira Dray",
+       "note": "Named by Halden as one of the meter's makers."
+      }
+     },
+     {
+      "id": "mira-beat-4",
+      "label": "Cuts the meter loose herself.",
+      "x": 528.0,
+      "y": 70.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "Section 7: Cuts the meter loose herself.",
+      "point": {
+       "section": 7,
+       "quote": "Mira Dray",
+       "note": "Cuts the meter loose herself."
+      }
+     },
+     {
+      "id": "tamsin-beat-1",
+      "label": "Keeps Pell from the window and repeats the station's rules.",
+      "x": 96.0,
+      "y": 294.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 1: Keeps Pell from the window and repeats the station's rules.",
+      "point": {
+       "section": 1,
+       "quote": "Tamsin Dray",
+       "note": "Keeps Pell from the window and repeats the station's rules."
+      }
+     },
+     {
+      "id": "tamsin-beat-2",
+      "label": "Walks the flats alone and first thinks she could leave.",
+      "x": 168.0,
+      "y": 279.2,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 2: Walks the flats alone and first thinks she could leave.",
+      "point": {
+       "section": 2,
+       "quote": "Tamsin Dray",
+       "note": "Walks the flats alone and first thinks she could leave."
+      }
+     },
+     {
+      "id": "tamsin-beat-3",
+      "label": "Hides Quill instead of reporting him.",
+      "x": 240.0,
+      "y": 264.4,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 3: Hides Quill instead of reporting him.",
+      "point": {
+       "section": 3,
+       "quote": "Tamsin Dray",
+       "note": "Hides Quill instead of reporting him."
+      }
+     },
+     {
+      "id": "tamsin-beat-4",
+      "label": "Learns the Lantern is a meter for the debt.",
+      "x": 384.0,
+      "y": 249.6,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 5: Learns the Lantern is a meter for the debt.",
+      "point": {
+       "section": 5,
+       "quote": "Tamsin Dray",
+       "note": "Learns the Lantern is a meter for the debt."
+      }
+     },
+     {
+      "id": "tamsin-beat-5",
+      "label": "Goes under the last gate alone.",
+      "x": 528.0,
+      "y": 234.8,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 7: Goes under the last gate alone.",
+      "point": {
+       "section": 7,
+       "quote": "Tamsin Dray",
+       "note": "Goes under the last gate alone."
+      }
+     },
+     {
+      "id": "tamsin-beat-6",
+      "label": "Chooses to stay, now that she knows she could go.",
+      "x": 600.0,
+      "y": 220.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Section 8: Chooses to stay, now that she knows she could go.",
+      "point": {
+       "section": 8,
+       "quote": "Tamsin Dray",
+       "note": "Chooses to stay, now that she knows she could go."
+      }
+     },
+     {
+      "id": "quill-beat-1",
+      "label": "Found hiding in the pump house.",
+      "x": 240.0,
+      "y": 444.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-2",
+      "title": "Section 3: Found hiding in the pump house.",
+      "point": {
+       "section": 3,
+       "quote": "Quill Asher",
+       "note": "Found hiding in the pump house."
+      }
+     },
+     {
+      "id": "quill-beat-2",
+      "label": "His tip leads Tamsin to the files.",
+      "x": 384.0,
+      "y": 425.5,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-2",
+      "title": "Section 5: His tip leads Tamsin to the files.",
+      "point": {
+       "section": 5,
+       "quote": "Quill Asher",
+       "note": "His tip leads Tamsin to the files."
+      }
+     },
+     {
+      "id": "quill-beat-3",
+      "label": "Has already seen Pell's map.",
+      "x": 456.0,
+      "y": 407.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-2",
+      "title": "Section 6: Has already seen Pell's map.",
+      "point": {
+       "section": 6,
+       "quote": "Quill Asher",
+       "note": "Has already seen Pell's map."
+      }
+     },
+     {
+      "id": "quill-beat-4",
+      "label": "Gives up his last tank for the swim.",
+      "x": 528.0,
+      "y": 388.5,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-2",
+      "title": "Section 7: Gives up his last tank for the swim.",
+      "point": {
+       "section": 7,
+       "quote": "Quill Asher",
+       "note": "Gives up his last tank for the swim."
+      }
+     },
+     {
+      "id": "quill-beat-5",
+      "label": "Leaves on the next tide.",
+      "x": 600.0,
+      "y": 370.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-2",
+      "title": "Section 8: Leaves on the next tide.",
+      "point": {
+       "section": 8,
+       "quote": "Quill Asher",
+       "note": "Leaves on the next tide."
+      }
+     }
+    ]
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-structure",
+   "kind": "structure",
+   "title": "Story structure",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "structure",
+    "width": 592,
+    "height": 336,
+    "note": "Bars: events per section. The bible has no word counts yet, so bars count events instead.",
+    "legend": [
+     {
+      "text": "The Lantern",
+      "cls": "line-0"
+     },
+     {
+      "text": "Mira's other name (open)",
+      "cls": "line-1"
+     },
+     {
+      "text": "Why Quill ran (open)",
+      "cls": "line-2"
+     },
+     {
+      "text": "diamond: a setup; dot: a payoff",
+      "cls": "muted"
+     }
+    ],
+    "draggable": false,
+    "nodes": [],
+    "edges": [],
+    "lines": [
+     {
+      "x1": 50.0,
+      "y1": 296.0,
+      "x2": 562.0,
+      "y2": 296.0,
+      "cls": "axis"
+     }
+    ],
+    "paths": [],
+    "rects": [
+     {
+      "id": "section-1",
+      "label": "Section 1",
+      "x": 61.5,
+      "y": 196.0,
+      "w": 41.0,
+      "h": 100.0,
+      "cls": "bar",
+      "title": "Section 1: 2 events. The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above.",
+      "point": {
+       "section": 1,
+       "quote": "",
+       "note": "Section 1: The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+      }
+     },
+     {
+      "id": "section-2",
+      "label": "Section 2",
+      "x": 125.5,
+      "y": 196.0,
+      "w": 41.0,
+      "h": 100.0,
+      "cls": "bar",
+      "title": "Section 2: 2 events. Tamsin walks the flats on a tether and finds a stranger's prints. She first thinks she could leave.",
+      "point": {
+       "section": 2,
+       "quote": "",
+       "note": "Section 2: Tamsin walks the flats on a tether and finds a stranger's prints. She first thinks she could leave."
+      }
+     },
+     {
+      "id": "section-3",
+      "label": "Section 3",
+      "x": 189.5,
+      "y": 246.0,
+      "w": 41.0,
+      "h": 50.0,
+      "cls": "bar",
+      "title": "Section 3: 1 events. She finds Quill Asher hiding in the pump house and hides him.",
+      "point": {
+       "section": 3,
+       "quote": "",
+       "note": "Section 3: She finds Quill Asher hiding in the pump house and hides him."
+      }
+     },
+     {
+      "id": "section-4",
+      "label": "Section 4",
+      "x": 253.5,
+      "y": 146.0,
+      "w": 41.0,
+      "h": 150.0,
+      "cls": "bar",
+      "title": "Section 4: 3 events. The Lantern goes dark. Halden promises help; Mira holds a badge with another name.",
+      "point": {
+       "section": 4,
+       "quote": "",
+       "note": "Section 4: The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+      }
+     },
+     {
+      "id": "section-5",
+      "label": "Section 5",
+      "x": 317.5,
+      "y": 246.0,
+      "w": 41.0,
+      "h": 50.0,
+      "cls": "bar",
+      "title": "Section 5: 1 events. The files show the Lantern is a meter. Halden says Mira helped write it.",
+      "point": {
+       "section": 5,
+       "quote": "",
+       "note": "Section 5: The files show the Lantern is a meter. Halden says Mira helped write it."
+      }
+     },
+     {
+      "id": "section-6",
+      "label": "Section 6",
+      "x": 381.5,
+      "y": 246.0,
+      "w": 41.0,
+      "h": 50.0,
+      "cls": "bar",
+      "title": "Section 6: 1 events. Pell's map shows every channel runs to the dome that powers the Lantern.",
+      "point": {
+       "section": 6,
+       "quote": "",
+       "note": "Section 6: Pell's map shows every channel runs to the dome that powers the Lantern."
+      }
+     },
+     {
+      "id": "section-7",
+      "label": "Section 7",
+      "x": 445.5,
+      "y": 246.0,
+      "w": 41.0,
+      "h": 50.0,
+      "cls": "bar",
+      "title": "Section 7: 1 events. At low tide Tamsin swims under the gate and finds Mira cutting the meter loose.",
+      "point": {
+       "section": 7,
+       "quote": "",
+       "note": "Section 7: At low tide Tamsin swims under the gate and finds Mira cutting the meter loose."
+      }
+     },
+     {
+      "id": "section-8",
+      "label": "Section 8",
+      "x": 509.5,
+      "y": 246.0,
+      "w": 41.0,
+      "h": 50.0,
+      "cls": "bar",
+      "title": "Section 8: 1 events. The Lantern comes back white. Quill leaves; Tamsin chooses to stay.",
+      "point": {
+       "section": 8,
+       "quote": "",
+       "note": "Section 8: The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+      }
+     }
+    ],
+    "texts": [
+     {
+      "x": 82.0,
+      "y": 190.0,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 82.0,
+      "y": 312,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 146.0,
+      "y": 190.0,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 146.0,
+      "y": 312,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 210.0,
+      "y": 240.0,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 210.0,
+      "y": 312,
+      "lines": [
+       "3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 274.0,
+      "y": 140.0,
+      "lines": [
+       "3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 274.0,
+      "y": 312,
+      "lines": [
+       "4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 338.0,
+      "y": 240.0,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 338.0,
+      "y": 312,
+      "lines": [
+       "5"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 402.0,
+      "y": 240.0,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 402.0,
+      "y": 312,
+      "lines": [
+       "6"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 466.0,
+      "y": 240.0,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 466.0,
+      "y": 312,
+      "lines": [
+       "7"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 530.0,
+      "y": 240.0,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 530.0,
+      "y": 312,
+      "lines": [
+       "8"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 50,
+      "y": 24,
+      "lines": [
+       "Setups and payoffs"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     }
+    ],
+    "pins": [
+     {
+      "id": "the-lantern-setup-1",
+      "label": "the one line to the company",
+      "x": 76.0,
+      "y": 50,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-0",
+      "title": "The Lantern, setup in section 1: the one line to the company",
+      "point": {
+       "section": 1,
+       "quote": "the one line to the company",
+       "note": "The Lantern: setup"
+      }
+     },
+     {
+      "id": "the-lantern-setup-2",
+      "label": "Quill says it is not sending what they think",
+      "x": 204.0,
+      "y": 50,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-0",
+      "title": "The Lantern, setup in section 3: Quill says it is not sending what they think",
+      "point": {
+       "section": 3,
+       "quote": "Quill says it is not sending what they think",
+       "note": "The Lantern: setup"
+      }
+     },
+     {
+      "id": "the-lantern-payoff-1",
+      "label": "it is a meter",
+      "x": 344.0,
+      "y": 50,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "The Lantern, payoff in section 5: it is a meter",
+      "point": {
+       "section": 5,
+       "quote": "it is a meter",
+       "note": "The Lantern: payoff"
+      }
+     },
+     {
+      "id": "the-lantern-payoff-2",
+      "label": "it comes back white",
+      "x": 536.0,
+      "y": 50,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "The Lantern, payoff in section 8: it comes back white",
+      "point": {
+       "section": 8,
+       "quote": "it comes back white",
+       "note": "The Lantern: payoff"
+      }
+     },
+     {
+      "id": "miras-other-name-setup-1",
+      "label": "the badge with another name",
+      "x": 268.0,
+      "y": 72,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-1",
+      "title": "Mira's other name, setup in section 4: the badge with another name",
+      "point": {
+       "section": 4,
+       "quote": "the badge with another name",
+       "note": "Mira's other name: setup"
+      }
+     },
+     {
+      "id": "miras-other-name-payoff-1",
+      "label": "she wears the badge to cut the meter",
+      "x": 472.0,
+      "y": 72,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Mira's other name, payoff in section 7: she wears the badge to cut the meter",
+      "point": {
+       "section": 7,
+       "quote": "she wears the badge to cut the meter",
+       "note": "Mira's other name: payoff"
+      }
+     },
+     {
+      "id": "quills-past-setup-1",
+      "label": "stolen filters and a practised smile",
+      "x": 204.0,
+      "y": 94,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-2",
+      "title": "Why Quill ran, setup in section 3: stolen filters and a practised smile",
+      "point": {
+       "section": 3,
+       "quote": "stolen filters and a practised smile",
+       "note": "Why Quill ran: setup"
+      }
+     }
+    ]
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-world",
+   "kind": "world",
+   "title": "World map",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "world",
+    "width": 540,
+    "height": 460,
+    "note": "A schematic, not geography: places that share a section sit close. Drag them where you see them and Save layout.",
+    "legend": [
+     {
+      "text": "thicker line: in more sections together",
+      "cls": "travel"
+     }
+    ],
+    "draggable": true,
+    "nodes": [
+     {
+      "id": "brine-station",
+      "label": "Brine Station",
+      "lines": [
+       "Brine Station"
+      ],
+      "x": 440.2,
+      "y": 346.6,
+      "r": 15.7,
+      "cls": "place",
+      "title": "Brine Station, station. The mining station where the Drays live, under the Lantern.",
+      "point": {
+       "section": 1,
+       "quote": "Brine Station",
+       "note": "The mining station where the Drays live, under the Lantern."
+      }
+     },
+     {
+      "id": "salt-flats",
+      "label": "The salt flats",
+      "lines": [
+       "The salt flats"
+      ],
+      "x": 103.5,
+      "y": 381.9,
+      "r": 14.2,
+      "cls": "place",
+      "title": "The salt flats, wilderness. Crusted brine around the station; walked only on a tether.",
+      "point": {
+       "section": 1,
+       "quote": "The salt flats",
+       "note": "Crusted brine around the station; walked only on a tether."
+      }
+     },
+     {
+      "id": "the-lantern",
+      "label": "The Lantern",
+      "lines": [
+       "The Lantern"
+      ],
+      "x": 262.5,
+      "y": 60.3,
+      "r": 16.9,
+      "cls": "place",
+      "title": "The Lantern, relay. The light above the station and its only line to the company. Powered from the old dome.",
+      "point": {
+       "section": 1,
+       "quote": "The Lantern",
+       "note": "The light above the station and its only line to the company. Powered from the old dome."
+      }
+     }
+    ],
+    "edges": [
+     {
+      "from": "brine-station",
+      "to": "salt-flats",
+      "label": "",
+      "cls": "travel w3",
+      "title": "Brine Station and The salt flats: both in sections 1, 2, 8"
+     },
+     {
+      "from": "brine-station",
+      "to": "the-lantern",
+      "label": "",
+      "cls": "travel w3",
+      "title": "Brine Station and The Lantern: both in sections 1, 4, 5, 8"
+     },
+     {
+      "from": "salt-flats",
+      "to": "the-lantern",
+      "label": "",
+      "cls": "travel w2",
+      "title": "The salt flats and The Lantern: both in sections 1, 8"
+     }
+    ],
+    "lines": [],
+    "paths": [],
+    "rects": [],
+    "texts": [],
+    "pins": []
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "std-threads",
+   "kind": "threads",
+   "title": "Thread board",
+   "asked": "",
+   "standard": true,
+   "made_at": "2026-10-31T23:40:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "threads",
+    "width": 700,
+    "height": 238,
+    "note": "",
+    "legend": [
+     {
+      "text": "diamond: a setup; dot above the lane: a payoff",
+      "cls": "muted"
+     },
+     {
+      "text": "flag at the right edge: still open at the end",
+      "cls": "open"
+     }
+    ],
+    "draggable": false,
+    "nodes": [],
+    "edges": [],
+    "lines": [
+     {
+      "x1": 180.0,
+      "y1": 50.0,
+      "x2": 180.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 240.0,
+      "y1": 50.0,
+      "x2": 240.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 300.0,
+      "y1": 50.0,
+      "x2": 300.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 360.0,
+      "y1": 50.0,
+      "x2": 360.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 420.0,
+      "y1": 50.0,
+      "x2": 420.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 480.0,
+      "y1": 50.0,
+      "x2": 480.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 540.0,
+      "y1": 50.0,
+      "x2": 540.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 600.0,
+      "y1": 50.0,
+      "x2": 600.0,
+      "y2": 218.0,
+      "cls": "grid"
+     },
+     {
+      "x1": 180.0,
+      "y1": 78.0,
+      "x2": 600.0,
+      "y2": 78.0,
+      "cls": "lane line-0"
+     },
+     {
+      "x1": 360.0,
+      "y1": 134.0,
+      "x2": 540.0,
+      "y2": 134.0,
+      "cls": "lane line-1"
+     },
+     {
+      "x1": 540.0,
+      "y1": 134.0,
+      "x2": 644.0,
+      "y2": 134.0,
+      "cls": "open"
+     },
+     {
+      "x1": 300.0,
+      "y1": 190.0,
+      "x2": 600.0,
+      "y2": 190.0,
+      "cls": "lane line-2"
+     },
+     {
+      "x1": 600.0,
+      "y1": 190.0,
+      "x2": 644.0,
+      "y2": 190.0,
+      "cls": "open"
+     }
+    ],
+    "paths": [],
+    "rects": [],
+    "texts": [
+     {
+      "x": 180.0,
+      "y": 34,
+      "lines": [
+       "1"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 240.0,
+      "y": 34,
+      "lines": [
+       "2"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 300.0,
+      "y": 34,
+      "lines": [
+       "3"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 360.0,
+      "y": 34,
+      "lines": [
+       "4"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 420.0,
+      "y": 34,
+      "lines": [
+       "5"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 480.0,
+      "y": 34,
+      "lines": [
+       "6"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 540.0,
+      "y": 34,
+      "lines": [
+       "7"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 600.0,
+      "y": 34,
+      "lines": [
+       "8"
+      ],
+      "cls": "small",
+      "anchor": "middle"
+     },
+     {
+      "x": 150,
+      "y": 16,
+      "lines": [
+       "Sections"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 76.0,
+      "lines": [
+       "The Lantern"
+      ],
+      "cls": "label",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 94.0,
+      "lines": [
+       "main plot"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 132.0,
+      "lines": [
+       "Mira's other name"
+      ],
+      "cls": "label",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 150.0,
+      "lines": [
+       "subplot"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 188.0,
+      "lines": [
+       "Why Quill ran"
+      ],
+      "cls": "label",
+      "anchor": "start"
+     },
+     {
+      "x": 12,
+      "y": 206.0,
+      "lines": [
+       "subplot"
+      ],
+      "cls": "small",
+      "anchor": "start"
+     }
+    ],
+    "pins": [
+     {
+      "id": "the-lantern@1",
+      "label": "The Lantern",
+      "x": 180.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 1",
+      "point": {
+       "section": 1,
+       "quote": "",
+       "note": "The Lantern, section 1"
+      }
+     },
+     {
+      "id": "the-lantern@3",
+      "label": "The Lantern",
+      "x": 300.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 3",
+      "point": {
+       "section": 3,
+       "quote": "",
+       "note": "The Lantern, section 3"
+      }
+     },
+     {
+      "id": "the-lantern@4",
+      "label": "The Lantern",
+      "x": 360.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 4",
+      "point": {
+       "section": 4,
+       "quote": "",
+       "note": "The Lantern, section 4"
+      }
+     },
+     {
+      "id": "the-lantern@5",
+      "label": "The Lantern",
+      "x": 420.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 5",
+      "point": {
+       "section": 5,
+       "quote": "",
+       "note": "The Lantern, section 5"
+      }
+     },
+     {
+      "id": "the-lantern@7",
+      "label": "The Lantern",
+      "x": 540.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 7",
+      "point": {
+       "section": 7,
+       "quote": "",
+       "note": "The Lantern, section 7"
+      }
+     },
+     {
+      "id": "the-lantern@8",
+      "label": "The Lantern",
+      "x": 600.0,
+      "y": 78.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-0",
+      "title": "The Lantern in section 8",
+      "point": {
+       "section": 8,
+       "quote": "",
+       "note": "The Lantern, section 8"
+      }
+     },
+     {
+      "id": "the-lantern-setup-1",
+      "label": "the one line to the company",
+      "x": 173.0,
+      "y": 66.0,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-0",
+      "title": "The Lantern, setup in section 1: the one line to the company",
+      "point": {
+       "section": 1,
+       "quote": "the one line to the company",
+       "note": "The Lantern: setup"
+      }
+     },
+     {
+      "id": "the-lantern-setup-2",
+      "label": "Quill says it is not sending what they think",
+      "x": 293.0,
+      "y": 66.0,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-0",
+      "title": "The Lantern, setup in section 3: Quill says it is not sending what they think",
+      "point": {
+       "section": 3,
+       "quote": "Quill says it is not sending what they think",
+       "note": "The Lantern: setup"
+      }
+     },
+     {
+      "id": "the-lantern-payoff-1",
+      "label": "it is a meter",
+      "x": 427.0,
+      "y": 66.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "The Lantern, payoff in section 5: it is a meter",
+      "point": {
+       "section": 5,
+       "quote": "it is a meter",
+       "note": "The Lantern: payoff"
+      }
+     },
+     {
+      "id": "the-lantern-payoff-2",
+      "label": "it comes back white",
+      "x": 607.0,
+      "y": 66.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-0",
+      "title": "The Lantern, payoff in section 8: it comes back white",
+      "point": {
+       "section": 8,
+       "quote": "it comes back white",
+       "note": "The Lantern: payoff"
+      }
+     },
+     {
+      "id": "miras-other-name@4",
+      "label": "Mira's other name",
+      "x": 360.0,
+      "y": 134.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-1",
+      "title": "Mira's other name in section 4",
+      "point": {
+       "section": 4,
+       "quote": "",
+       "note": "Mira's other name, section 4"
+      }
+     },
+     {
+      "id": "miras-other-name@5",
+      "label": "Mira's other name",
+      "x": 420.0,
+      "y": 134.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-1",
+      "title": "Mira's other name in section 5",
+      "point": {
+       "section": 5,
+       "quote": "",
+       "note": "Mira's other name, section 5"
+      }
+     },
+     {
+      "id": "miras-other-name@7",
+      "label": "Mira's other name",
+      "x": 540.0,
+      "y": 134.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-1",
+      "title": "Mira's other name in section 7",
+      "point": {
+       "section": 7,
+       "quote": "",
+       "note": "Mira's other name, section 7"
+      }
+     },
+     {
+      "id": "miras-other-name-setup-1",
+      "label": "the badge with another name",
+      "x": 353.0,
+      "y": 122.0,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-1",
+      "title": "Mira's other name, setup in section 4: the badge with another name",
+      "point": {
+       "section": 4,
+       "quote": "the badge with another name",
+       "note": "Mira's other name: setup"
+      }
+     },
+     {
+      "id": "miras-other-name-payoff-1",
+      "label": "she wears the badge to cut the meter",
+      "x": 547.0,
+      "y": 122.0,
+      "r": 6,
+      "shape": "dot",
+      "cls": "line-1",
+      "title": "Mira's other name, payoff in section 7: she wears the badge to cut the meter",
+      "point": {
+       "section": 7,
+       "quote": "she wears the badge to cut the meter",
+       "note": "Mira's other name: payoff"
+      }
+     },
+     {
+      "id": "miras-other-name-open",
+      "label": "Mira's other name",
+      "x": 654,
+      "y": 134.0,
+      "r": 7,
+      "shape": "flag",
+      "cls": "open",
+      "title": "Mira's other name is still open at the end",
+      "point": {
+       "section": 7,
+       "quote": "",
+       "note": "Mira's other name is still open after this section."
+      }
+     },
+     {
+      "id": "quills-past@3",
+      "label": "Why Quill ran",
+      "x": 300.0,
+      "y": 190.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-2",
+      "title": "Why Quill ran in section 3",
+      "point": {
+       "section": 3,
+       "quote": "",
+       "note": "Why Quill ran, section 3"
+      }
+     },
+     {
+      "id": "quills-past@7",
+      "label": "Why Quill ran",
+      "x": 540.0,
+      "y": 190.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-2",
+      "title": "Why Quill ran in section 7",
+      "point": {
+       "section": 7,
+       "quote": "",
+       "note": "Why Quill ran, section 7"
+      }
+     },
+     {
+      "id": "quills-past@8",
+      "label": "Why Quill ran",
+      "x": 600.0,
+      "y": 190.0,
+      "r": 3.5,
+      "shape": "dot",
+      "cls": "tick line-2",
+      "title": "Why Quill ran in section 8",
+      "point": {
+       "section": 8,
+       "quote": "",
+       "note": "Why Quill ran, section 8"
+      }
+     },
+     {
+      "id": "quills-past-setup-1",
+      "label": "stolen filters and a practised smile",
+      "x": 293.0,
+      "y": 178.0,
+      "r": 6,
+      "shape": "diamond",
+      "cls": "line-2",
+      "title": "Why Quill ran, setup in section 3: stolen filters and a practised smile",
+      "point": {
+       "section": 3,
+       "quote": "stolen filters and a practised smile",
+       "note": "Why Quill ran: setup"
+      }
+     },
+     {
+      "id": "quills-past-open",
+      "label": "Why Quill ran",
+      "x": 654,
+      "y": 190.0,
+      "r": 7,
+      "shape": "flag",
+      "cls": "open",
+      "title": "Why Quill ran is still open at the end",
+      "point": {
+       "section": 8,
+       "quote": "",
+       "note": "Why Quill ran is still open after this section."
+      }
+     }
+    ]
+   },
+   "saved_layout": false
+  },
+  {
+   "id": "b-20261101-090000-relationships",
+   "kind": "relationships",
+   "title": "Supporting characters: who meets whom",
+   "asked": "show me all the supporting characters and whether any of them interact",
+   "made_at": "2026-11-01T09:00:00Z",
+   "spec": {
+    "layout": "maps/1",
+    "kind": "relationships",
+    "width": 540,
+    "height": 460,
+    "note": "4 supporting characters. 6 pairs share a section or a tie.",
+    "legend": [
+     {
+      "text": "circle size: how many sections they are in",
+      "cls": "muted"
+     },
+     {
+      "text": "solid line: a tie the story names",
+      "cls": "rel"
+     },
+     {
+      "text": "dashed line: in the same section",
+      "cls": "share"
+     }
+    ],
+    "draggable": true,
+    "nodes": [
+     {
+      "id": "pell",
+      "label": "Pell Dray",
+      "lines": [
+       "Pell Dray"
+      ],
+      "x": 443.1,
+      "y": 334.2,
+      "r": 13.2,
+      "cls": "supporting",
+      "title": "Pell Dray, supporting. In 3 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Pell Dray",
+       "note": "Pell Dray first comes in here."
+      }
+     },
+     {
+      "id": "mira",
+      "label": "Mira Dray",
+      "lines": [
+       "Mira Dray"
+      ],
+      "x": 142.0,
+      "y": 383.1,
+      "r": 14.0,
+      "cls": "supporting",
+      "title": "Mira Dray, supporting. In 4 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Mira Dray",
+       "note": "Mira Dray first comes in here."
+      }
+     },
+     {
+      "id": "oren",
+      "label": "Oren Dray",
+      "lines": [
+       "Oren Dray"
+      ],
+      "x": 96.9,
+      "y": 106.0,
+      "r": 13.2,
+      "cls": "supporting",
+      "title": "Oren Dray, supporting. In 3 sections.",
+      "point": {
+       "section": 1,
+       "quote": "Oren Dray",
+       "note": "Oren Dray first comes in here."
+      }
+     },
+     {
+      "id": "quill",
+      "label": "Quill Asher",
+      "lines": [
+       "Quill Asher"
+      ],
+      "x": 398.0,
+      "y": 57.1,
+      "r": 14.7,
+      "cls": "ally",
+      "title": "Quill Asher, ally. In 5 sections.",
+      "point": {
+       "section": 3,
+       "quote": "Quill Asher",
+       "note": "Quill Asher first comes in here."
+      }
+     }
+    ],
+    "edges": [
+     {
+      "from": "mira",
+      "to": "oren",
+      "label": "partner",
+      "cls": "rel",
+      "title": "partner. Both in sections 1, 4."
+     },
+     {
+      "from": "mira",
+      "to": "pell",
+      "label": "both in 1",
+      "cls": "share",
+      "title": "both in 1. Both in section 1."
+     },
+     {
+      "from": "mira",
+      "to": "quill",
+      "label": "both in 5, 7",
+      "cls": "share",
+      "title": "both in 5, 7. Both in sections 5, 7."
+     },
+     {
+      "from": "oren",
+      "to": "pell",
+      "label": "both in 1, 8",
+      "cls": "share",
+      "title": "both in 1, 8. Both in sections 1, 8."
+     },
+     {
+      "from": "oren",
+      "to": "quill",
+      "label": "both in 8",
+      "cls": "share",
+      "title": "both in 8. Both in section 8."
+     },
+     {
+      "from": "pell",
+      "to": "quill",
+      "label": "friend",
+      "cls": "rel",
+      "title": "shows Quill his map. Both in sections 6, 8."
+     }
+    ],
+    "lines": [],
+    "paths": [],
+    "rects": [],
+    "texts": [],
+    "pins": []
+   }
+  }
+ ]
+}

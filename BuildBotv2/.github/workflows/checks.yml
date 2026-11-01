@@ -1,0 +1,40 @@
+# Checks on every push, on the three kinds of computer BuildBot runs on (D128, D132). Lean on purpose: the floor rules,
+# the port and install tests and the page tests, a few minutes each. The whole suite is the merge chat's gate.
+name: checks
+on: [push]
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: python -m pip install -q -e ".[dev]"
+      - name: The installer's practice run
+        if: runner.os != 'Windows'
+        run: PUFFPAI_INSTALL_PRETEND_MISSING=python,node,ollama bash install.sh --dry-run
+      - name: A real install, start and stop
+        if: runner.os != 'Windows'
+        run: |
+          ./install.sh --bot ci --no-setup --no-tools </dev/null
+          ./start-buildbot.sh --opens dashboard
+          ./start-buildbot.sh </dev/null
+          ./signin-buildbot.sh </dev/null
+          ./stop-buildbot.sh
+      - name: Floor rules, processes, keys, installer
+        run: python -m pytest -q -m "not docker" tests/floor tests/test_d132_install_sh.py tests/test_d132_machine_file.py tests/test_d132_posix_process.py tests/test_d132_posix_floor.py tests/test_steward.py
+      - name: Page tests
+        shell: bash
+        run: for f in tests/js/*.test.js; do node "$f" >/dev/null || { echo "failed $f"; exit 1; }; done

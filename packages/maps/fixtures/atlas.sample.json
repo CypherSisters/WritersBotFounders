@@ -1,0 +1,1878 @@
+{
+ "title": "Salt Moon",
+ "version": "atlas/1",
+ "style": "painterly, soft light, book illustration",
+ "default_style": "painterly, soft light, book illustration",
+ "maker": false,
+ "progress": null,
+ "pictures": {
+  "count": 0,
+  "ready": 0
+ },
+ "one_line": "A girl on a salt moon learns the light her station trusts is counting them, and helps her mother switch it off.",
+ "setting": "A mining station on a salt moon, under one light that is its only line to the company that owns it.",
+ "cast": [
+  {
+   "id": "tamsin",
+   "name": "Tamsin Dray",
+   "role": "protagonist",
+   "importance": "main",
+   "personality": "Curious and stubborn, she asks the question everyone else has stopped asking. She protects her brother before herself.",
+   "write_up": "Tamsin grows up on Brine Station under the Lantern. She hides a stranger, follows his warning into the station's files and learns the light is counting them. She chooses to stay and help switch it off.",
+   "traits": [
+    "curious",
+    "stubborn",
+    "protective"
+   ],
+   "aliases": [
+    "Tam"
+   ],
+   "first_seen": 1,
+   "appearances": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "sections": [
+    {
+     "section": 1,
+     "summary": "The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+    },
+    {
+     "section": 2,
+     "summary": "Tamsin walks the flats on a tether and finds a stranger's prints. She first thinks she could leave."
+    },
+    {
+     "section": 3,
+     "summary": "She finds Quill Asher hiding in the pump house and hides him."
+    },
+    {
+     "section": 4,
+     "summary": "The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+    },
+    {
+     "section": 5,
+     "summary": "The files show the Lantern is a meter. Halden says Mira helped write it."
+    },
+    {
+     "section": 6,
+     "summary": "Pell's map shows every channel runs to the dome that powers the Lantern."
+    },
+    {
+     "section": 7,
+     "summary": "At low tide Tamsin swims under the gate and finds Mira cutting the meter loose."
+    },
+    {
+     "section": 8,
+     "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    },
+    {
+     "id": "salt-flats",
+     "name": "The salt flats"
+    },
+    {
+     "id": "the-lantern",
+     "name": "The Lantern"
+    }
+   ],
+   "ties": [
+    {
+     "id": "mira",
+     "name": "Mira Dray",
+     "kind": "parent"
+    },
+    {
+     "id": "oren",
+     "name": "Oren Dray",
+     "kind": "parent"
+    },
+    {
+     "id": "pell",
+     "name": "Pell Dray",
+     "kind": "sister"
+    },
+    {
+     "id": "quill",
+     "name": "Quill Asher",
+     "kind": "ally"
+    },
+    {
+     "id": "halden",
+     "name": "Halden Roe",
+     "kind": "opponent"
+    }
+   ],
+   "point": {
+    "section": 1,
+    "quote": "Tamsin Dray",
+    "note": "Tamsin Dray first comes in here."
+   },
+   "slot": "portrait:tamsin",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Tamsin Dray",
+     "detail": "short dark hair cut with a knife",
+     "section": 1,
+     "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+    },
+    {
+     "owner": "Tamsin Dray",
+     "detail": "salt-white boots",
+     "section": 2,
+     "quote": "her boots were white to the ankle with salt"
+    },
+    {
+     "owner": "Tamsin Dray",
+     "detail": "a scar across her chin",
+     "section": 3,
+     "quote": "the scar across her chin pulled tight when she grinned"
+    },
+    {
+     "owner": "Tamsin Dray",
+     "detail": "a girl of fourteen",
+     "section": 1,
+     "quote": "a girl of fourteen who knew every pump by its cough"
+    }
+   ],
+   "prompt": "short dark hair cut with a knife, salt-white boots, a scar across her chin; a girl of fourteen; a character portrait of a person; the main character; curious, stubborn, protective; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "quill",
+   "name": "Quill Asher",
+   "role": "ally",
+   "importance": "main",
+   "personality": "Charming and evasive, he tells half of every story.",
+   "write_up": "Quill comes over the flats with a warning about the Lantern, hides in the pump house and leaves once the light comes back white.",
+   "traits": [
+    "charming",
+    "evasive"
+   ],
+   "aliases": [
+    "the stranger"
+   ],
+   "first_seen": 3,
+   "appearances": [
+    3,
+    5,
+    6,
+    7,
+    8
+   ],
+   "sections": [
+    {
+     "section": 3,
+     "summary": "She finds Quill Asher hiding in the pump house and hides him."
+    },
+    {
+     "section": 5,
+     "summary": "The files show the Lantern is a meter. Halden says Mira helped write it."
+    },
+    {
+     "section": 6,
+     "summary": "Pell's map shows every channel runs to the dome that powers the Lantern."
+    },
+    {
+     "section": 7,
+     "summary": "At low tide Tamsin swims under the gate and finds Mira cutting the meter loose."
+    },
+    {
+     "section": 8,
+     "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    },
+    {
+     "id": "salt-flats",
+     "name": "The salt flats"
+    },
+    {
+     "id": "the-lantern",
+     "name": "The Lantern"
+    }
+   ],
+   "ties": [
+    {
+     "id": "halden",
+     "name": "Halden Roe",
+     "kind": "opponent"
+    }
+   ],
+   "point": {
+    "section": 3,
+    "quote": "Quill Asher",
+    "note": "Quill Asher first comes in here."
+   },
+   "slot": "portrait:quill",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Quill Asher",
+     "detail": "a long company coat with the badges torn off",
+     "section": 3,
+     "quote": "a long company coat with the badges torn off"
+    },
+    {
+     "owner": "Quill Asher",
+     "detail": "taller than anyone on the station",
+     "section": 5,
+     "quote": "He was taller than anyone on Brine Station and stooped in every doorway."
+    }
+   ],
+   "prompt": "a long company coat with the badges torn off, taller than anyone on the station; a character portrait of a person; an ally; charming, evasive; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "halden",
+   "name": "Halden Roe",
+   "role": "antagonist",
+   "importance": "main",
+   "personality": "Tired and frightened, he keeps order by promising help that is not coming.",
+   "write_up": "Halden runs the station for the company and knows more about the meter than he says.",
+   "traits": [
+    "tired",
+    "frightened"
+   ],
+   "aliases": [
+    "the administrator"
+   ],
+   "first_seen": 4,
+   "appearances": [
+    4,
+    5,
+    8
+   ],
+   "sections": [
+    {
+     "section": 4,
+     "summary": "The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+    },
+    {
+     "section": 5,
+     "summary": "The files show the Lantern is a meter. Halden says Mira helped write it."
+    },
+    {
+     "section": 8,
+     "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    }
+   ],
+   "ties": [],
+   "point": {
+    "section": 4,
+    "quote": "Halden Roe",
+    "note": "Halden Roe first comes in here."
+   },
+   "slot": "portrait:halden",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Halden Roe",
+     "detail": "the antagonist",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Halden Roe",
+     "detail": "tired",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Halden Roe",
+     "detail": "frightened",
+     "section": null,
+     "quote": ""
+    }
+   ],
+   "prompt": "a character portrait of a person; the antagonist; tired, frightened; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "mira",
+   "name": "Mira Dray",
+   "role": "supporting",
+   "importance": "supporting",
+   "personality": "Guarded and skilled, she keeps her old name to herself.",
+   "write_up": "Mira helped build the meter under another name and is cutting it loose when her daughter finds her.",
+   "traits": [
+    "guarded",
+    "skilled"
+   ],
+   "aliases": [
+    "her mother"
+   ],
+   "first_seen": 1,
+   "appearances": [
+    1,
+    4,
+    5,
+    7
+   ],
+   "sections": [
+    {
+     "section": 1,
+     "summary": "The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+    },
+    {
+     "section": 4,
+     "summary": "The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+    },
+    {
+     "section": 5,
+     "summary": "The files show the Lantern is a meter. Halden says Mira helped write it."
+    },
+    {
+     "section": 7,
+     "summary": "At low tide Tamsin swims under the gate and finds Mira cutting the meter loose."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    },
+    {
+     "id": "the-lantern",
+     "name": "The Lantern"
+    }
+   ],
+   "ties": [
+    {
+     "id": "tamsin",
+     "name": "Tamsin Dray",
+     "kind": "child"
+    },
+    {
+     "id": "pell",
+     "name": "Pell Dray",
+     "kind": "child"
+    },
+    {
+     "id": "oren",
+     "name": "Oren Dray",
+     "kind": "partner"
+    },
+    {
+     "id": "halden",
+     "name": "Halden Roe",
+     "kind": "former colleague"
+    }
+   ],
+   "point": {
+    "section": 1,
+    "quote": "Mira Dray",
+    "note": "Mira Dray first comes in here."
+   },
+   "slot": "portrait:mira",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Mira Dray",
+     "detail": "grey hair pulled back",
+     "section": 1,
+     "quote": "Mira's grey hair was pulled back hard"
+    },
+    {
+     "owner": "Mira Dray",
+     "detail": "a burn on her left hand",
+     "section": 4,
+     "quote": "the old burn on her left hand, shiny as brine glass"
+    },
+    {
+     "owner": "Mira Dray",
+     "detail": "older than the station's records",
+     "section": 4,
+     "quote": "older than the station's records said she was"
+    }
+   ],
+   "prompt": "grey hair pulled back, a burn on her left hand; older than the station's records; a character portrait of mother a person; a supporting character; guarded, skilled; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "oren",
+   "name": "Oren Dray",
+   "role": "supporting",
+   "importance": "supporting",
+   "personality": "Quiet and careful.",
+   "write_up": "Oren counts the ration chits and says nothing about the debt.",
+   "traits": [
+    "quiet",
+    "careful"
+   ],
+   "aliases": [],
+   "first_seen": 1,
+   "appearances": [
+    1,
+    4,
+    8
+   ],
+   "sections": [
+    {
+     "section": 1,
+     "summary": "The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+    },
+    {
+     "section": 4,
+     "summary": "The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+    },
+    {
+     "section": 8,
+     "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    }
+   ],
+   "ties": [
+    {
+     "id": "tamsin",
+     "name": "Tamsin Dray",
+     "kind": "child"
+    },
+    {
+     "id": "pell",
+     "name": "Pell Dray",
+     "kind": "child"
+    },
+    {
+     "id": "mira",
+     "name": "Mira Dray",
+     "kind": "partner"
+    }
+   ],
+   "point": {
+    "section": 1,
+    "quote": "Oren Dray",
+    "note": "Oren Dray first comes in here."
+   },
+   "slot": "portrait:oren",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Oren Dray",
+     "detail": "a supporting character",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Oren Dray",
+     "detail": "quiet",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Oren Dray",
+     "detail": "careful",
+     "section": null,
+     "quote": ""
+    }
+   ],
+   "prompt": "a character portrait of a person; a supporting character; quiet, careful; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "pell",
+   "name": "Pell Dray",
+   "role": "supporting",
+   "importance": "supporting",
+   "personality": "Dreamy and observant.",
+   "write_up": "Pell maps the warm channels under the crust.",
+   "traits": [
+    "dreamy",
+    "observant"
+   ],
+   "aliases": [],
+   "first_seen": 1,
+   "appearances": [
+    1,
+    6,
+    8
+   ],
+   "sections": [
+    {
+     "section": 1,
+     "summary": "The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+    },
+    {
+     "section": 6,
+     "summary": "Pell's map shows every channel runs to the dome that powers the Lantern."
+    },
+    {
+     "section": 8,
+     "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+    }
+   ],
+   "places": [
+    {
+     "id": "brine-station",
+     "name": "Brine Station"
+    }
+   ],
+   "ties": [
+    {
+     "id": "mira",
+     "name": "Mira Dray",
+     "kind": "parent"
+    },
+    {
+     "id": "oren",
+     "name": "Oren Dray",
+     "kind": "parent"
+    },
+    {
+     "id": "quill",
+     "name": "Quill Asher",
+     "kind": "friend"
+    }
+   ],
+   "point": {
+    "section": 1,
+    "quote": "Pell Dray",
+    "note": "Pell Dray first comes in here."
+   },
+   "slot": "portrait:pell",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Pell Dray",
+     "detail": "a supporting character",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Pell Dray",
+     "detail": "dreamy",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Pell Dray",
+     "detail": "observant",
+     "section": null,
+     "quote": ""
+    }
+   ],
+   "prompt": "a character portrait of a person; a supporting character; dreamy, observant; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  },
+  {
+   "id": "wick",
+   "name": "Wick Arlo",
+   "role": "supporting",
+   "importance": "minor",
+   "personality": "",
+   "write_up": "Wick Arlo is in section 6.",
+   "traits": [
+    "loud"
+   ],
+   "aliases": [],
+   "first_seen": 6,
+   "appearances": [
+    6
+   ],
+   "sections": [
+    {
+     "section": 6,
+     "summary": "Pell's map shows every channel runs to the dome that powers the Lantern."
+    }
+   ],
+   "places": [],
+   "ties": [],
+   "point": {
+    "section": 6,
+    "quote": "Wick Arlo",
+    "note": "Wick Arlo first comes in here."
+   },
+   "slot": "portrait:wick",
+   "picture": null,
+   "making": false,
+   "why": "",
+   "note": "",
+   "proof": [
+    {
+     "owner": "Wick Arlo",
+     "detail": "a supporting character",
+     "section": null,
+     "quote": ""
+    },
+    {
+     "owner": "Wick Arlo",
+     "detail": "loud",
+     "section": null,
+     "quote": ""
+    }
+   ],
+   "prompt": "a character portrait of a person; a supporting character; loud; setting: brine, station, mining, dome, salt, moon; head and shoulders, looking at the viewer. painterly, soft light, book illustration",
+   "told_style": "painterly, soft light, book illustration"
+  }
+ ],
+ "world": {
+  "width": 540,
+  "height": 460,
+  "saved_layout": false,
+  "spec": {
+   "layout": "maps/1",
+   "kind": "world",
+   "width": 540,
+   "height": 460,
+   "note": "A schematic, not geography: places that share a section sit close. Drag them where you see them and Save layout.",
+   "legend": [
+    {
+     "text": "thicker line: in more sections together",
+     "cls": "travel"
+    }
+   ],
+   "draggable": true,
+   "nodes": [
+    {
+     "id": "brine-station",
+     "label": "Brine Station",
+     "lines": [
+      "Brine Station"
+     ],
+     "x": 440.2,
+     "y": 346.6,
+     "r": 15.7,
+     "cls": "place",
+     "title": "Brine Station, station. The mining station where the Drays live, under the Lantern.",
+     "point": {
+      "section": 1,
+      "quote": "Brine Station",
+      "note": "The mining station where the Drays live, under the Lantern."
+     }
+    },
+    {
+     "id": "salt-flats",
+     "label": "The salt flats",
+     "lines": [
+      "The salt flats"
+     ],
+     "x": 103.5,
+     "y": 381.9,
+     "r": 14.2,
+     "cls": "place",
+     "title": "The salt flats, wilderness. Crusted brine around the station; walked only on a tether.",
+     "point": {
+      "section": 1,
+      "quote": "The salt flats",
+      "note": "Crusted brine around the station; walked only on a tether."
+     }
+    },
+    {
+     "id": "the-lantern",
+     "label": "The Lantern",
+     "lines": [
+      "The Lantern"
+     ],
+     "x": 262.5,
+     "y": 60.3,
+     "r": 16.9,
+     "cls": "place",
+     "title": "The Lantern, relay. The light above the station and its only line to the company. Powered from the old dome.",
+     "point": {
+      "section": 1,
+      "quote": "The Lantern",
+      "note": "The light above the station and its only line to the company. Powered from the old dome."
+     }
+    }
+   ],
+   "edges": [
+    {
+     "from": "brine-station",
+     "to": "salt-flats",
+     "label": "",
+     "cls": "travel w3",
+     "title": "Brine Station and The salt flats: both in sections 1, 2, 8"
+    },
+    {
+     "from": "brine-station",
+     "to": "the-lantern",
+     "label": "",
+     "cls": "travel w3",
+     "title": "Brine Station and The Lantern: both in sections 1, 4, 5, 8"
+    },
+    {
+     "from": "salt-flats",
+     "to": "the-lantern",
+     "label": "",
+     "cls": "travel w2",
+     "title": "The salt flats and The Lantern: both in sections 1, 8"
+    }
+   ],
+   "lines": [],
+   "paths": [],
+   "rects": [],
+   "texts": [],
+   "pins": []
+  },
+  "pins": [
+   {
+    "id": "brine-station",
+    "name": "Brine Station",
+    "lines": [
+     "Brine Station"
+    ],
+    "x": 440.2,
+    "y": 346.6,
+    "kind": "station",
+    "notes": "The mining station where the Drays live, under the Lantern.",
+    "where": "",
+    "appearances": [
+     1,
+     2,
+     4,
+     5,
+     8
+    ],
+    "people": [
+     "tamsin",
+     "pell",
+     "oren",
+     "halden",
+     "mira",
+     "quill"
+    ],
+    "events": [
+     "e1",
+     "e2",
+     "e7",
+     "e8",
+     "e9",
+     "e10",
+     "e12"
+    ],
+    "point": {
+     "section": 1,
+     "quote": "Brine Station",
+     "note": "The mining station where the Drays live, under the Lantern."
+    },
+    "slot": "place:brine-station",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a painting of a place, a station; stacked tin domes, the smell of hot brine, pipes that knock at night; setting: brine, station, mining, dome, salt, moon; wide view, no people in the foreground. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "salt-flats",
+    "name": "The salt flats",
+    "lines": [
+     "The salt flats"
+    ],
+    "x": 103.5,
+    "y": 381.9,
+    "kind": "wilderness",
+    "notes": "Crusted brine around the station; walked only on a tether.",
+    "where": "",
+    "appearances": [
+     1,
+     2,
+     8
+    ],
+    "people": [
+     "tamsin",
+     "quill"
+    ],
+    "events": [
+     "e3",
+     "e4",
+     "e5"
+    ],
+    "point": {
+     "section": 1,
+     "quote": "The salt flats",
+     "note": "Crusted brine around the station; walked only on a tether."
+    },
+    "slot": "place:salt-flats",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "The salt flats",
+      "detail": "wilderness",
+      "section": null,
+      "quote": ""
+     },
+     {
+      "owner": "The salt flats",
+      "detail": "Crusted brine around the station; walked only on a tether",
+      "section": null,
+      "quote": ""
+     }
+    ],
+    "prompt": "a painting of a place, a wilderness; Crusted brine around the station; walked only on a tether.; setting: brine, station, mining, dome, salt, moon; wide view, no people in the foreground. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "the-lantern",
+    "name": "The Lantern",
+    "lines": [
+     "The Lantern"
+    ],
+    "x": 262.5,
+    "y": 60.3,
+    "kind": "relay",
+    "notes": "The light above the station and its only line to the company. Powered from the old dome.",
+    "where": "",
+    "appearances": [
+     1,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "people": [
+     "tamsin",
+     "mira",
+     "quill"
+    ],
+    "events": [
+     "e6",
+     "e11"
+    ],
+    "point": {
+     "section": 1,
+     "quote": "The Lantern",
+     "note": "The light above the station and its only line to the company. Powered from the old dome."
+    },
+    "slot": "place:the-lantern",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "The Lantern",
+      "detail": "a white light on a tall mast",
+      "section": 1,
+      "quote": "the Lantern burned white on its tall mast"
+     },
+     {
+      "owner": "The Lantern",
+      "detail": "it hums when it sends",
+      "section": 4,
+      "quote": "it hummed when it sent, a low note in the floor"
+     }
+    ],
+    "prompt": "a painting of a place, a relay; a white light on a tall mast, it hums when it sends; setting: brine, station, mining, dome, salt, moon; wide view, no people in the foreground. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   }
+  ],
+  "routes": [
+   {
+    "from": "salt-flats",
+    "to": "brine-station",
+    "note": "a day's walk on the tether line",
+    "relation": "The salt flats is a day's walk on the tether line from Brine Station",
+    "section": 2,
+    "quote": "a day's walk out on the tether line, and a day back"
+   },
+   {
+    "from": "the-lantern",
+    "to": "brine-station",
+    "note": "above",
+    "relation": "The Lantern is above Brine Station",
+    "section": 1,
+    "quote": "The Lantern stood above the station"
+   }
+  ],
+  "slot": "worldmap",
+  "picture": null,
+  "making": false,
+  "why": "",
+  "note": "",
+  "proof": [
+   {
+    "owner": "world map",
+    "detail": "The salt flats is a day's walk on the tether line from Brine Station",
+    "section": 2,
+    "quote": "a day's walk out on the tether line, and a day back"
+   },
+   {
+    "owner": "world map",
+    "detail": "The Lantern is above Brine Station",
+    "section": 1,
+    "quote": "The Lantern stood above the station"
+   },
+   {
+    "owner": "world map",
+    "detail": "old mining machines",
+    "section": 1,
+    "quote": ""
+   },
+   {
+    "owner": "world map",
+    "detail": "tin domes",
+    "section": 1,
+    "quote": ""
+   },
+   {
+    "owner": "world map",
+    "detail": "tether lines",
+    "section": 2,
+    "quote": ""
+   }
+  ],
+  "prompt": "a hand-drawn fantasy map showing Brine Station (station), The salt flats (wilderness), The Lantern (relay); The salt flats is a day's walk on the tether line from Brine Station; The Lantern is above Brine Station; the look of the world: old mining machines, tin domes, tether lines; setting: brine, station, mining, dome, salt, moon; seen from above, parchment, ink lines, compass rose. painterly, soft light, book illustration",
+  "told_style": "painterly, soft light, book illustration"
+ },
+ "family": {
+  "spec": {
+   "layout": "maps/1",
+   "kind": "family",
+   "width": 276,
+   "height": 325,
+   "note": "",
+   "legend": [
+    {
+     "text": "lines down: parent to child",
+     "cls": "parent"
+    },
+    {
+     "text": "line across: partners",
+     "cls": "partner"
+    }
+   ],
+   "draggable": false,
+   "nodes": [
+    {
+     "id": "mira",
+     "label": "Mira Dray",
+     "lines": [
+      "Mira Dray"
+     ],
+     "x": 92.7,
+     "y": 94,
+     "r": 30,
+     "cls": "supporting",
+     "title": "Mira Dray, supporting",
+     "point": {
+      "section": 1,
+      "quote": "Mira Dray",
+      "note": "Mira Dray first comes in here."
+     }
+    },
+    {
+     "id": "oren",
+     "label": "Oren Dray",
+     "lines": [
+      "Oren Dray"
+     ],
+     "x": 183.3,
+     "y": 94,
+     "r": 30,
+     "cls": "supporting",
+     "title": "Oren Dray, supporting",
+     "point": {
+      "section": 1,
+      "quote": "Oren Dray",
+      "note": "Oren Dray first comes in here."
+     }
+    },
+    {
+     "id": "pell",
+     "label": "Pell Dray",
+     "lines": [
+      "Pell Dray"
+     ],
+     "x": 77.3,
+     "y": 252,
+     "r": 30,
+     "cls": "supporting",
+     "title": "Pell Dray, supporting",
+     "point": {
+      "section": 1,
+      "quote": "Pell Dray",
+      "note": "Pell Dray first comes in here."
+     }
+    },
+    {
+     "id": "tamsin",
+     "label": "Tamsin Dray",
+     "lines": [
+      "Tamsin Dray"
+     ],
+     "x": 191.3,
+     "y": 252,
+     "r": 30,
+     "cls": "protagonist",
+     "title": "Tamsin Dray, protagonist",
+     "point": {
+      "section": 1,
+      "quote": "Tamsin Dray",
+      "note": "Tamsin Dray first comes in here."
+     }
+    }
+   ],
+   "edges": [],
+   "lines": [],
+   "paths": [
+    {
+     "points": [
+      [
+       122.7,
+       94.0
+      ],
+      [
+       153.3,
+       94.0
+      ]
+     ],
+     "cls": "partner",
+     "smooth": false,
+     "title": "partners"
+    },
+    {
+     "points": [
+      [
+       138.0,
+       94.0
+      ],
+      [
+       138.0,
+       179.0
+      ],
+      [
+       191.3,
+       179.0
+      ],
+      [
+       191.3,
+       222.0
+      ]
+     ],
+     "cls": "parent",
+     "smooth": false,
+     "title": ""
+    },
+    {
+     "points": [
+      [
+       138.0,
+       94.0
+      ],
+      [
+       138.0,
+       179.0
+      ],
+      [
+       77.3,
+       179.0
+      ],
+      [
+       77.3,
+       222.0
+      ]
+     ],
+     "cls": "parent",
+     "smooth": false,
+     "title": ""
+    }
+   ],
+   "rects": [],
+   "texts": [
+    {
+     "x": 138.0,
+     "y": 36,
+     "lines": [
+      "The Dray family"
+     ],
+     "cls": "head",
+     "anchor": "middle"
+    }
+   ],
+   "pins": []
+  }
+ },
+ "story": {
+  "sections_total": 8,
+  "cards": [
+   {
+    "id": "e1",
+    "text": "The Brine Bell rings early.",
+    "section": 1,
+    "when": "supper, the first day",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "tamsin",
+     "pell"
+    ],
+    "point": {
+     "section": 1,
+     "quote": "The Brine Bell rings early.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e1",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: The Brine Bell rings early; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin), a dreamy person; at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; time: supper; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e2",
+    "text": "Oren counts the ration chits and says nothing about the debt.",
+    "section": 1,
+    "when": "supper, the first day",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "oren",
+     "tamsin"
+    ],
+    "point": {
+     "section": 1,
+     "quote": "Oren counts the ration chits and says nothing about the debt.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e2",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the quiet person counts the ration chits and says nothing about the debt; people there: a quiet person, a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin); at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; time: supper; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e3",
+    "text": "Tamsin walks the flats on the survey line.",
+    "section": 2,
+    "when": "the morning after the surge",
+    "where": "salt-flats",
+    "where_name": "The salt flats",
+    "who": [
+     "tamsin"
+    ],
+    "point": {
+     "section": 2,
+     "quote": "Tamsin walks the flats on the survey line.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e3",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the curious person walks the flats on the survey line; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin); at a wilderness, Crusted brine around the station; walked only on a tether; time: morning; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e4",
+    "text": "She finds a stranger's boot prints heading to the dead pumps.",
+    "section": 2,
+    "when": "the same morning",
+    "where": "salt-flats",
+    "where_name": "The salt flats",
+    "who": [
+     "tamsin"
+    ],
+    "point": {
+     "section": 2,
+     "quote": "She finds a stranger's boot prints heading to the dead pumps.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e4",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     }
+    ],
+    "prompt": "a story illustration of one moment: She finds a stranger's boot prints heading to the dead pumps; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin); at a wilderness, Crusted brine around the station; walked only on a tether; time: morning; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e5",
+    "text": "Tamsin finds Quill in the pump house and hides him.",
+    "section": 3,
+    "when": "the second day",
+    "where": "salt-flats",
+    "where_name": "The salt flats",
+    "who": [
+     "tamsin",
+     "quill"
+    ],
+    "point": {
+     "section": 3,
+     "quote": "Tamsin finds Quill in the pump house and hides him.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e5",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Quill Asher",
+      "detail": "a long company coat with the badges torn off",
+      "section": 3,
+      "quote": "a long company coat with the badges torn off"
+     },
+     {
+      "owner": "Quill Asher",
+      "detail": "taller than anyone on the station",
+      "section": 5,
+      "quote": "He was taller than anyone on Brine Station and stooped in every doorway."
+     }
+    ],
+    "prompt": "a story illustration of one moment: the curious person finds the charming person in the pump house and hides him; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin), a charming person (a long company coat with the badges torn off, taller than anyone on the station); at a wilderness, Crusted brine around the station; walked only on a tether; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e6",
+    "text": "The Lantern goes dark.",
+    "section": 4,
+    "when": "the fourth night",
+    "where": "the-lantern",
+    "where_name": "The Lantern",
+    "who": [],
+    "point": {
+     "section": 4,
+     "quote": "The Lantern goes dark.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e6",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "The Lantern",
+      "detail": "a white light on a tall mast",
+      "section": 1,
+      "quote": "the Lantern burned white on its tall mast"
+     },
+     {
+      "owner": "The Lantern",
+      "detail": "it hums when it sends",
+      "section": 4,
+      "quote": "it hummed when it sent, a low note in the floor"
+     }
+    ],
+    "prompt": "a story illustration of one moment: The Lantern goes dark; at a relay, a white light on a tall mast, it hums when it sends; time: night; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e7",
+    "text": "Halden tells the station help is coming.",
+    "section": 4,
+    "when": "the fourth night",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "halden"
+    ],
+    "point": {
+     "section": 4,
+     "quote": "Halden tells the station help is coming.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e7",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the tired person tells the station help is coming; people there: a tired person; at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; time: night; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e8",
+    "text": "Tamsin finds Mira holding a badge in another name.",
+    "section": 4,
+    "when": "the fourth night",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "tamsin",
+     "mira"
+    ],
+    "point": {
+     "section": 4,
+     "quote": "Tamsin finds Mira holding a badge in another name.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e8",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Mira Dray",
+      "detail": "grey hair pulled back",
+      "section": 1,
+      "quote": "Mira's grey hair was pulled back hard"
+     },
+     {
+      "owner": "Mira Dray",
+      "detail": "a burn on her left hand",
+      "section": 4,
+      "quote": "the old burn on her left hand, shiny as brine glass"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the curious person finds the guarded mother holding a badge in another name; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin), a guarded mother (grey hair pulled back, a burn on her left hand); at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; time: night; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e9",
+    "text": "Tamsin learns the Lantern is a meter for the debt.",
+    "section": 5,
+    "when": "the fifth day",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "tamsin",
+     "halden"
+    ],
+    "point": {
+     "section": 5,
+     "quote": "Tamsin learns the Lantern is a meter for the debt.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e9",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the curious person learns the Lantern is a meter for the debt; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin), a tired person; at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e10",
+    "text": "Pell's map shows every channel ends at the dome.",
+    "section": 6,
+    "when": "the fifth day",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "pell",
+     "tamsin"
+    ],
+    "point": {
+     "section": 6,
+     "quote": "Pell's map shows every channel ends at the dome.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e10",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the dreamy person's map shows every channel ends at the dome; people there: a dreamy person, a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin); at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e11",
+    "text": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+    "section": 7,
+    "when": "low tide",
+    "where": "the-lantern",
+    "where_name": "The Lantern",
+    "who": [
+     "tamsin",
+     "mira",
+     "quill"
+    ],
+    "point": {
+     "section": 7,
+     "quote": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e11",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Mira Dray",
+      "detail": "grey hair pulled back",
+      "section": 1,
+      "quote": "Mira's grey hair was pulled back hard"
+     },
+     {
+      "owner": "Mira Dray",
+      "detail": "a burn on her left hand",
+      "section": 4,
+      "quote": "the old burn on her left hand, shiny as brine glass"
+     },
+     {
+      "owner": "Quill Asher",
+      "detail": "a long company coat with the badges torn off",
+      "section": 3,
+      "quote": "a long company coat with the badges torn off"
+     },
+     {
+      "owner": "Quill Asher",
+      "detail": "taller than anyone on the station",
+      "section": 5,
+      "quote": "He was taller than anyone on Brine Station and stooped in every doorway."
+     },
+     {
+      "owner": "The Lantern",
+      "detail": "a white light on a tall mast",
+      "section": 1,
+      "quote": "the Lantern burned white on its tall mast"
+     },
+     {
+      "owner": "The Lantern",
+      "detail": "it hums when it sends",
+      "section": 4,
+      "quote": "it hummed when it sent, a low note in the floor"
+     }
+    ],
+    "prompt": "a story illustration of one moment: the curious person swims under the gate and finds the guarded mother cutting the meter loose; people there: a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin), a guarded mother (grey hair pulled back, a burn on her left hand), a charming person (a long company coat with the badges torn off, taller than anyone on the station); at a relay, a white light on a tall mast, it hums when it sends; time: tide; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   },
+   {
+    "id": "e12",
+    "text": "The Lantern comes back white and sends only what the station chooses.",
+    "section": 8,
+    "when": "the next tide",
+    "where": "brine-station",
+    "where_name": "Brine Station",
+    "who": [
+     "halden",
+     "oren",
+     "pell",
+     "quill",
+     "tamsin"
+    ],
+    "point": {
+     "section": 8,
+     "quote": "The Lantern comes back white and sends only what the station chooses.",
+     "note": "From the story strip in Maps."
+    },
+    "slot": "scene:e12",
+    "picture": null,
+    "making": false,
+    "why": "",
+    "note": "",
+    "proof": [
+     {
+      "owner": "Quill Asher",
+      "detail": "a long company coat with the badges torn off",
+      "section": 3,
+      "quote": "a long company coat with the badges torn off"
+     },
+     {
+      "owner": "Quill Asher",
+      "detail": "taller than anyone on the station",
+      "section": 5,
+      "quote": "He was taller than anyone on Brine Station and stooped in every doorway."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "short dark hair cut with a knife",
+      "section": 1,
+      "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "salt-white boots",
+      "section": 2,
+      "quote": "her boots were white to the ankle with salt"
+     },
+     {
+      "owner": "Tamsin Dray",
+      "detail": "a scar across her chin",
+      "section": 3,
+      "quote": "the scar across her chin pulled tight when she grinned"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "stacked tin domes",
+      "section": 1,
+      "quote": "the stacked tin domes of Brine Station"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "the smell of hot brine",
+      "section": 1,
+      "quote": "the smell of hot brine that never left the vents"
+     },
+     {
+      "owner": "Brine Station",
+      "detail": "pipes that knock at night",
+      "section": 2,
+      "quote": "the pipes knocked all night like someone wanting in"
+     }
+    ],
+    "prompt": "a story illustration of one moment: The Lantern comes back white and sends only what the station chooses; people there: a tired person, a quiet person, a dreamy person, a charming person (a long company coat with the badges torn off, taller than anyone on the station), a curious person (short dark hair cut with a knife, salt-white boots, a scar across her chin); at a station, stacked tin domes, the smell of hot brine, pipes that knock at night; time: tide; setting: brine, station, mining, dome, salt, moon; wide scene, no text. painterly, soft light, book illustration",
+    "told_style": "painterly, soft light, book illustration"
+   }
+  ]
+ },
+ "cover": {
+  "title": "Salt Moon",
+  "one_line": "A girl on a salt moon learns the light her station trusts is counting them, and helps her mother switch it off.",
+  "themes": [
+   "a debt you inherit",
+   "being seen and being counted",
+   "leaving and staying"
+  ],
+  "slot": "cover",
+  "picture": null,
+  "making": false,
+  "why": "",
+  "note": "",
+  "proof": [],
+  "prompt": "a book cover illustration; A girl on a salt moon learns the light her station trusts is counting them, and helps her mother switch it off.; themes: a debt you inherit, being seen and being counted, leaving and staying; setting: brine, station, mining, dome, salt, moon; tall format, room at the top for a title, no lettering. painterly, soft light, book illustration",
+  "told_style": "painterly, soft light, book illustration"
+ },
+ "own_style": false
+}

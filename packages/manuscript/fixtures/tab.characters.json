@@ -1,0 +1,300 @@
+{
+  "blocks": [
+    {
+      "type": "markdown",
+      "text": "## Who is in the story\n\n**Six people** carry *Salt Moon*. Tamsin is in every section.\n\n- Most seen: **Tamsin Dray**, 8 sections\n- Arrives late: Halden Roe, from section 4\n- One family of four: the Drays"
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Name",
+        "Role",
+        "First seen",
+        "Appearances",
+        "Wants"
+      ],
+      "rows": [
+        [
+          "Tamsin Dray",
+          "protagonist",
+          {
+            "text": "Section 1",
+            "section": 1
+          },
+          "8",
+          "to see what lies past the station's lights"
+        ],
+        [
+          "Pell Dray",
+          "supporting",
+          {
+            "text": "Section 1",
+            "section": 1
+          },
+          "3",
+          "to map the whole moon"
+        ],
+        [
+          "Mira Dray",
+          "supporting",
+          {
+            "text": "Section 1",
+            "section": 1
+          },
+          "4",
+          "to keep her children out of the company's books"
+        ],
+        [
+          "Oren Dray",
+          "supporting",
+          {
+            "text": "Section 1",
+            "section": 1
+          },
+          "3",
+          "to pay the debt down"
+        ],
+        [
+          "Quill Asher",
+          "ally",
+          {
+            "text": "Section 3",
+            "section": 3
+          },
+          "5",
+          "to stay far from the company"
+        ],
+        [
+          "Halden Roe",
+          "antagonist",
+          {
+            "text": "Section 4",
+            "section": 4
+          },
+          "3",
+          "to keep the station calm"
+        ]
+      ]
+    },
+    {
+      "type": "graph",
+      "nodes": [
+        {
+          "id": "tamsin",
+          "label": "Tamsin Dray",
+          "kind": "character"
+        },
+        {
+          "id": "pell",
+          "label": "Pell Dray",
+          "kind": "character"
+        },
+        {
+          "id": "mira",
+          "label": "Mira Dray",
+          "kind": "character"
+        },
+        {
+          "id": "oren",
+          "label": "Oren Dray",
+          "kind": "character"
+        },
+        {
+          "id": "quill",
+          "label": "Quill Asher",
+          "kind": "character"
+        },
+        {
+          "id": "halden",
+          "label": "Halden Roe",
+          "kind": "character"
+        }
+      ],
+      "edges": [
+        {
+          "from": "tamsin",
+          "to": "pell",
+          "label": "sister"
+        },
+        {
+          "from": "tamsin",
+          "to": "mira",
+          "label": "daughter"
+        },
+        {
+          "from": "tamsin",
+          "to": "oren",
+          "label": "daughter"
+        },
+        {
+          "from": "tamsin",
+          "to": "quill",
+          "label": "ally"
+        },
+        {
+          "from": "tamsin",
+          "to": "halden",
+          "label": "opponent"
+        },
+        {
+          "from": "pell",
+          "to": "quill",
+          "label": "friend"
+        },
+        {
+          "from": "mira",
+          "to": "oren",
+          "label": "partner"
+        },
+        {
+          "from": "mira",
+          "to": "halden",
+          "label": "former colleague"
+        },
+        {
+          "from": "quill",
+          "to": "halden",
+          "label": "opponent"
+        },
+        {
+          "from": "oren",
+          "to": "pell",
+          "label": "father"
+        },
+        {
+          "from": "mira",
+          "to": "pell",
+          "label": "mother"
+        }
+      ]
+    },
+    {
+      "type": "tree",
+      "root": {
+        "label": "Oren Dray and Mira Dray",
+        "children": [
+          {
+            "label": "Tamsin Dray",
+            "children": []
+          },
+          {
+            "label": "Pell Dray",
+            "children": []
+          }
+        ]
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "v-20261031-2341-dray-family",
+      "tab": "characters",
+      "title": "The Dray family and who they trust",
+      "asked": "show me the Dray family and who they trust",
+      "made_at": "2026-10-31T23:41:00Z",
+      "made_by": "chat",
+      "blocks": [
+        {
+          "type": "markdown",
+          "text": "The Drays keep secrets from each other but trust each other in the end. *Quill* is the only outsider Tamsin trusts."
+        },
+        {
+          "type": "tree",
+          "root": {
+            "label": "The Dray family",
+            "children": [
+              {
+                "label": "Oren Dray",
+                "children": [
+                  {
+                    "label": "Tamsin Dray",
+                    "children": []
+                  },
+                  {
+                    "label": "Pell Dray",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "label": "Mira Dray (another name before)",
+                "children": [
+                  {
+                    "label": "Tamsin Dray",
+                    "children": []
+                  },
+                  {
+                    "label": "Pell Dray",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "graph",
+          "nodes": [
+            {
+              "id": "tamsin",
+              "label": "Tamsin Dray",
+              "kind": "character"
+            },
+            {
+              "id": "mira",
+              "label": "Mira Dray",
+              "kind": "character"
+            },
+            {
+              "id": "pell",
+              "label": "Pell Dray",
+              "kind": "character"
+            },
+            {
+              "id": "quill",
+              "label": "Quill Asher",
+              "kind": "character"
+            },
+            {
+              "id": "halden",
+              "label": "Halden Roe",
+              "kind": "character"
+            },
+            {
+              "id": "the-lantern",
+              "label": "The Lantern",
+              "kind": "place"
+            }
+          ],
+          "edges": [
+            {
+              "from": "tamsin",
+              "to": "quill",
+              "label": "trusts"
+            },
+            {
+              "from": "mira",
+              "to": "tamsin",
+              "label": "hides her name from"
+            },
+            {
+              "from": "pell",
+              "to": "quill",
+              "label": "shows his map to"
+            },
+            {
+              "from": "halden",
+              "to": "the-lantern",
+              "label": "keeps it running"
+            },
+            {
+              "from": "mira",
+              "to": "the-lantern",
+              "label": "helped build"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

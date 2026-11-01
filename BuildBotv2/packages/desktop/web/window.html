@@ -1,0 +1,86 @@
+<!-- The PuffPAI window (D81, PROPOSED): chat first, a left rail, a side pane. A second face of this ui package, on the same Core API and looks as the Desktop. -->
+<!doctype html>
+<html lang="en" data-puff-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PuffPAI</title>
+<link rel="icon" href="img/puff.webp">
+<link rel="stylesheet" href="desktop.css">
+<link rel="stylesheet" href="window.css">
+<script src="logic.js"></script>
+<script src="devzones.js"></script>
+<script src="github.js"></script>
+<script src="searchkeys.js"></script>
+<script src="addapi.js"></script>
+<script src="ownprograms.js"></script>
+<script src="addresses.js"></script>
+<script src="tool_servers.js"></script>
+<script src="theme.js"></script>
+</head>
+<body class="w-body">
+<div class="scene" aria-hidden="true"></div>
+
+<main class="w-signin" id="signin" hidden></main>
+
+<div class="w-win" id="win" hidden>
+  <header class="w-top">
+    <span class="w-grow"></span>
+    <div class="w-seg" role="group" aria-label="How you use your bot">
+      <button type="button" data-switch="terminal" title="The chat in a terminal, in this same chat">Terminal</button>
+      <button type="button" class="on" data-switch="window" aria-pressed="true" title="You are here">Window</button>
+      <button type="button" data-switch="dashboard" title="Your dashboard, in your browser">Dashboard</button>
+    </div>
+  </header>
+  <div class="w-attn" id="attn" aria-live="polite"></div>
+  <nav class="w-rail" id="rail" aria-label="Menu">
+    <div class="w-bot"><span class="w-face" id="face"></span><span id="botname"></span></div>
+    <button type="button" class="w-new" id="new-chat">+ New chat</button>
+    <div class="w-railscroll">
+      <h4>Chats</h4>
+      <div id="rail-chats"></div>
+      <h4>Builds</h4>
+      <div id="rail-builds"></div>
+      <h4>Apps</h4>
+      <div id="rail-apps"></div>
+      <div class="w-gap"></div>
+      <div id="rail-more"></div>
+    </div>
+    <div class="w-status" id="status" aria-live="polite"></div>
+  </nav>
+
+  <section class="w-chat" aria-label="Chat">
+    <button type="button" class="w-menu" id="menu-btn" aria-label="Menu">Menu</button>
+    <div class="w-logs" id="logs"></div>
+    <form class="w-composer" id="composer" autocomplete="off">
+      <div class="w-palette" id="palette" hidden></div>
+      <div class="w-box">
+        <input id="input" type="text" autocomplete="off" spellcheck="false" aria-label="Message">
+        <button type="submit" class="w-btn" id="send">Send</button>
+      </div>
+      <div class="w-hint"><kbd>/</kbd> commands, searchable by any word (try <kbd>/password</kbd>) &nbsp; "show me ..." opens it in the side pane</div>
+    </form>
+  </section>
+
+  <aside class="w-pane" id="pane" aria-label="Side pane">
+    <div class="w-tabs" id="tabs"></div>
+    <div class="w-addr" id="addr"></div>
+    <div class="w-view" id="view"></div>
+  </aside>
+</div>
+
+<div class="w-toast" id="toast" role="status"></div>
+<script src="window.js"></script>
+<script src="knowledge_place.js"></script>
+<script src="sendfile.js"></script>
+<script src="pages/home.js"></script>
+<script src="pages/apps.js"></script>
+<script src="pages/developer.js"></script>
+<script src="pages/people.js"></script>
+<script src="pages/settings.js"></script>
+<script src="pages/vault.js"></script>
+<script src="pages/knowledge.js"></script>
+<script src="pages/agents.js"></script>
+<script src="pages/outside.js"></script>
+</body>
+</html>

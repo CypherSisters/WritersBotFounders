@@ -1,0 +1,56 @@
+{
+ "total_count": 4,
+ "items": [
+  {
+   "full_name": "erennyuksell/ag-multi-account-switchboard",
+   "name": "ag-multi-account-switchboard",
+   "stargazers_count": 167,
+   "language": "TypeScript",
+   "default_branch": "main",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [],
+   "description": "Switch between AI coding accounts and watch their quotas and token budgets."
+  },
+  {
+   "full_name": "layground/pockaw",
+   "name": "pockaw",
+   "stargazers_count": 105,
+   "language": "Dart",
+   "default_branch": "master",
+   "license": {
+    "spdx_id": "GPL-3.0"
+   },
+   "topics": [
+    "budgeting",
+    "expense-tracker"
+   ],
+   "description": "A phone app for keeping a simple budget."
+  },
+  {
+   "full_name": "blessyjoybj18/budget_tracker",
+   "name": "budget_tracker",
+   "stargazers_count": 45,
+   "language": "Python",
+   "default_branch": "main",
+   "license": null,
+   "topics": [],
+   "description": "A web app to record spending and compare it with a budget."
+  },
+  {
+   "full_name": "example/envelope-budget",
+   "name": "envelope-budget",
+   "stargazers_count": 22,
+   "language": "Python",
+   "default_branch": "main",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [
+    "budget"
+   ],
+   "description": "Envelope budgeting: give every dollar a job and see what is left to spend."
+  }
+ ]
+}

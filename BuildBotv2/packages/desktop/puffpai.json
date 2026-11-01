@@ -1,0 +1,12 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "desktop",
+  "kind": "ui",
+  "name": "PuffPAI Desktop",
+  "version": "0.2.0",
+  "description": "The default Desktop, with the look and pages of the first BuildBot: Home, Chat, Apps, Building, Your turn, Developer, People, Settings, Vault, Knowledge, the Agent Team and what leaves your computer. Built only on the Core API; swap it for any other ui package.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "run": { "default": { "type": "static", "dir": "web" } },
+  "consent": "The Desktop is plain files served by the Core on this computer. Nothing leaves your computer without your consent."
+}

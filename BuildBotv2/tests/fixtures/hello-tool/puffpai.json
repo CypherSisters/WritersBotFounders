@@ -1,0 +1,27 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "hello-tool",
+  "kind": "tool",
+  "name": "Hello Tool",
+  "version": "1.0.0",
+  "description": "Says hello and keeps short notes. A tiny package for the Core's own tests.",
+  "author": "Cypher Sisters",
+  "license": "MIT",
+  "icon": "icons/hello.svg",
+
+  "run": {
+    "windows": { "type": "command", "start": ["{python}", "server.py"] },
+    "default": { "type": "command", "start": ["{python}", "server.py"] }
+  },
+  "health": { "url": "http://127.0.0.1:{port}/health", "expect": 200, "every_s": 2 },
+
+  "abilities": {
+    "mcp": { "transport": "http", "url": "http://127.0.0.1:{port}/mcp" },
+    "changes": ["write_note"],
+    "examples": { "say_hello": ["say hello to Sam"] }
+  },
+
+  "needs": { "hosts": [] },
+  "data": { "keep_on_remove": "ask" },
+  "consent": "Hello Tool keeps short notes in its own data folder on this computer. It does not use the internet."
+}

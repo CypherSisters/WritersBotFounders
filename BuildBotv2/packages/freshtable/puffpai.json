@@ -1,0 +1,82 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "freshtable",
+  "kind": "app",
+  "name": "FreshTable",
+  "version": "2.1.0",
+  "description": "Pantry, shopping list, meal plan and the recipes behind them.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "icons/pot.svg",
+
+  "run": {
+    "default": { "type": "command", "python": true, "start": ["{python}", "server.py", "--port", "{port}"] }
+  },
+  "health": { "url": "http://127.0.0.1:{port}/health", "expect": 200, "every_s": 60 },
+
+  "abilities": {
+    "mcp": { "transport": "http", "url": "http://127.0.0.1:{port}/mcp" },
+    "changes": ["add_pantry", "use_pantry", "remove_pantry", "add_shopping", "check_off_shopping",
+                "remove_shopping", "clear_bought_shopping", "add_ingredients_to_shopping",
+                "add_meal", "remove_meal", "plan_week", "add_recipe", "remove_recipe", "import_recipes"],
+    "tools": {
+      "add_pantry": "Add a food item to the pantry (food at home), or add to its count if it is already there.",
+      "list_pantry": "List what is in the pantry. Filter by a food name (\"do we have rice\"), a category, or use \"low\" for items running low.",
+      "use_pantry": "Use up some of a pantry item, or all of it (\"we ran out of milk\"). With no quantity it is all gone. When none is left it goes on the shopping list.",
+      "remove_pantry": "Take an item out of the pantry list altogether.",
+      "add_shopping": "Put an item on the shopping list. An amount and unit are kept if given, and adding the same item again adds to its amount.",
+      "list_shopping": "List what is still on the shopping list.",
+      "check_off_shopping": "Tick an item off the shopping list (bought).",
+      "remove_shopping": "Take an item off the shopping list.",
+      "clear_bought_shopping": "Clear the ticked-off (bought) items from the shopping list.",
+      "add_ingredients_to_shopping": "Put a recipe's or a planned meal's ingredients on the shopping list, skipping what is already on it or well stocked in the pantry. Leave recipe out for the whole meal plan.",
+      "list_meal_plan": "List the meals planned for the week.",
+      "add_meal": "Plan a meal for a day of the week. A saved recipe of the same name brings its ingredients and steps.",
+      "remove_meal": "Take a meal off the plan: by day, by name, or both.",
+      "plan_week": "Plan dinners for the week, favouring the saved recipes. Days that already have a meal are kept unless replace is true; only set replace when the owner said to replace the plan.",
+      "add_recipe": "Save a recipe: its name, ingredients and instructions.",
+      "list_recipes": "List the saved recipes with their ingredients. Name one recipe to get its instructions too.",
+      "remove_recipe": "Delete a saved recipe.",
+      "import_recipes": "Read recipes from a file the owner sent (text or a photo of a recipe; not PDF) and save them. A text file comes as file_name, mime and text; any other file as file_name, mime and content_b64."
+    },
+    "examples": {
+      "add_shopping": ["put milk on the shopping list", "add 2 lbs of chicken to the shopping list"],
+      "list_shopping": ["what is on the shopping list"],
+      "add_pantry": ["add a bag of rice to the pantry"],
+      "list_pantry": ["what is running low in the pantry", "do we have any rice"],
+      "use_pantry": ["we ran out of milk", "I used 2 cans of beans"],
+      "remove_pantry": ["take the old yogurt out of the pantry"],
+      "check_off_shopping": ["I bought the eggs, tick them off"],
+      "remove_shopping": ["take the bread off the shopping list"],
+      "clear_bought_shopping": ["clear the bought things off the shopping list"],
+      "add_ingredients_to_shopping": ["add what I need for the pancakes to the shopping list", "shop for this week's dinners"],
+      "list_meal_plan": ["what dinners are planned this week"],
+      "add_meal": ["plan chicken fajitas for Tuesday dinner"],
+      "remove_meal": ["take Thursday's dinner off the plan"],
+      "plan_week": ["plan dinners for the week from my recipes"],
+      "add_recipe": ["save my pancake recipe: flour, milk, eggs; whisk and fry"],
+      "list_recipes": ["which recipes have I saved", "how do I make the pancakes"],
+      "remove_recipe": ["delete the meatloaf recipe"],
+      "import_recipes": ["import the recipes in my file pancakes.txt: Pancakes. Flour, milk, eggs. Whisk and fry."]
+    }
+  },
+
+  "ui": {
+    "pages": [ { "id": "main", "title": "FreshTable", "path": "/", "show": "in_desktop" } ],
+    "tray": [ { "label": "FreshTable", "icon": "icons/pot.svg", "opens": "main" } ],
+    "widgets": [ { "id": "list", "type": "list", "title": "Shopping list", "path": "/widget/list" } ]
+  },
+
+  "needs": {
+    "packages": [],
+    "hosts": [],
+    "keys": [],
+    "hardware": { "ram_gb": 0.3 },
+    "brain": { "text": true, "images": true }
+  },
+
+  "accepts": [ { "types": [".txt", ".md", "text/*", "image/*"], "tool": "import_recipes" } ],
+  "setup_steps": [],
+  "data": { "keep_on_remove": "ask" },
+  "consent": "FreshTable keeps your pantry, lists and recipes in its own data folder on this computer. Meal plans, recipe reading and receipt and photo reading use the brain on this computer. It does not use the internet."
+}

@@ -1,0 +1,6 @@
+{"total_count": 4, "incomplete_results": false, "items": [
+ {"full_name": "example/news-map", "name": "news-map", "description": "A world news map you run yourself", "stargazers_count": 4200, "language": "TypeScript", "topics": ["news", "map"], "archived": false, "fork": false, "default_branch": "main", "license": {"spdx_id": "MIT"}},
+ {"full_name": "example/awesome-news", "name": "awesome-news", "description": "A list of news tools", "stargazers_count": 9000, "language": null, "topics": ["awesome"], "archived": false, "fork": false},
+ {"full_name": "example/news-lib", "name": "news-lib", "description": "A Python library to parse news feeds", "stargazers_count": 800, "language": "Python", "topics": [], "archived": false, "fork": false, "default_branch": "main"},
+ {"full_name": "example/old-news", "name": "old-news", "description": "An old news reader", "stargazers_count": 300, "language": "Go", "topics": [], "archived": true, "fork": false}
+]}

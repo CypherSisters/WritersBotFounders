@@ -1,0 +1,95 @@
+<!-- Harvested from PuffPAIBuildBot@774e27a4:dashboard/app/dashboard/layout.tsx (adapted: the rail, top bar, footer bar and chat panel, as plain HTML) -->
+<!doctype html>
+<html lang="en" data-puff-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PuffPAI Desktop</title>
+<link rel="icon" href="/ui/img/puff.webp">
+<link rel="stylesheet" href="/ui/desktop.css">
+<script src="/ui/logic.js"></script>
+<script src="/ui/devzones.js"></script>
+<script src="/ui/github.js"></script>
+<script src="/ui/searchkeys.js"></script>
+<script src="/ui/addapi.js"></script>
+<script src="/ui/ownprograms.js"></script>
+<script src="/ui/addresses.js"></script>
+<script src="/ui/tool_servers.js"></script>
+<script src="/ui/theme.js"></script>
+</head>
+<body>
+<div class="scene" aria-hidden="true"></div>
+<div class="app">
+  <aside class="rail" id="rail" aria-label="Menu">
+    <div class="brand"><img src="/ui/img/puff.webp" alt="Puff"><div class="word">Puff<span>PAI</span></div></div>
+    <div class="scroll">
+      <nav id="rail-primary" aria-label="Main"></nav>
+      <div class="sep" id="rail-apps-sep" hidden></div>
+      <div class="micro group-label" id="rail-apps-label" hidden>Your apps</div>
+      <nav id="rail-apps" aria-label="Your apps"></nav>
+      <div class="sep"></div>
+      <nav id="rail-secondary" aria-label="More"></nav>
+      <div class="sep"></div>
+      <nav id="rail-settings" aria-label="Settings"></nav>
+    </div>
+    <a class="private" id="private" href="#vault"></a>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="col">
+    <header class="topbar">
+      <button class="iconbtn menu" id="menu-btn" aria-label="Menu"><span class="msr">menu</span></button>
+      <span class="botname" id="botname">Puff</span>
+      <h1 id="title">Home</h1>
+      <div class="chips" id="chips" aria-live="polite"></div>
+      <button class="ghost" id="window-btn" title="Back to the PuffPAI window">Open the window</button>
+      <button class="iconbtn" id="theme-btn" aria-label="Day or night"><span class="msr">dark_mode</span></button>
+      <button class="iconbtn" id="chat-btn" aria-label="Chat"><span class="msr">forum</span></button>
+      <div class="face-mini" id="face-mini"></div>
+    </header>
+
+    <main id="main">
+      <div id="notices" class="cards"></div>
+      <div id="views"></div>
+      <section id="view-setup" class="view" hidden>
+        <ol class="wsteps" id="wiz-steps"></ol>
+        <div class="wiz" id="wiz"></div>
+      </section>
+      <section id="view-page" class="view pagefr" hidden>
+        <div class="row"><span class="micro" id="page-title"></span><span class="grow"></span>
+          <button id="page-tab" class="link">Open in a new tab</button></div>
+        <iframe id="page-frame" title="Package page" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" referrerpolicy="no-referrer"></iframe>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Nothing leaves your computer without your consent.</span>
+      <span><b>PuffPAI by Cypher Sisters. puff puff pass</b></span>
+    </footer>
+  </div>
+
+  <aside class="chatpanel" id="chatpanel" hidden aria-label="Chat">
+    <div class="phead"><span class="msr">chat_bubble</span><h2>Chat</h2>
+      <button class="iconbtn ghost" id="chat-full" aria-label="Open the Chat page"><span class="msr">open_in_full</span></button>
+      <button class="iconbtn ghost" id="chat-close" aria-label="Close chat"><span class="msr">close</span></button></div>
+    <div id="chat-dock"></div>
+  </aside>
+</div>
+
+<script src="/ui/desktop.js"></script>
+<script src="/ui/pages/home.js"></script>
+<script src="/ui/pages/chat.js"></script>
+<script src="/ui/pages/apps.js"></script>
+<script src="/ui/pages/building.js"></script>
+<script src="/ui/pages/yourturn.js"></script>
+<script src="/ui/knowledge_place.js"></script>
+<script src="/ui/sendfile.js"></script>
+<script src="/ui/pages/developer.js"></script>
+<script src="/ui/pages/people.js"></script>
+<script src="/ui/pages/settings.js"></script>
+<script src="/ui/pages/vault.js"></script>
+<script src="/ui/pages/knowledge.js"></script>
+<script src="/ui/pages/agents.js"></script>
+<script src="/ui/pages/outside.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+{
+  "note": "Fixture only: the eight sections of the sample manuscript, as GET /api/section answers them.",
+  "sections": [
+    {
+      "title": "Salt Moon",
+      "n": 1,
+      "heading": "The Brine Bell",
+      "words": 122,
+      "text": "# The Brine Bell\n\nThe Brine Bell rang twice before supper, which on Ilos meant the tide was early. Tamsin Dray pulled her brother back from the window. Pell was ten and believed the salt flats were alive.\n\n\"It's only the brine,\" she told him. \"Varr pulls, the ground breathes, the brine comes up. Every thirty-one hours, same as always.\"\n\nTheir mother, Mira, did not look up from the pump schematics spread across the table. Their father, Oren, counted the ration chits twice and said nothing about the debt, which was how Tamsin knew it had grown.\n\nFar above, the Lantern blinked its slow green light, the one line between Brine Station and the company that owned it. Tamsin watched it until the shutters came down.\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 2,
+      "heading": "Salt Flats",
+      "words": 133,
+      "text": "# Salt Flats\n\nNobody walked the flats without a tether. That was the first rule Tamsin had learned, before reading, before numbers.\n\nShe walked them anyway the morning after the surge, clipped to the old survey line, counting her steps. The crust cracked like sugar under her boots. Out past the third marker she found the boot prints: big ones, a stranger's, heading toward the dead pumps and not coming back.\n\nShe pulled her mask aside for a moment to taste the air, the way her mother said the first settlers did. It burned. She put the mask back and followed the prints until the line ran out.\n\nAt the end of the line she could see the station behind her, small and lit, and she thought, for the first time, that she could leave it.\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 3,
+      "heading": "Quill",
+      "words": 94,
+      "text": "# Quill\n\nThe stranger's name was Quill Asher, and his ship was called the Wren. He was sitting in the dead pump house with a cracked visor and a bag of stolen filters when Tamsin found him.\n\n\"You're a long way from the company,\" she said.\n\n\"That's the idea.\" He smiled like someone who had practised it. \"The Lantern isn't sending what you think it's sending, kid. Ask your administrator what it really says.\"\n\nTamsin should have reported him. She brought him bread instead, and a filter of her own, and did not tell her mother.\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 4,
+      "heading": "The Lantern Goes Dark",
+      "words": 99,
+      "text": "# The Lantern Goes Dark\n\nOn the fourth night the Lantern went dark. The green light simply stopped, and Brine Station held its breath.\n\nHalden Roe called the whole station to the mess hall and stood on a crate. \"A routine fault,\" he said. \"The company knows. Help is coming.\" His hands shook on the rail.\n\nOren squeezed Tamsin's shoulder. Mira was not in the hall. Tamsin found her later in the pump room, sitting in the dark, holding an old company badge Tamsin had never seen, with a name on it that was not Mira Dray.\n\n\"Go to bed,\" her mother said. \"Please.\"\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 5,
+      "heading": "What Halden Knew",
+      "words": 99,
+      "text": "# What Halden Knew\n\nTamsin let herself into the administrator's office with the key, and the files were where Quill said they would be.\n\nThe Lantern had never been a line home. It was a meter. Every pump stroke, every ration, every child born on Ilos went up the green light and came back as debt. The station was not owed help. The station was owed.\n\nHalden found her there. He did not shout. He sat down across from her and looked very old.\n\n\"Your mother wrote half of this system,\" he said. \"Before she was Mira Dray. Ask her why she stopped.\"\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 6,
+      "heading": "Pell's Map",
+      "words": 107,
+      "text": "# Pell's Map\n\nPell had been drawing the brine for two years. At twelve he had filled a whole wall of the bunk room with it: blue lines under the crust, running downhill toward the pole, pooling under the old company dome.\n\n\"The water's warm down there,\" he said. \"Varr squeezes the moon and it heats up inside. Like your hands when you rub them.\"\n\nTamsin looked at the map for a long time. Every line ended in the same place: the dome where the Lantern's power came from.\n\n\"Pell,\" she said, \"who else has seen this?\"\n\nHe shrugged. \"Quill. He said it was the best map he'd ever seen.\"\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 7,
+      "heading": "Low Tide",
+      "words": 91,
+      "text": "# Low Tide\n\nThey went at low tide, when the channels under the dome ran shallow. Quill brought his ship's last tank; Tamsin brought Pell's map folded in her sleeve.\n\n\"The Heron's tank is good for an hour,\" Quill said. \"After that we're breathing brine.\"\n\nThe channel narrowed. Tamsin went under the last gate alone, held her breath for six minutes, and came up inside the dome where the Lantern's cables met the heat of the moon.\n\nHer mother was already there, with her old badge clipped to her collar, cutting the meter loose.\n"
+    },
+    {
+      "title": "Salt Moon",
+      "n": 8,
+      "heading": "The Long Light",
+      "words": 111,
+      "text": "# The Long Light\n\nWhen the Lantern came back on, it was white instead of green, and it said only what Brine Station chose to send.\n\nHalden read the first message aloud in the mess hall: the station's own count of what it had made and what it was owed. His voice didn't shake this time.\n\nOren laughed for the first time in a year. Pell drew the white light on his wall. Quill left on the next tide, and Tamsin walked him to the edge of the flats without a tether.\n\n\"You could come,\" he said.\n\nShe looked back at the station, small and lit. \"I know,\" she said. \"That's why I can stay.\"\n"
+    }
+  ]
+}

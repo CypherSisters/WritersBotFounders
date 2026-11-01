@@ -1,0 +1,5 @@
+services:
+  freshtable:
+    build: .
+    ports:
+      - "127.0.0.1:${PUFFPAI_PORT}:8000"

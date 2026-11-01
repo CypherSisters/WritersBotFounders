@@ -1,0 +1,2385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puffpai.com/contracts/puffpai-package-1.schema.json",
+  "title": "puffpai.json (puffpai-package/1)",
+  "description": "The package manifest. Source: docs/02_PACKAGE_CONTRACT.md (field reference, provider fields, setup steps), docs/zones/ZONES_TOGETHER.md section 1 (slots), docs/03_WIZARD_AND_TOOLSMITH.md 1.1 (wizard steps). The Core reads this file and never runs it. 'x-plain' holds the plain-words message the Core shows when a rule fails.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "kind",
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "consent"
+  ],
+  "properties": {
+    "schema": {
+      "const": "puffpai-package/1",
+      "x-plain": "This bot only knows manifests with \"schema\": \"puffpai-package/1\"."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,39}$",
+      "x-plain": "The id must be 2 to 40 characters: lower-case letters, digits or '-', starting with a letter (no '_', so it works in a web address, D55)."
+    },
+    "kind": {
+      "enum": [
+        "app",
+        "tool",
+        "skill",
+        "page",
+        "ui",
+        "avatar",
+        "look",
+        "agent",
+        "knowledge",
+        "bundle",
+        "wizard",
+        "provider"
+      ],
+      "x-plain": "The kind must be one of: app, tool, skill, page, ui, avatar, look, agent, knowledge, bundle, wizard, provider."
+    },
+    "name": {
+      "$ref": "#/$defs/text"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "x-plain": "The version must be semver, like 1.0.0."
+    },
+    "description": {
+      "$ref": "#/$defs/text"
+    },
+    "author": {
+      "$ref": "#/$defs/text"
+    },
+    "license": {
+      "$ref": "#/$defs/text"
+    },
+    "homepage": {
+      "type": "string",
+      "pattern": "^https?://",
+      "x-plain": "The homepage must be a web address (http or https)."
+    },
+    "icon": {
+      "$ref": "#/$defs/relpath"
+    },
+    "origin": {
+      "type": "string",
+      "pattern": "^(core|store:verified|store:community|github:.+|local:.+|adopted:.+|made)$",
+      "x-plain": "origin is written by the Core: core, store:verified, store:community, github:<url>, local:<path>, adopted:<url> or made."
+    },
+    "consent": {
+      "$ref": "#/$defs/text",
+      "x-plain": "consent must be one or two plain sentences for the Yes card."
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "windows": {
+          "$ref": "#/$defs/run_block"
+        },
+        "mac": {
+          "$ref": "#/$defs/run_block"
+        },
+        "linux": {
+          "$ref": "#/$defs/run_block"
+        },
+        "default": {
+          "$ref": "#/$defs/run_block"
+        }
+      },
+      "x-plain": "run holds one block per system: windows, mac, linux or default."
+    },
+    "health": {
+      "$ref": "#/$defs/health"
+    },
+    "abilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mcp": {
+          "$ref": "#/$defs/mcp"
+        },
+        "changes": {
+          "$ref": "#/$defs/tool_list"
+        },
+        "watch": {
+          "$ref": "#/$defs/tool_list"
+        },
+        "examples": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/tool_name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "x-plain": "abilities.tools maps each tool name to one plain description, the same words as its MCP server's (the PuffPAI store shows them before the app is installed).",
+          "propertyNames": {
+            "$ref": "#/$defs/tool_name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "accepts_labels": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/tool_name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/label_id"
+            }
+          }
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/page"
+          }
+        },
+        "tray": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tray_item"
+          }
+        },
+        "widgets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/widget"
+          }
+        },
+        "open": {
+          "$ref": "#/$defs/open_program"
+        }
+      }
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,39}$"
+              },
+              "version": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "hosts": {
+          "$ref": "#/$defs/host_list"
+        },
+        "install_hosts": {
+          "$ref": "#/$defs/host_list"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/key_need"
+          }
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ram_gb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "disk_gb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "gpu": {
+              "type": [
+                "boolean",
+                "string"
+              ]
+            },
+            "docker": {
+              "type": "boolean"
+            }
+          }
+        },
+        "brain": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "boolean"
+            },
+            "images": {
+              "type": "boolean"
+            },
+            "as_written": {
+              "type": "boolean",
+              "description": "WritersBot: this app's words go to the brain on this computer as written and come back as written; nothing from them is filed in the vault. For an app whose text is the owner's own work (a manuscript), not her personal records. Shown on the Yes card."
+            }
+          }
+        },
+        "owner_files": {
+          "enum": [
+            "read",
+            "write"
+          ],
+          "x-plain": "needs.owner_files is \"read\" or \"write\"."
+        },
+        "addresses": {
+          "enum": [
+            "lan",
+            "internet"
+          ],
+          "x-plain": "needs.addresses is \"lan\" or \"internet\"."
+        },
+        "admin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "accepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "types",
+          "tool"
+        ],
+        "properties": {
+          "types": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "tool": {
+            "$ref": "#/$defs/tool_name"
+          }
+        }
+      }
+    },
+    "setup_steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/manifest_step"
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keep_on_remove": {
+          "enum": [
+            "ask",
+            "keep",
+            "delete"
+          ],
+          "x-plain": "data.keep_on_remove is ask, keep or delete."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "label"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "$ref": "#/$defs/label_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    "includes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "wizard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remove": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "preset": {
+              "type": "object"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "order": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "persona": {
+          "type": "string"
+        },
+        "avatar": {
+          "type": "string"
+        },
+        "ui": {
+          "type": "string"
+        }
+      }
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "x-plain": "scope is the list of intents the agent handles."
+    },
+    "avatar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview"
+      ],
+      "properties": {
+        "model": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/relpath"
+            },
+            {
+              "pattern": "\\.[gG][lL][bB]$"
+            }
+          ],
+          "x-plain": "avatar.model is optional; if given it must be a .glb file inside the package (D48a)."
+        },
+        "preview": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/relpath"
+            },
+            {
+              "pattern": "\\.([sS][vV][gG]|[pP][nN][gG])$"
+            }
+          ],
+          "x-plain": "avatar.preview must be an SVG or PNG file inside the package (D48a)."
+        },
+        "voice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "look": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "line",
+        "tokens"
+      ],
+      "x-plain": "A look block is {mode, line, tokens}, with day_tokens when mode is both and an optional preview (D76).",
+      "properties": {
+        "mode": {
+          "enum": [
+            "night",
+            "day",
+            "both"
+          ],
+          "x-plain": "look.mode is night, day or both."
+        },
+        "line": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "x-plain": "look.line is one plain sentence, up to 200 characters."
+        },
+        "tokens": {
+          "$ref": "#/$defs/look_tokens"
+        },
+        "day_tokens": {
+          "$ref": "#/$defs/look_tokens"
+        },
+        "preview": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/relpath"
+            },
+            {
+              "pattern": "\\.([sS][vV][gG]|[pP][nN][gG])$"
+            }
+          ],
+          "x-plain": "look.preview must be an SVG or PNG file inside the package."
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "sha256"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "pattern": "^https?://"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_mb": {
+            "type": "number",
+            "minimum": 0
+          },
+          "license": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/relpath"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/wizard_step"
+      }
+    },
+    "provides": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slot",
+          "contract"
+        ],
+        "properties": {
+          "slot": {
+            "$ref": "#/$defs/slot"
+          },
+          "contract": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "reads": {
+      "enum": [
+        "raw",
+        "gated",
+        "ciphertext",
+        "none"
+      ],
+      "x-plain": "reads is raw, gated, ciphertext or none."
+    },
+    "floor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^X([1-9]|1[0-9]|20)$"
+          }
+        }
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "ask"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "router",
+              "firewall",
+              "dns_filter"
+            ]
+          },
+          "ask": {
+            "$ref": "#/$defs/text"
+          },
+          "lan_only": {
+            "type": "boolean"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        }
+      }
+    },
+    "detector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "form",
+        "emits"
+      ],
+      "properties": {
+        "form": {
+          "enum": [
+            "rules",
+            "process"
+          ]
+        },
+        "emits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/label_id"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "chat",
+              "files",
+              "package_data",
+              "outbound"
+            ]
+          }
+        },
+        "langs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "budget_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "labels": {
+      "$ref": "#/$defs/relpath"
+    },
+    "store": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "boolean"
+        },
+        "location_text": {
+          "type": "string"
+        }
+      }
+    },
+    "unlock": {
+      "type": "object"
+    },
+    "backup": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "boolean"
+        },
+        "location_text": {
+          "type": "string"
+        }
+      }
+    },
+    "toolsmith_model": {
+      "description": "A frontier model for Toolsmith (slot zone3.toolsmith-model, D35, D42, 02 'Provider fields', 04 quick start 11). Prices are US dollars per million tokens. key.format holds {key}, which only the Core fills. 'wire' names a request and reply mapping the Core runs (a data-only adapter, PROPOSED); without it the provider needs a process adapter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "company",
+        "hosts",
+        "key",
+        "models",
+        "default_model",
+        "prices_checked",
+        "cost_cap",
+        "consent"
+      ],
+      "properties": {
+        "company": {
+          "$ref": "#/$defs/text"
+        },
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/host"
+          }
+        },
+        "wire": {
+          "enum": [
+            "anthropic-messages",
+            "openai-responses",
+            "gemini-generate-content"
+          ],
+          "x-plain": "wire is one of the Core's mappings: anthropic-messages, openai-responses or gemini-generate-content."
+        },
+        "key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "header",
+            "format",
+            "shape",
+            "get_it"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "header": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+$"
+            },
+            "format": {
+              "type": "string",
+              "pattern": "[{]key[}]",
+              "x-plain": "key.format must hold {key}, where the Core puts the key."
+            },
+            "shape": {
+              "type": "string",
+              "minLength": 1
+            },
+            "get_it": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "prices"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "$ref": "#/$defs/text"
+              },
+              "context_tokens": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "prices": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "in",
+                  "out"
+                ],
+                "properties": {
+                  "in": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "out": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cache_read": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cache_write": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "default_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prices_checked": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "prices_note": {
+          "type": "string"
+        },
+        "cost_cap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "per_build_usd"
+          ],
+          "properties": {
+            "per_build_usd": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "consent": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "provides"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "const": "zone3.toolsmith-model"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "toolsmith_model"
+        ],
+        "x-plain": "A zone3.toolsmith-model provider needs a toolsmith_model block (D35)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "app"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "run",
+          "ui"
+        ],
+        "properties": {
+          "ui": {
+            "anyOf": [
+              {
+                "required": [
+                  "pages"
+                ],
+                "properties": {
+                  "pages": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "open"
+                ]
+              }
+            ]
+          }
+        },
+        "x-plain": "An app needs a run block and at least one ui.pages entry or ui.open."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tool"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "abilities"
+        ],
+        "properties": {
+          "abilities": {
+            "required": [
+              "mcp"
+            ]
+          }
+        },
+        "x-plain": "A tool needs an MCP server: abilities.mcp."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tool"
+          },
+          "abilities": {
+            "properties": {
+              "mcp": {
+                "properties": {
+                  "transport": {
+                    "const": "http"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "run"
+        ],
+        "x-plain": "A tool with an http MCP server needs a run block to start it."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "page"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "ui"
+        ],
+        "properties": {
+          "ui": {
+            "anyOf": [
+              {
+                "required": [
+                  "pages"
+                ],
+                "properties": {
+                  "pages": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "widgets"
+                ],
+                "properties": {
+                  "widgets": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          },
+          "run": {
+            "additionalProperties": {
+              "properties": {
+                "type": {
+                  "const": "static"
+                }
+              }
+            }
+          }
+        },
+        "x-plain": "A page needs ui.pages or ui.widgets, and its run blocks (if any) must be static."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ui"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "run"
+        ],
+        "x-plain": "A ui package needs a run block (its own process, or static files)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "avatar"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "avatar"
+        ],
+        "x-plain": "An avatar needs an avatar block with at least a preview (SVG or PNG); a .glb model is optional (D48a)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "look"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "look"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "run"
+              ]
+            },
+            {
+              "required": [
+                "abilities"
+              ]
+            },
+            {
+              "required": [
+                "ui"
+              ]
+            }
+          ]
+        },
+        "x-plain": "A look needs a look block and runs nothing: no run, abilities or ui blocks (D76)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "look"
+          }
+        },
+        "required": [
+          "kind",
+          "look"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "look": {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "night",
+                      "day"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "look": {
+                "required": [
+                  "day_tokens"
+                ]
+              }
+            }
+          }
+        ],
+        "x-plain": "A look whose mode is both needs day_tokens too (tokens are its night)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "run",
+          "scope",
+          "abilities"
+        ],
+        "properties": {
+          "abilities": {
+            "required": [
+              "mcp"
+            ]
+          }
+        },
+        "x-plain": "An agent needs a run block, a scope (its intents) and an MCP server (abilities.mcp)."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "knowledge"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "sources"
+            ]
+          },
+          {
+            "required": [
+              "files"
+            ]
+          }
+        ],
+        "x-plain": "A knowledge package needs sources (URLs with hashes) or files."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "bundle"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "includes"
+        ],
+        "x-plain": "A bundle needs an includes block."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "wizard"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "steps"
+        ],
+        "x-plain": "A wizard needs a steps list."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "provider"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "provides"
+        ],
+        "x-plain": "A provider needs provides: [{\"slot\": \"zone<N>.<slot>\", \"contract\": 1}]."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "provider"
+          }
+        },
+        "required": [
+          "kind",
+          "run"
+        ]
+      },
+      "then": {
+        "required": [
+          "reads"
+        ],
+        "x-plain": "A provider that runs a process must declare reads: raw, gated, ciphertext or none."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "not": {
+              "const": "provider"
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "provides"
+              ]
+            },
+            {
+              "required": [
+                "reads"
+              ]
+            },
+            {
+              "required": [
+                "detector"
+              ]
+            },
+            {
+              "required": [
+                "devices"
+              ]
+            },
+            {
+              "required": [
+                "toolsmith_model"
+              ]
+            }
+          ]
+        },
+        "x-plain": "provides, reads, detector, devices and toolsmith_model are for kind provider only."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "not": {
+              "additionalProperties": {
+                "properties": {
+                  "type": {
+                    "const": "static"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "health"
+        ],
+        "x-plain": "A package that runs a process needs a health check, or its Registry row can never say running."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "ui"
+        ],
+        "properties": {
+          "ui": {
+            "required": [
+              "open"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "health"
+        ],
+        "x-plain": "A package with ui.open needs a health check (usually health.file, the program path)."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "provides"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "enum": [
+                    "zone1.vault-store",
+                    "zone1.vault-unlock",
+                    "zone1.vault-backup"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reads": {
+            "enum": [
+              "ciphertext",
+              "none"
+            ]
+          }
+        },
+        "x-plain": "A vault provider (store, unlock, backup) must read ciphertext or none, never plain data."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "provides",
+          "run"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "enum": [
+                    "zone2.runtime",
+                    "zone2.speech-in",
+                    "zone2.speech-out",
+                    "zone2.vision"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reads"
+        ],
+        "properties": {
+          "reads": {
+            "const": "raw"
+          }
+        },
+        "x-plain": "A model runtime, speech or vision provider sees real values, so it must declare reads: raw."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "detector"
+        ],
+        "properties": {
+          "detector": {
+            "properties": {
+              "form": {
+                "const": "process"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reads"
+        ],
+        "properties": {
+          "reads": {
+            "const": "raw"
+          }
+        },
+        "x-plain": "A process detector sees raw text, so it must declare reads: raw."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "provides"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "enum": [
+                    "zone3.net-monitor",
+                    "zone3.policy-feed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "abilities": {
+            "properties": {
+              "changes": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "x-plain": "A net monitor or policy feed reports or blocks only; it may not list any abilities.changes."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "provides"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "const": "zone1.detector"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "detector"
+        ],
+        "x-plain": "A zone1.detector provider needs a detector block (form and emits)."
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "provides"
+        ],
+        "properties": {
+          "provides": {
+            "contains": {
+              "properties": {
+                "slot": {
+                  "const": "zone3.network-device"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "devices"
+        ],
+        "x-plain": "A zone3.network-device provider needs a devices list."
+      }
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "look_tokens": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 80,
+      "propertyNames": {
+        "pattern": "^--[A-Za-z0-9-]{1,40}$",
+        "x-plain": "Each look token is a CSS variable name, like --bg: two dashes, then up to 40 letters, digits or '-'."
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number"
+        ]
+      },
+      "x-plain": "Look tokens are CSS variables, like {\"--bg\": \"#ffffff\"}: 1 to 80 names starting with --."
+    },
+    "relpath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![\\\\/])(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).+$",
+      "x-plain": "This must be a path inside the package (no drive letter, no leading slash, no '..')."
+    },
+    "placeheld": {
+      "type": "string",
+      "pattern": "^([^{}]|\\{(port|python|node|data|pkg)\\})*$",
+      "x-plain": "Only the Core's placeholders are allowed: {port}, {python}, {node}, {data}, {pkg}."
+    },
+    "argv": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/placeheld"
+      },
+      "x-plain": "This must be one command as a list of arguments, like [\"{python}\", \"-m\", \"app\"]."
+    },
+    "setup_item": {
+      "description": "One setup step (D51): a command line, an argument list, or one of two Core file steps inside the package folder: {\"copy\": [from, to]} or {\"venv\": true}. No shell runs any of them.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/placeheld"
+        },
+        {
+          "$ref": "#/$defs/argv"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "copy"
+          ],
+          "properties": {
+            "copy": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/relpath"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "venv"
+          ],
+          "properties": {
+            "venv": {
+              "const": true
+            }
+          }
+        }
+      ],
+      "x-plain": "A setup step is a command, an argument list, {\"copy\": [from, to]} inside the package, or {\"venv\": true}."
+    },
+    "run_env": {
+      "description": "Environment for a command run block (D51). Values may use the Core's placeholders. The Core's own names (PUFFPAI_*, the proxy variables) are never a package's.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+        "not": {
+          "pattern": "^([Pp][Uu][Ff][Ff][Pp][Aa][Ii]_|([Hh][Tt][Tt][Pp][Ss]?|[Aa][Ll][Ll]|[Nn][Oo])_[Pp][Rr][Oo][Xx][Yy]$|([Pp][Aa][Tt][Hh]|[Pp][Aa][Tt][Hh][Ee][Xx][Tt]|[Cc][Oo][Mm][Ss][Pp][Ee][Cc]|[Ss][Yy][Ss][Tt][Ee][Mm][Rr][Oo][Oo][Tt]|[Ww][Ii][Nn][Dd][Ii][Rr]|[Pp][Yy][Tt][Hh][Oo][Nn][Pp][Aa][Tt][Hh]|[Pp][Yy][Tt][Hh][Oo][Nn][Hh][Oo][Mm][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][Ss][Tt][Aa][Rr][Tt][Uu][Pp]|[Nn][Oo][Dd][Ee]_[Oo][Pp][Tt][Ii][Oo][Nn][Ss]|[Nn][Oo][Dd][Ee]_[Pp][Aa][Tt][Hh]|[Ll][Dd]_[Pp][Rr][Ee][Ll][Oo][Aa][Dd]|[Ll][Dd]_[Ll][Ii][Bb][Rr][Aa][Rr][Yy]_[Pp][Aa][Tt][Hh])$|[Dd][Yy][Ll][Dd]_)"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/placeheld"
+      },
+      "x-plain": "env holds plain names (not PUFFPAI_*, proxy variables or system settings like PATH, COMSPEC, PYTHONPATH or NODE_OPTIONS) with text values; only the Core's placeholders are allowed."
+    },
+    "tool_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,63}$",
+      "x-plain": "A tool name is letters, digits, '_' or '-', without the '<id>.' prefix."
+    },
+    "tool_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tool_name"
+      }
+    },
+    "label_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$",
+      "x-plain": "A label id is dotted, like person.phone or custom.clients."
+    },
+    "host": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$",
+      "x-plain": "A host is a plain name like api.example.com (no wildcards, no scheme, no path)."
+    },
+    "host_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/host"
+      }
+    },
+    "slot": {
+      "enum": [
+        "zone1.detector",
+        "zone1.label-pack",
+        "zone1.retention",
+        "zone1.vault-store",
+        "zone1.vault-unlock",
+        "zone1.vault-backup",
+        "zone2.runtime",
+        "zone2.embedder",
+        "zone2.reranker",
+        "zone2.speech-in",
+        "zone2.speech-out",
+        "zone2.vision",
+        "zone3.bridge-enforcer",
+        "zone3.network-device",
+        "zone3.net-monitor",
+        "zone3.policy-feed",
+        "zone3.toolsmith-model"
+      ],
+      "x-plain": "Unknown slot. Slot names are listed in docs/zones/ZONES_TOGETHER.md section 1 (plus zone3.toolsmith-model, D35)."
+    },
+    "run_block": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "command",
+            "docker_compose",
+            "static"
+          ],
+          "x-plain": "run type is command, docker_compose or static."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "command"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "start"
+                ]
+              },
+              {
+                "required": [
+                  "setup"
+                ]
+              }
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": true,
+              "python": {
+                "type": "boolean"
+              },
+              "node": {
+                "type": "boolean"
+              },
+              "setup": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/setup_item"
+                }
+              },
+              "start": {
+                "$ref": "#/$defs/argv"
+              },
+              "env": {
+                "$ref": "#/$defs/run_env"
+              },
+              "cwd": {
+                "$ref": "#/$defs/relpath",
+                "description": "The folder inside the package where start and every argument-list setup step run (D51)."
+              }
+            },
+            "x-plain": "A command run block needs start (one command as an argument list), or only setup when all it has is an MCP server over stdio (D124); setup is a list of steps; env and cwd are optional (D51)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "docker_compose"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "file"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": true,
+              "file": {
+                "$ref": "#/$defs/relpath"
+              }
+            },
+            "x-plain": "A docker_compose run block needs file (the compose file inside the package)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "static"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "dir"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": true,
+              "dir": {
+                "$ref": "#/$defs/relpath"
+              }
+            },
+            "x-plain": "A static run block needs dir (the folder of files the Core serves)."
+          }
+        }
+      ]
+    },
+    "health": {
+      "type": "object",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/placeheld"
+                },
+                {
+                  "pattern": "^http://(127\\.0\\.0\\.1|localhost)(:|/)"
+                }
+              ]
+            },
+            "expect": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "every_s": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/argv"
+            },
+            "expect_exit": {
+              "type": "integer"
+            },
+            "every_s": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/placeheld"
+            },
+            "every_s": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ],
+      "x-plain": "health is one of: {\"url\": \"http://127.0.0.1:{port}/...\", \"expect\": 200}, {\"command\": [...], \"expect_exit\": 0} or {\"file\": \"<program path>\"}, plus every_s."
+    },
+    "mcp": {
+      "type": "object",
+      "required": [
+        "transport"
+      ],
+      "properties": {
+        "transport": {
+          "enum": [
+            "http",
+            "stdio"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "const": "http"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "transport": true,
+              "url": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/placeheld"
+                  },
+                  {
+                    "pattern": "^http://(127\\.0\\.0\\.1|localhost)(:|/)"
+                  }
+                ]
+              },
+              "audience": {
+                "enum": [
+                  "brain",
+                  "core"
+                ]
+              }
+            },
+            "x-plain": "An http MCP server needs url, on 127.0.0.1."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "const": "stdio"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "transport": true,
+              "command": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/placeheld"
+                  },
+                  {
+                    "$ref": "#/$defs/argv"
+                  }
+                ]
+              },
+              "audience": {
+                "enum": [
+                  "brain",
+                  "core"
+                ]
+              }
+            },
+            "x-plain": "A stdio MCP server needs command."
+          }
+        }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "file": {
+          "$ref": "#/$defs/relpath"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "show": {
+          "enum": [
+            "in_desktop",
+            "new_tab"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        },
+        {
+          "required": [
+            "url"
+          ]
+        }
+      ],
+      "x-plain": "A page needs exactly one of path (served by the package), file (a static file) or url (an adopted app's own address)."
+    },
+    "tray_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/text"
+        },
+        "icon": {
+          "$ref": "#/$defs/relpath"
+        },
+        "opens": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "list",
+            "number",
+            "image",
+            "feed",
+            "html"
+          ]
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "file": {
+          "$ref": "#/$defs/relpath"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        }
+      ],
+      "x-plain": "A widget needs exactly one of path or file."
+    },
+    "open_program": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program"
+      ],
+      "properties": {
+        "program": {
+          "$ref": "#/$defs/placeheld"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/placeheld"
+          }
+        }
+      }
+    },
+    "key_need": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "why"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "x-plain": "A key name is upper case with '_', like NASA_API_KEY."
+        },
+        "why": {
+          "$ref": "#/$defs/text"
+        },
+        "get_it": {
+          "type": "string"
+        },
+        "hand": {
+          "enum": [
+            "per_action"
+          ]
+        },
+        "device": {
+          "type": "string"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "oneOf": [
+        {
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/argv"
+            }
+          }
+        },
+        {
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "pattern": "^https?://"
+            }
+          }
+        },
+        {
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ],
+      "x-plain": "check is one of {\"command\": [...]}, {\"url\": \"...\"} or {\"file\": \"...\"}."
+    },
+    "step_fields": {
+      "description": "The one step shape (02 'Setup steps', 01 'Checklist'). package and blocks are filled in by the Core.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        },
+        "package": {
+          "type": "string"
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "why": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "run_command",
+            "open_url",
+            "enter_secret",
+            "plug_in",
+            "confirm"
+          ]
+        },
+        "shell": {
+          "enum": [
+            "powershell",
+            "cmd",
+            "bash"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "admin": {
+          "type": "boolean"
+        },
+        "get_it": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "check": {
+          "$ref": "#/$defs/check"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "run_command"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ],
+            "x-plain": "A run_command step needs text (the command to copy)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "enter_secret"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "key"
+            ],
+            "x-plain": "An enter_secret step needs key (the vault name it fills)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "open_url"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "text"
+                ]
+              },
+              {
+                "required": [
+                  "get_it"
+                ]
+              }
+            ],
+            "x-plain": "An open_url step needs the address in text or get_it."
+          }
+        }
+      ]
+    },
+    "step": {
+      "$ref": "#/$defs/step_fields",
+      "unevaluatedProperties": false
+    },
+    "manifest_step": {
+      "$ref": "#/$defs/step_fields",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "package"
+            ]
+          },
+          {
+            "required": [
+              "blocks"
+            ]
+          }
+        ]
+      },
+      "unevaluatedProperties": false,
+      "x-plain": "A setup step uses only: id, title, why, kind, shell, text, admin, get_it, key, check (package and blocks are filled in by the Core)."
+    },
+    "wizard_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "choice",
+            "theme",
+            "text",
+            "path",
+            "secret",
+            "secret_confirm",
+            "show_once",
+            "number",
+            "confirm"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "help": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^/v1/"
+        },
+        "show_when": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array"
+          }
+        },
+        "examples": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "home": {
+          "type": "string",
+          "pattern": "^(vault:.+|package:[a-z][a-z0-9-]{1,39}/[A-Z][A-Z0-9_]*)$"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "secret"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "home"
+            ],
+            "x-plain": "A secret field must name its home (vault:<name> or package:<id>/<KEY>), D36(a)."
+          }
+        }
+      ]
+    },
+    "wizard_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "fields"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "page": {
+          "$ref": "#/$defs/relpath"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wizard_field"
+          }
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "after": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+Harvested from PuffPAIBuildBot@774e27a4:dashboard/app/_fonts/LICENSE-fonts.txt (adapted)
+
+Vendored webfonts: packages/desktop/web/fonts/
+=============================================
+
+The Desktop's fonts are files in this folder, loaded by desktop.css with
+@font-face. Nothing is fetched from the internet, at build time or at runtime.
+
+Each file is byte-identical to the one in today's BuildBot at 774e27a4. Two
+files were renamed (no brackets in the name, so a CSS url() needs no escaping):
+  Fredoka[wdth,wght].woff2 -> fredoka/Fredoka.woff2
+  Nunito[wght].woff2       -> nunito/Nunito.woff2
+
+
+Fredoka: display and headings
+-----------------------------
+  File     fredoka/Fredoka.woff2   (variable: wght 300-700, wdth 75-125)
+  License  SIL Open Font License 1.1, fredoka/OFL.txt (unmodified upstream text)
+  (c)      Copyright 2016 The Fredoka Project Authors
+           (https://github.com/hafontia/Fredoka-One)
+  Source   https://github.com/google/fonts/tree/a60a77e14f28abd4ef243a1b5dfc48df0cec5205/ofl/fredoka
+           (upstream variable TTF converted to WOFF2 with fontTools; glyph set
+           and axes unchanged, no subsetting)
+
+
+Nunito: body and UI text
+------------------------
+  File     nunito/Nunito.woff2     (variable: wght 200-1000)
+  License  SIL Open Font License 1.1, nunito/OFL.txt (unmodified upstream text)
+  (c)      Copyright 2014 The Nunito Project Authors
+           (https://github.com/googlefonts/nunito)
+  Source   https://github.com/google/fonts/tree/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/nunito
+           (upstream variable TTF converted to WOFF2 with fontTools; no
+           subsetting; the italic file is not vendored)
+
+
+JetBrains Mono: micro labels, numbers, code
+-------------------------------------------
+  Files    jetbrains-mono/JetBrainsMono-Regular.woff2   (400)
+           jetbrains-mono/JetBrainsMono-Bold.woff2      (700)
+  License  SIL Open Font License 1.1, jetbrains-mono/OFL.txt (unmodified upstream text)
+  (c)      Copyright 2020 The JetBrains Mono Project Authors
+           (https://github.com/JetBrains/JetBrainsMono)
+  Source   https://github.com/JetBrains/JetBrainsMono/tree/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/fonts/webfonts
+           (release v2.304, byte-identical to upstream). Today's BuildBot also
+           vendors Medium and SemiBold; the Desktop uses only 400 and 700.
+
+
+Material Symbols Rounded: icons
+-------------------------------
+  File     material-symbols/material-symbols-rounded.woff2   (variable icon font, ligatures)
+  License  Apache License 2.0, material-symbols/LICENSE.txt (the full license text)
+  (c)      Google LLC (https://github.com/google/material-design-icons)
+  From     PuffPAIBuildBot@774e27a4:dashboard/public/fonts/material-symbols-rounded.woff2,
+           byte-identical. The license text beside it is the standard Apache 2.0 text.

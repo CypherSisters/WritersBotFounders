@@ -1,0 +1,37 @@
+{
+ "about": "Stand-in READMEs in our own words (see SOURCE.md). Each keeps only the finder words that mattered live.",
+ "readmes": {
+  "micasa-dev/micasa": "# micasa\n\nA terminal app for home upkeep. Keep projects, maintenance dates, appliances and vendor quotes in one file.\n\nBuild it from its Dockerfile.\n",
+  "cristibalan/braid": "# braid\n\nKeeps vendor branches of other projects inside one Git repository.\n\n## Install\n\n```\ngem install braid\n```\n",
+  "zerodha/vendor-payments": "# vendor-payments\n\nA Frappe app for a company paying its vendors.\n\n## Install\n\n```\nbench get-app vendor-payments\n```\n",
+  "example/wedding-vendors": "# wedding-vendors\n\nKeep a wedding's vendors, quotes and bookings in one place.\n\n## Quick start\n\n```\nnpm install\nnpm start\n```\n\nThen open localhost:3000.\n",
+  "Swetrix/selfhosting": "# Swetrix, self-hosted\n\nCollect your site's visits and look at them later on your own server.\n\n## Quick start\n\n```\ndocker compose up -d\n```\n",
+  "pascalebeier/hitkeep": "# HitKeep\n\nWeb analytics in one program. Count visits across sites.\n\n## Quick start\n\n```\ndocker compose up -d\n```\n\nOpen localhost:8080.\n",
+  "apache/airflow": "# Apache Airflow\n\nWrite workflows as code and run them across workers, with rate limit settings per pool.\n\n## Docker\n\n```\ndocker compose up -d\n```\n",
+  "kestra-io/kestra": "# Kestra\n\nBuild workflows that run across many systems, with a concurrency limit per flow.\n\n## Quick start\n\n```\ndocker compose up -d\n```\n\nOpen localhost:8080.\n",
+  "middlewarehq/middleware": "# Middleware\n\nA tool designed to show you how an engineering team ships. Each chart has its own color.\n\n## Quick start\n\n```\ndocker compose up -d\n```\n\nOpen localhost:3333.\n",
+  "AlexSciFier/neonlink": "# NeonLink\n\nA bookmark service you run yourself.\n\n## Docker\n\n```\ndocker compose up -d\n```\n",
+  "erennyuksell/ag-multi-account-switchboard": "# Switchboard\n\nSwitch between AI coding accounts and watch their quotas and token budgets.\n\n## Quick start\n\n```\nnpm install\nnpm run dev\n```\n\nOpen localhost:5173.\n",
+  "blessyjoybj18/budget_tracker": "# Budget tracker\n\nRecord your spending and compare it with a budget, by category.\n\n## Getting started\n\n```\npip install -r requirements.txt\npython app.py\n```\n\nOpen localhost:5000.\n",
+  "nonomu/Wedding-Planner": "# We Do\n\nA wedding planning web app built with React: vendors, a budget, guests and profiles.\n\nIt runs on localhost:3000 once started.\n",
+  "example/vendor-book": "# vendor-book\n\nKeep your vendors, their contacts, quotes and contracts in one list.\n\n## Quick start\n\n```\nnpm install\nnpm start\n```\n\nThen open localhost:3000.\n",
+  "example/palette-board": "# palette-board\n\nPick colors for a palette, name a theme and keep the feel of an event in one board.\n\n## Quick start\n\n```\nnpm install\nnpm start\n```\n\nThen open localhost:3000.\n",
+  "example/envelope-budget": "# envelope-budget\n\nEnvelope budgeting: put money in envelopes and see what is left to spend.\n\n## Getting started\n\n```\npip install -r requirements.txt\npython app.py\n```\n\nOpen localhost:5000.\n"
+ },
+ "run_files": {
+  "micasa-dev/micasa": "Dockerfile",
+  "Swetrix/selfhosting": "compose.yaml",
+  "pascalebeier/hitkeep": "compose.yaml",
+  "apache/airflow": "docker-compose.yaml",
+  "kestra-io/kestra": "docker-compose.yml",
+  "middlewarehq/middleware": "docker-compose.yml",
+  "AlexSciFier/neonlink": "docker-compose.yml"
+ },
+ "repos": {
+  "nonomu/Wedding-Planner": {
+   "full_name": "nonomu/Wedding-Planner",
+   "language": "JavaScript",
+   "default_branch": "main"
+  }
+ }
+}

@@ -1,0 +1,28 @@
+{
+ "full_name": "koala73/worldmonitor",
+ "name": "worldmonitor",
+ "description": "A live intelligence dashboard that gathers news and tracks global situations.",
+ "stargazers_count": 89277,
+ "language": "TypeScript",
+ "topics": [
+  "agent",
+  "ai",
+  "dashboard",
+  "geopolitics",
+  "mcp",
+  "mcp-server",
+  "monitoring",
+  "news",
+  "opensource",
+  "osint",
+  "palantir",
+  "situation"
+ ],
+ "archived": false,
+ "fork": false,
+ "default_branch": "main",
+ "private": false,
+ "license": {
+  "spdx_id": "AGPL-3.0"
+ }
+}

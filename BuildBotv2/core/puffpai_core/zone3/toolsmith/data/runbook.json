@@ -1,0 +1,72 @@
+{
+  "about": "Toolsmith's run table (03 3.3 run note 2): one row per kind of project, first match wins. 'when' names a test in runbook._WHEN; commands use {P} (the assigned port), {pm} (the package runner), {dir} (the built folder), {expose} (a Dockerfile's port), {name} (its image), {script}, {readme_cmd}. 'via': start_server (a server BuildBot keeps) or run (it ends). Every command is one program and its arguments: no shell (D60). Harvested from bb-next@63c8a037:src/puffpai/build/runbook.py RUN_TABLE.",
+  "rows": [
+    {
+      "stack": "docker compose",
+      "when": "compose",
+      "start": "docker compose up -d",
+      "via": "run",
+      "why": "its own compose file (BuildBot runs a local copy on 127.0.0.1)"
+    },
+    {
+      "stack": "client-only app, built then served as static files",
+      "when": "static_build",
+      "install": "{pm} install",
+      "build": "{pm} run build; then python -m venv .venv",
+      "start": "python -I -m http.server {P} --bind 127.0.0.1 --directory {dir}",
+      "via": "start_server",
+      "why": "build once, then serve the built folder; no long-running dev server"
+    },
+    {
+      "stack": "Next.js",
+      "when": "next",
+      "install": "{pm} install",
+      "start": "npx next dev -p {P} -H 127.0.0.1",
+      "via": "start_server",
+      "fallback": "{pm} run build; then npx next start -p {P} -H 127.0.0.1"
+    },
+    {
+      "stack": "Vite",
+      "when": "vite",
+      "install": "{pm} install",
+      "start": "npx vite --port {P} --host 127.0.0.1 --strictPort",
+      "via": "start_server"
+    },
+    {
+      "stack": "Create React App",
+      "when": "cra",
+      "install": "{pm} install",
+      "start": "npm start (the Core gives it PORT and HOST)",
+      "via": "start_server"
+    },
+    {
+      "stack": "Dockerfile",
+      "when": "dockerfile",
+      "build": "write_file compose.yaml with one service: build: . and ports: [\"127.0.0.1:{P}:{expose}\"] (a try runs Docker only as docker compose)",
+      "start": "docker compose up -d --build",
+      "via": "run"
+    },
+    {
+      "stack": "Node app with its own start script",
+      "when": "node_script",
+      "install": "{pm} install",
+      "start": "{pm} run {script} (the Core gives it PORT and HOST)",
+      "via": "start_server",
+      "why": "its package.json says how it starts (a server of its own), not static files"
+    },
+    {
+      "stack": "plain web page (index.html, no build)",
+      "when": "plain_html",
+      "start": "python -I -m http.server {P} --bind 127.0.0.1",
+      "via": "start_server",
+      "install": "python -m venv .venv"
+    },
+    {
+      "stack": "Python web app",
+      "when": "python_web",
+      "install": "python -m venv .venv, then its requirements into .venv",
+      "start": "{readme_cmd}",
+      "via": "start_server"
+    }
+  ]
+}

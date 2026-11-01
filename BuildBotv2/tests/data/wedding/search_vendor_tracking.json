@@ -1,0 +1,67 @@
+{
+ "total_count": 5,
+ "items": [
+  {
+   "full_name": "micasa-dev/micasa",
+   "name": "micasa",
+   "stargazers_count": 1283,
+   "language": "Go",
+   "default_branch": "main",
+   "license": {
+    "spdx_id": "Apache-2.0"
+   },
+   "topics": [],
+   "description": "A terminal app for home upkeep: projects, maintenance dates, appliances and vendor quotes."
+  },
+  {
+   "full_name": "cristibalan/braid",
+   "name": "braid",
+   "stargazers_count": 457,
+   "language": "Ruby",
+   "default_branch": "master",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [],
+   "description": "Keeps vendor branches of other projects inside one Git repository."
+  },
+  {
+   "full_name": "zerodha/vendor-payments",
+   "name": "vendor-payments",
+   "stargazers_count": 38,
+   "language": "Python",
+   "default_branch": "master",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [],
+   "description": "A Frappe app with workflows and reports for a company paying its vendors."
+  },
+  {
+   "full_name": "example/wedding-vendors",
+   "name": "wedding-vendors",
+   "stargazers_count": 25,
+   "language": "JavaScript",
+   "default_branch": "main",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [
+    "wedding"
+   ],
+   "description": "A small web app to keep a wedding's vendors, quotes and bookings in one place."
+  },
+  {
+   "full_name": "example/vendor-book",
+   "name": "vendor-book",
+   "stargazers_count": 21,
+   "language": "JavaScript",
+   "default_branch": "main",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "topics": [],
+   "description": "Keep a list of vendors with their contacts, quotes and contracts."
+  }
+ ]
+}

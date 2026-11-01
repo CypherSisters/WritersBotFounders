@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puffpai.com/contracts/registry-row-1.schema.json",
+  "title": "Registry row",
+  "description": "One row per installed thing. Source: docs/01_ARCHITECTURE.md 'Registry: the single list of everything'. health is probed by Caretaker, never copied from a manifest. needs and ui are copied from puffpai.json. abilities come from the package's MCP list_tools, not from the manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "name", "origin", "status", "health"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+    "kind": {
+      "enum": ["app", "tool", "skill", "page", "ui", "avatar", "look", "agent", "knowledge", "bundle", "wizard", "provider", "program", "desktop"]
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string" },
+    "description": { "type": "string" },
+    "origin": { "type": "string", "pattern": "^(core|store:verified|store:community|github:.+|local:.+|adopted:.+|made)$" },
+    "status": { "enum": ["installing", "running", "stopped", "needs_you", "broken", "removed"] },
+    "process": { "type": "boolean", "description": "Added by GET /v1/registry, never stored: false when the package has no process of its own (no run block, or a static one; the Core serves its files), so a stopped one reads as ready (lane I4a)." },
+    "own": { "type": "boolean", "description": "Added by GET /v1/registry, never stored: true when its origin is PuffPAI's own (built in, from the official PuffPAI store, or made), so its page may show inside (D83). A rule on origin; a manifest can't set it." },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "checked_at", "reason"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "checked_at": { "type": ["string", "null"], "description": "ISO 8601 UTC time of the last probe; null = never probed." },
+        "reason": { "type": "string", "description": "Plain words." }
+      }
+    },
+    "abilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "changes"],
+        "properties": {
+          "tool": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}\\.[A-Za-z_][A-Za-z0-9_-]{0,63}$", "description": "<pkg>.<name> as shown to people; sent to models as <pkg>__<name>." },
+          "description": { "type": "string" },
+          "changes": { "type": "boolean" },
+          "needs_yes": { "type": "boolean" }
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pages": { "type": "array", "items": { "type": "object" } },
+        "tray": { "type": "array", "items": { "type": "object" } },
+        "widgets": { "type": "array", "items": { "type": "object" } },
+        "open": { "type": "object" }
+      }
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": { "type": "array" },
+        "hosts": { "type": "array", "items": { "type": "string" } },
+        "install_hosts": { "type": "array", "items": { "type": "string" } },
+        "keys": { "type": "array" },
+        "hardware": { "type": "object" },
+        "brain": { "type": "object" },
+        "owner_files": { "enum": ["read", "write"] },
+        "addresses": { "enum": ["lan", "internet"] },
+        "admin": { "type": "boolean" }
+      }
+    },
+    "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535, "description": "Assigned by the Core at start; never declared by the package." },
+    "built_with": { "type": ["string", "null"], "description": "Adopted and made packages: the model Toolsmith used." },
+    "provides": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["slot", "contract"],
+        "properties": { "slot": { "type": "string", "pattern": "^zone[1-3]\\.[a-z-]+$" }, "contract": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "reads": { "enum": ["raw", "gated", "ciphertext", "none"] },
+    "floor": {
+      "type": "object", "additionalProperties": false, "required": ["suite", "checked_at"],
+      "properties": { "suite": { "enum": ["pass", "fail"] }, "checked_at": { "type": ["string", "null"] } }
+    },
+    "taint": { "type": "array", "items": { "type": "string" }, "description": "Labels the Core delivered to this package (egress.request.carries)." },
+    "data_dir": { "type": ["string", "null"] },
+    "installed_at": { "type": ["string", "null"] },
+    "yes_record": { "type": ["string", "object", "null"], "description": "The consent id (or record) of the Yes that installed it." },
+    "manifest_sha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "The sha256 of its manifest file at the install (or update) Yes. Steward runs it only while the file still has it." },
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "repo", "path", "commit"],
+      "description": "D89: a package installed from a store (origin store:verified or store:community). source is \"official\" for the built-in official store, else the owner's own source as she added it; repo, path and commit are the store row's at the install (or update) Yes, so updates can be found.",
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "repo": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "path": { "type": "string", "maxLength": 300 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    }
+  }
+}

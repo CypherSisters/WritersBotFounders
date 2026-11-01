@@ -1,0 +1,390 @@
+{
+  "_note": "Manifests copied from the design docs. Every one under 'valid' must pass the schema; 'invalid_in_docs' are doc examples that break 02's rules (reported back to the docs).",
+  "valid": {
+    "04 skill plant-care": {
+      "schema": "puffpai-package/1",
+      "id": "plant-care",
+      "kind": "skill",
+      "name": "Plant care",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "CC-BY-4.0",
+      "description": "Houseplant watering and light advice.",
+      "consent": "This skill is text the brain reads. It runs nothing and uses no internet."
+    },
+    "04 page weather-card": {
+      "schema": "puffpai-package/1",
+      "id": "weather-card",
+      "kind": "page",
+      "name": "Weather card",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "MIT",
+      "description": "A Desktop card that shows the forecast from the weather tool.",
+      "ui": {
+        "pages": [
+          {
+            "id": "main",
+            "title": "Weather",
+            "file": "index.html",
+            "show": "in_desktop"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "today",
+            "type": "html",
+            "title": "Today",
+            "path": "/widget.html"
+          }
+        ]
+      },
+      "needs": {
+        "packages": [
+          {
+            "id": "weather",
+            "version": "^1.0"
+          }
+        ]
+      },
+      "consent": "This page shows data the weather package already has. It uses no internet."
+    },
+    "04 ui kiosk-ui": {
+      "schema": "puffpai-package/1",
+      "id": "kiosk-ui",
+      "kind": "ui",
+      "name": "Kiosk",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "MIT",
+      "description": "A big-button kiosk screen: the tray and a chat box.",
+      "run": {
+        "default": {
+          "type": "static",
+          "dir": "web"
+        }
+      },
+      "consent": "A different screen for this bot. It uses only the bot's own API."
+    },
+    "04 avatar puff-blue": {
+      "schema": "puffpai-package/1",
+      "id": "puff-blue",
+      "kind": "avatar",
+      "name": "Blue Puff",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "CC-BY-4.0",
+      "description": "A blue cloud face.",
+      "avatar": {
+        "model": "puff.glb",
+        "preview": "preview.png",
+        "voice": "en_US-amy-medium"
+      },
+      "consent": "A face for your bot. It runs nothing."
+    },
+    "04 agent gardener": {
+      "schema": "puffpai-package/1",
+      "id": "gardener",
+      "kind": "agent",
+      "name": "Gardener",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "MIT",
+      "description": "Plans watering and reminds you when plants need it.",
+      "scope": [
+        "garden.plan_watering",
+        "garden.log_watering"
+      ],
+      "run": {
+        "windows": {
+          "type": "command",
+          "python": true,
+          "setup": [
+            "{python} -m pip install mcp"
+          ],
+          "start": [
+            "{python}",
+            "agent.py"
+          ]
+        }
+      },
+      "health": {
+        "url": "http://127.0.0.1:{port}/health",
+        "expect": 200
+      },
+      "abilities": {
+        "mcp": {
+          "transport": "http",
+          "url": "http://127.0.0.1:{port}/mcp"
+        },
+        "changes": [
+          "log_watering"
+        ]
+      },
+      "needs": {
+        "brain": {
+          "text": true,
+          "images": false
+        }
+      },
+      "consent": "Gardener keeps a watering log on this computer and uses the bot's own brain."
+    },
+    "04 bundle gardenbot": {
+      "schema": "puffpai-package/1",
+      "id": "gardenbot",
+      "kind": "bundle",
+      "name": "GardenBot",
+      "version": "0.1.0",
+      "author": "you",
+      "license": "MIT",
+      "description": "A bot for a home garden: watering, plant care and a planting calendar.",
+      "includes": {
+        "packages": [
+          "gardener",
+          "plant-care",
+          "https://github.com/example/planting-calendar"
+        ],
+        "wizard": {
+          "preset": {
+            "goal": "Help me keep my garden watered and planted on time"
+          },
+          "remove": [
+            "goal"
+          ]
+        },
+        "persona": "persona.md",
+        "avatar": "puff-blue",
+        "ui": "puffpai-desktop"
+      },
+      "consent": "Installs the packages listed. Each one shows what it needs before you say Yes."
+    },
+    "04 provider uk-nhs-number": {
+      "schema": "puffpai-package/1",
+      "id": "uk-nhs-number",
+      "kind": "provider",
+      "name": "UK NHS numbers",
+      "version": "1.0.0",
+      "author": "you",
+      "license": "MIT",
+      "description": "Finds UK NHS numbers so they stay private.",
+      "provides": [
+        {
+          "slot": "zone1.detector",
+          "contract": 1
+        }
+      ],
+      "detector": {
+        "form": "rules",
+        "emits": [
+          "health.nhs_number"
+        ],
+        "paths": [
+          "chat",
+          "files",
+          "package_data",
+          "outbound"
+        ]
+      },
+      "labels": "labels.json",
+      "consent": "Finds UK NHS numbers so they stay private. Runs inside PuffPAI, no internet."
+    },
+    "Z1V 7 provider vault-store-nas": {
+      "schema": "puffpai-package/1",
+      "id": "vault-store-nas",
+      "kind": "provider",
+      "name": "Vault on my NAS",
+      "version": "1.0.0",
+      "description": "Keeps your locked vault files in a folder on your own NAS.",
+      "author": "Example Dev",
+      "license": "MIT",
+      "provides": [
+        {
+          "slot": "zone1.vault-store",
+          "contract": 1
+        }
+      ],
+      "reads": "ciphertext",
+      "run": {
+        "windows": {
+          "type": "command",
+          "python": true,
+          "setup": [
+            "{python} -m pip install -r requirements.txt"
+          ],
+          "start": [
+            "{python}",
+            "-m",
+            "nasstore",
+            "--port",
+            "{port}"
+          ]
+        }
+      },
+      "health": {
+        "url": "http://127.0.0.1:{port}/health",
+        "expect": 200,
+        "every_s": 60
+      },
+      "abilities": {
+        "mcp": {
+          "transport": "http",
+          "url": "http://127.0.0.1:{port}/mcp",
+          "audience": "core"
+        }
+      },
+      "store": {
+        "remote": true,
+        "location_text": "a folder on your NAS"
+      },
+      "floor": {
+        "attests": [
+          "X1",
+          "X9"
+        ]
+      },
+      "needs": {
+        "hosts": [
+          "nas.local"
+        ]
+      },
+      "consent": "Your locked vault files are copied to your NAS. They can't be read there without your PIN or recovery code."
+    },
+    "04 knowledge wikipedia-en-simple (version fixed to 2026.9.0)": {
+      "schema": "puffpai-package/1",
+      "id": "wikipedia-en-simple",
+      "kind": "knowledge",
+      "name": "Simple English Wikipedia",
+      "version": "2026.9.0",
+      "author": "Kiwix",
+      "license": "CC-BY-SA-4.0",
+      "description": "All of Simple English Wikipedia, offline.",
+      "sources": [
+        {
+          "url": "https://download.kiwix.org/zim/wikipedia/<file>.zim",
+          "sha256": "<hash>",
+          "size_mb": 3100,
+          "license": "CC-BY-SA-4.0",
+          "title": "Simple English Wikipedia"
+        }
+      ],
+      "needs": {
+        "hosts": [
+          "download.kiwix.org"
+        ],
+        "hardware": {
+          "disk_gb": 4
+        }
+      },
+      "consent": "Downloads one file from download.kiwix.org into your data folder. After that it works offline."
+    }
+  },
+  "invalid_in_docs": {
+    "Z3 7 provider opnsense-bridge (no description, which 02 requires)": {
+      "schema": "puffpai-package/1",
+      "id": "opnsense-bridge",
+      "kind": "provider",
+      "name": "OPNsense for the Bridge",
+      "version": "0.1.0",
+      "author": "...",
+      "license": "MIT",
+      "provides": [
+        {
+          "slot": "zone3.network-device",
+          "contract": 1
+        }
+      ],
+      "reads": "none",
+      "devices": [
+        {
+          "id": "fw",
+          "kind": "firewall",
+          "ask": "Your OPNsense address",
+          "lan_only": true,
+          "ports": [
+            443
+          ]
+        }
+      ],
+      "run": {
+        "windows": {
+          "type": "command",
+          "python": true,
+          "start": [
+            "{python}",
+            "-m",
+            "opnbridge",
+            "--port",
+            "{port}"
+          ]
+        }
+      },
+      "health": {
+        "command": [
+          "{python}",
+          "-m",
+          "opnbridge",
+          "--check"
+        ],
+        "expect_exit": 0,
+        "every_s": 60
+      },
+      "abilities": {
+        "mcp": {
+          "transport": "http",
+          "url": "http://127.0.0.1:{port}/mcp",
+          "audience": "core"
+        },
+        "watch": [
+          "read_state",
+          "report",
+          "alive"
+        ],
+        "changes": [
+          "apply_change",
+          "undo"
+        ]
+      },
+      "needs": {
+        "hosts": [],
+        "keys": [
+          {
+            "name": "OPNSENSE_API",
+            "why": "To read and, with your Yes, change rules.",
+            "get_it": "OPNsense > System > Access > Users",
+            "hand": "per_action",
+            "device": "fw"
+          }
+        ]
+      },
+      "consent": "Reads your firewall's rules. Changes one only when you say Yes to that change."
+    },
+    "04 knowledge wikipedia-en-simple (version 2026.09.0 is not semver: leading zero)": {
+      "schema": "puffpai-package/1",
+      "id": "wikipedia-en-simple",
+      "kind": "knowledge",
+      "name": "Simple English Wikipedia",
+      "version": "2026.09.0",
+      "author": "Kiwix",
+      "license": "CC-BY-SA-4.0",
+      "description": "All of Simple English Wikipedia, offline.",
+      "sources": [
+        {
+          "url": "https://download.kiwix.org/zim/wikipedia/<file>.zim",
+          "sha256": "<hash>",
+          "size_mb": 3100,
+          "license": "CC-BY-SA-4.0",
+          "title": "Simple English Wikipedia"
+        }
+      ],
+      "needs": {
+        "hosts": [
+          "download.kiwix.org"
+        ],
+        "hardware": {
+          "disk_gb": 4
+        }
+      },
+      "consent": "Downloads one file from download.kiwix.org into your data folder. After that it works offline."
+    }
+  }
+}

@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+install-log.txt
+Start BuildBot.cmd
+bots/
+release_names.local.txt
+.install-tmp/
+start-buildbot.sh
+stop-buildbot.sh
+chat-buildbot.sh
+signin-buildbot.sh
+*.command

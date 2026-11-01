@@ -1,0 +1,62 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "google",
+  "kind": "provider",
+  "name": "Google for Toolsmith",
+  "version": "1.0.0",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "description": "Lets Toolsmith use Google models while it finds and installs apps. Data only: the Core runs its request mapping (generateContent).",
+  "provides": [
+    {
+      "slot": "zone3.toolsmith-model",
+      "contract": 1
+    }
+  ],
+  "consent": "Lets Toolsmith use Google when you pick it. Nothing is sent until you do.",
+  "toolsmith_model": {
+    "company": "Google",
+    "hosts": [
+      "generativelanguage.googleapis.com"
+    ],
+    "wire": "gemini-generate-content",
+    "key": {
+      "name": "GEMINI_API_KEY",
+      "header": "x-goog-api-key",
+      "format": "{key}",
+      "shape": "^[A-Za-z0-9_-]{30,}$",
+      "get_it": "https://aistudio.google.com/apikey"
+    },
+    "models": [
+      {
+        "id": "gemini-4-argon",
+        "name": "Gemini 4 Argon",
+        "context_tokens": 1048576,
+        "prices": {
+          "in": 4.0,
+          "out": 20.0,
+          "cache_read": 0.2
+        },
+        "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon and /pricing (read 2026-10-22)"
+      },
+      {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "context_tokens": 1048576,
+        "prices": {
+          "in": 1.5,
+          "out": 7.5,
+          "cache_read": 0.15
+        },
+        "source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash and /pricing (read 2026-10-22)"
+      }
+    ],
+    "default_model": "gemini-4-argon",
+    "prices_checked": "2026-10-22",
+    "prices_note": "Paid tier, the higher list prices (Argon from 2026-12-01, Flash from 2027-01-01). Today's prices are half, so the estimate is high until then.",
+    "cost_cap": {
+      "per_build_usd": 5
+    },
+    "consent": "When Toolsmith finds and installs apps, it sends Google your goal and your bot's jobs, the names and descriptions of the apps it found, each app's README, docs and file list, the start of its setup files and other text files from the app's own download, the commands it runs with their output, and what the app's pages show. If you point it at a folder of your own, it reads that folder the same way. A try runs as a program on this computer, as you, so it can read your files, and what it shows goes to Google. Keys and personal details it spots are taken out first, but it can miss some. Everything else stays on this computer."
+  }
+}

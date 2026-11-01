@@ -1,0 +1,57 @@
+{
+ "total_count": 3,
+ "items": [
+  {
+   "full_name": "satyawikananda/berita-indo-api",
+   "name": "berita-indo-api",
+   "description": "An API that serves news from Indonesian sites.",
+   "stargazers_count": 264,
+   "language": "TypeScript",
+   "topics": [
+    "news",
+    "public-api"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "omgimanerd/getnews.tech",
+   "name": "getnews.tech",
+   "description": "Read news headlines in a terminal through curl.",
+   "stargazers_count": 176,
+   "language": "JavaScript",
+   "topics": [
+    "cli",
+    "curl",
+    "news"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "Apache-2.0"
+   }
+  },
+  {
+   "full_name": "davidnguyen11/create-react-progressive-web-app",
+   "name": "create-react-progressive-web-app",
+   "description": "A small progressive web app demo that shows technology news from a news API.",
+   "stargazers_count": 60,
+   "language": "JavaScript",
+   "topics": [
+    "create-react-app",
+    "demo",
+    "progressive-web-app"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  }
+ ]
+}

@@ -1,0 +1,549 @@
+{
+ "id": "20261027-155349-af5ae7",
+ "goal": "I'd like to build a space bot that knows everything about space, can track cool celecstial events, show me when I can go outside and see celestial events, knows where the ISS is, shows me cool new pictures, and helps me learn about space",
+ "jobs_in": [
+  {
+   "name": "Celestial event tracker",
+   "does": "Notifies you of cool upcoming celestial events and tells you when the sky is clear enough to observe them",
+   "sample_ask": "When will I be able to see the next total solar eclipse?",
+   "pasted": []
+  },
+  {
+   "name": "ISS locator",
+   "does": "Shows you exactly where the International Space Station is in the sky right now",
+   "sample_ask": "Is the ISS visible tonight and how long do I have to look?",
+   "pasted": []
+  },
+  {
+   "name": "Space photo gallery",
+   "does": "Shows you cool new pictures from space telescopes and missions",
+   "sample_ask": "What are some of the newest photos sent back from the James Webb Telescope?",
+   "pasted": []
+  }
+ ],
+ "created_at": "2026-10-27T20:53:49+00:00",
+ "planning": false,
+ "jobs": [
+  {
+   "n": 0,
+   "name": "Celestial event tracker",
+   "does": "Notifies you of cool upcoming celestial events and tells you when the sky is clear enough to observe them",
+   "sample_ask": "When will I be able to see the next total solar eclipse?",
+   "pasted": [],
+   "plan": {
+    "reuse": null,
+    "reuse_name": null,
+    "picked": [],
+    "candidates": [
+     {
+      "ref": "github:eventschedule/eventschedule",
+      "name": "EventSchedule",
+      "full_name": "eventschedule/eventschedule",
+      "url": "https://github.com/eventschedule/eventschedule",
+      "stars": 0,
+      "description": "Share events, sell tickets, and bring communities together.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up --build -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 8080,
+      "docker_file": "",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:HiEventsDev/hi.events",
+      "name": "Hi.Events",
+      "full_name": "HiEventsDev/hi.events",
+      "url": "https://github.com/HiEventsDev/hi.events",
+      "stars": 0,
+      "description": "Event management and ticketing platform for conferences, concerts, and more. Offering customizable event pages and embeddable ticket widgets.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "cp .env.example .env",
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 8123,
+      "docker_file": "",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:evroon/bracket",
+      "name": "Bracket",
+      "full_name": "evroon/bracket",
+      "url": "https://github.com/evroon/bracket",
+      "stars": 0,
+      "description": "Flexible tournament system to build a tournament setup, add teams, schedule matches, keep track of scores and present ranking live to the public.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 3000,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:alfio-event/alf.io",
+      "name": "Alf.io",
+      "full_name": "alfio-event/alf.io",
+      "url": "https://github.com/alfio-event/alf.io",
+      "stars": 0,
+      "description": "Ticket reservation system.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "./gradlew -Pprofile=dev :bootRun",
+       "docker run -d --name alfio-db -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=alfio --restart unless-stopped postgres"
+      ],
+      "runtime": "docker",
+      "readme_port": 5432,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:orangecoloured/analog",
+      "name": "ANALOG",
+      "full_name": "orangecoloured/analog",
+      "url": "https://github.com/orangecoloured/analog",
+      "stars": 0,
+      "description": "A minimal analytics tool. Tracks events in a span of 10-30 days.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker build \\",
+       "docker run -d \\"
+      ],
+      "runtime": "docker",
+      "readme_port": null,
+      "docker_file": "Dockerfile",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     }
+    ],
+    "not_used": [],
+    "notes": [],
+    "detail": [],
+    "code": [
+     {
+      "name": "sky-tonight-card",
+      "ref": "code:wwwescape/sky-tonight-card",
+      "why": ""
+     },
+     {
+      "name": "astronomy-bundle-js",
+      "ref": "code:andrmoel/astronomy-bundle-js",
+      "why": ""
+     }
+    ]
+   },
+   "id": "20261027-155349-af5ae7-0",
+   "steps": [],
+   "tries": [
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge."
+   ],
+   "run": {
+    "state": "planned",
+    "line": "",
+    "trying": null,
+    "tried": [],
+    "lines": [],
+    "result": null
+   }
+  },
+  {
+   "n": 1,
+   "name": "ISS locator",
+   "does": "Shows you exactly where the International Space Station is in the sky right now",
+   "sample_ask": "Is the ISS visible tonight and how long do I have to look?",
+   "pasted": [],
+   "plan": {
+    "reuse": null,
+    "reuse_name": null,
+    "picked": [],
+    "candidates": [
+     {
+      "ref": "github:archivesspace/archivesspace",
+      "name": "ArchivesSpace",
+      "full_name": "archivesspace/archivesspace",
+      "url": "https://github.com/archivesspace/archivesspace",
+      "stars": 0,
+      "description": "Archives information management application for managing and providing Web access to archives, manuscripts and digital objects.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": null,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:Jinjinov/OpenHabitTracker",
+      "name": "OpenHabitTracker",
+      "full_name": "Jinjinov/OpenHabitTracker",
+      "url": "https://github.com/Jinjinov/OpenHabitTracker",
+      "stars": 0,
+      "description": "Track habits, tasks and notes with time tracking, calendar view and completion statistics.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 5050,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:SamR1/FitTrackee",
+      "name": "FitTrackee",
+      "full_name": "SamR1/FitTrackee",
+      "url": "https://github.com/SamR1/FitTrackee",
+      "stars": 0,
+      "description": "Simple workout/activity tracker.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": null,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:alexjustesen/speedtest-tracker",
+      "name": "Speedtest Tracker",
+      "full_name": "alexjustesen/speedtest-tracker",
+      "url": "https://github.com/alexjustesen/speedtest-tracker",
+      "stars": 0,
+      "description": "Monitor the performance and uptime of your internet connection.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": null,
+      "docker_file": "compose.yaml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:Peergos/Peergos",
+      "name": "Peergos",
+      "full_name": "Peergos/Peergos",
+      "url": "https://github.com/Peergos/Peergos",
+      "stars": 0,
+      "description": "Secure and private space online where you can store, share and view your photos, videos, music and documents. Also includes a calendar, news feed, task lists, chat and email client.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "java -jar Peergos.jar daemon",
+       "java -jar Peergos.jar daemon -generate-token true -listen-host 0.0.0.0",
+       "java -jar Peergos.jar shell -peergos-url http://192.168.1.10:8000",
+       "java -jar Peergos.jar daemon -generate-token true",
+       "docker pull ghcr.io/peergos/web-ui:master",
+       "docker run --volume $(PEERGOS_PATH):/opt/peergos/data ghcr.io/peergos/web-ui:master daemon -listen-host 0.0.0.0 -public-domain $YOUR_DOMAIN_NAME -public-server true -announce-ipfs-addresses /ip4/$IP/t",
+       "docker exec -it $CONTAINER /opt/peergos/docker-entrypoint.sh $COMMAND",
+       "docker exec -it $CONTAINER /opt/peergos/docker-entrypoint.sh quota token create",
+       "docker exec -it $CONTAINER /opt/peergos/docker-entrypoint.sh shell -peergos-url http://localhost:8000",
+       "docker exec -it $CONTAINER /opt/peergos/docker-entrypoint.sh quota set -username $USERNAME -quota 50g",
+       "docker exec -it $CONTAINER /opt/peergos/docker-entrypoint.sh quota show -username $USERNAME",
+       "java -jar Peergos.jar shell"
+      ],
+      "runtime": "docker",
+      "readme_port": 8000,
+      "docker_file": "",
+      "tries_in": "docker",
+      "programs": [
+       "java",
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     }
+    ],
+    "not_used": [],
+    "notes": [],
+    "detail": [],
+    "code": []
+   },
+   "id": "20261027-155349-af5ae7-1",
+   "steps": [],
+   "tries": [
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge."
+   ],
+   "run": {
+    "state": "planned",
+    "line": "",
+    "trying": null,
+    "tried": [],
+    "lines": [],
+    "result": null
+   }
+  },
+  {
+   "n": 2,
+   "name": "Space photo gallery",
+   "does": "Shows you cool new pictures from space telescopes and missions",
+   "sample_ask": "What are some of the newest photos sent back from the James Webb Telescope?",
+   "pasted": [],
+   "plan": {
+    "reuse": null,
+    "reuse_name": null,
+    "picked": [],
+    "candidates": [
+     {
+      "ref": "github:photoview/photoview",
+      "name": "photoview",
+      "full_name": "photoview/photoview",
+      "url": "https://github.com/photoview/photoview",
+      "stars": 6558,
+      "description": "Photo gallery for self-hosted personal servers",
+      "language": "Go",
+      "license": "AGPL-3.0",
+      "branch": "master",
+      "readme_steps": [
+       "make readable",
+       "make all",
+       "docker compose -f dev-compose.yaml build",
+       "docker compose -f dev-compose.yaml up"
+      ],
+      "runtime": "docker",
+      "readme_port": 8000,
+      "docker_file": "Dockerfile",
+      "tries_in": "docker",
+      "programs": [
+       "make",
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     },
+     {
+      "ref": "github:LycheeOrg/Lychee",
+      "name": "Lychee",
+      "full_name": "LycheeOrg/Lychee",
+      "url": "https://github.com/LycheeOrg/Lychee",
+      "stars": 4314,
+      "description": "A great looking and easy-to-use photo-management-system you can run on your server, to manage and share photos.",
+      "language": "PHP",
+      "license": "MIT",
+      "branch": "master",
+      "readme_steps": [
+       "docker compose -f docker-compose.minimal.yaml up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 8000,
+      "docker_file": "docker-compose.yaml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "github"
+     },
+     {
+      "ref": "github:xemle/home-gallery",
+      "name": "HomeGallery",
+      "full_name": "xemle/home-gallery",
+      "url": "https://github.com/xemle/home-gallery",
+      "stars": 0,
+      "description": "Browse personal photos and videos featuring tagging, mobile-friendly, and AI powered image discovery.",
+      "language": "",
+      "license": null,
+      "branch": "",
+      "readme_steps": [
+       "docker compose up -d"
+      ],
+      "runtime": "docker",
+      "readme_port": 3000,
+      "docker_file": "docker-compose.yml",
+      "tries_in": "docker",
+      "programs": [
+       "docker"
+      ],
+      "source": "awesome-selfhosted"
+     }
+    ],
+    "not_used": [],
+    "notes": [],
+    "detail": [],
+    "code": [
+     {
+      "name": "PhotoSwipe",
+      "ref": "code:dimsemenov/PhotoSwipe",
+      "why": ""
+     },
+     {
+      "name": "WebbCompare",
+      "ref": "code:JohnEdChristensen/WebbCompare",
+      "why": ""
+     },
+     {
+      "name": "photometric_optimization",
+      "ref": "code:HavenFeng/photometric_optimization",
+      "why": ""
+     }
+    ]
+   },
+   "id": "20261027-155349-af5ae7-2",
+   "steps": [],
+   "tries": [
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge.",
+    "Tries in Docker behind the Bridge."
+   ],
+   "run": {
+    "state": "planned",
+    "line": "",
+    "trying": null,
+    "tried": [],
+    "lines": [],
+    "result": null
+   }
+  }
+ ],
+ "plan_sha": "b40a4613d5e125eaf0f9153353a38408d9a8a422daf0fc33b564af53e22069e5",
+ "model": {
+  "where": "cloud",
+  "provider": "anthropic",
+  "model": "claude-opus-5-5"
+ },
+ "consent": {
+  "id": "c_40873fe9f55c2a3eb9b6d6d6",
+  "said": ""
+ },
+ "yes": {
+  "given": true,
+  "at": "2026-10-27T21:09:55+00:00",
+  "consent_id": "c_40873fe9f55c2a3eb9b6d6d6",
+  "sha": "b40a4613d5e125eaf0f9153353a38408d9a8a422daf0fc33b564af53e22069e5",
+  "use": {}
+ },
+ "model_needs": [
+  "vision"
+ ],
+ "knowledge_plan": {
+  "topics": [
+   "celestial events",
+   "sky clarity",
+   "iss orbit",
+   "space telescope",
+   "astronomy photography"
+  ],
+  "fetch": [
+   {
+    "source": "wikipedia",
+    "name": "Wikipedia",
+    "host": "en.wikipedia.org",
+    "kind": "articles",
+    "per_topic": 8,
+    "max_items": 40,
+    "max_kb": 400,
+    "about_mb": 2.0,
+    "license": "CC BY-SA 4.0"
+   },
+   {
+    "source": "gutenberg",
+    "name": "Project Gutenberg",
+    "host": "www.gutenberg.org",
+    "kind": "books",
+    "per_topic": 2,
+    "max_items": 10,
+    "max_kb": 1500,
+    "about_mb": 5.0,
+    "license": "Public domain in the USA"
+   }
+  ],
+  "offered": [
+   {
+    "source": "kiwix",
+    "title": "Kiwix ZIM files (offline Wikipedia, Wikivoyage, Stack Exchange and more)",
+    "host": "library.kiwix.org",
+    "size": "English Wikipedia with pictures is about 100 GB; one-subject packs run from a few hundred MB to a few GB",
+    "kind": "zim",
+    "look": "https://library.kiwix.org/#lang=eng&q=celestial%20events"
+   },
+   {
+    "source": "datagov",
+    "title": "Data.gov (public datasets from US agencies)",
+    "host": "catalog.data.gov",
+    "size": "each dataset is its own download, from a few KB to many GB",
+    "kind": "datasets",
+    "look": "https://catalog.data.gov/dataset?q=celestial%20events"
+   }
+  ],
+  "hosts": [
+   "en.wikipedia.org",
+   "www.gutenberg.org"
+  ]
+ },
+ "use": {
+  "consent_id": "c_40873fe9f55c2a3eb9b6d6d6",
+  "jobs": {},
+  "by": "owner",
+  "at": "2026-10-27T21:09:55+00:00"
+ },
+ "use_fixed": {
+  "consent_id": "c_40873fe9f55c2a3eb9b6d6d6",
+  "jobs": {},
+  "at": "2026-10-27T21:09:55+00:00"
+ }
+}

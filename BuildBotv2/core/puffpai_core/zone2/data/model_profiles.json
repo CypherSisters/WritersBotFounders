@@ -1,0 +1,243 @@
+{
+  "schema": "model_profiles/v1",
+  "_harvested": "PuffPAIBuildBot@63c8a037:config/model_profiles.json (adapted: tool_budget and needs_thinking added, dialect and prompt dropped)",
+  "_maintainer_note": "How much each brain can hold. (1) budgets are CEILINGS: a caller may ask for less, never more. (2) tool_budget is how many tools the brain is shown in one turn; Concierge always adds the core tools and fills the rest by the turn's words. (3) needs_thinking: true only for a model that cannot answer with thinking off; every other model gets think: false on answer calls, so a thinking model does not spend its whole reply budget thinking. (3b) think_in_chat: true turns thinking on for the brain's chat turns only (chat, the sample asks of puffpai check and Toolsmith's reuse asks), for a model that answers chat badly with thinking off: qwen3.5:9b (measured 2026-10-23, Ollama 0.40.4) then writes its reasoning into the answer and often skips a tool call it should make (ask_toolsmith after a chat that already talked about Toolsmith: 3 of 10 with thinking off, 8 of 10 with it on). Its JSON asks and Toolsmith's own turns stay off, because thinking made a short JSON ask take 1 to 2 minutes. Ollama returns the reasoning in its own thinking field, which the Core never shows or keeps. (4) basis is 'measured:<silicon_id>' only for a model benched on that board; everything else is 'conservative-default'. (5) '_default' is what an unknown model gets. The longest matching id prefix wins, and an inherited profile is never 'measured'. (6) vision: true only for a model that reads pictures; /v1/brain/chat refuses images otherwise.",
+  "profiles": {
+    "qwen3:30b-a3b": {
+      "routing_tier": "light",
+      "supports": {
+        "planning": true,
+        "json_mode": true,
+        "thinking": true
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "plan_ctx": 8192
+      },
+      "limits_note": "This brain handles multi-step requests and picks its own tools, so you can ask in your own words.",
+      "basis": "measured:jetson_agx_orin_64gb",
+      "tool_budget": 60,
+      "needs_thinking": false,
+      "think_in_chat": true,
+      "vision": false
+    },
+    "qwen3.5:9b": {
+      "routing_tier": "light",
+      "supports": {
+        "planning": true,
+        "json_mode": true,
+        "thinking": true
+      },
+      "budgets": {
+        "num_ctx": 16384,
+        "num_predict": 2048,
+        "plan_ctx": 8192
+      },
+      "limits_note": "This brain uses tools: it can look things up, use what you added and ask before it runs anything, so you can ask in your own words.",
+      "basis": "conservative-default",
+      "tool_budget": 40,
+      "needs_thinking": false,
+      "think_in_chat": true,
+      "vision": false
+    },
+    "qwen2.5:7b-instruct": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": true,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This brain does one job at a time. Ask for one thing per message and it will do it well; a chain of tasks in one breath will lose a step.",
+      "basis": "conservative-default",
+      "tool_budget": 24,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen2.5:3b-instruct": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 4096,
+        "num_predict": 768,
+        "plan_ctx": 2048
+      },
+      "limits_note": "This brain does one job at a time and does not plan ahead. Keep each request to a single step and it stays reliable.",
+      "basis": "conservative-default",
+      "tool_budget": 12,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "llama3.2:3b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 4096,
+        "num_predict": 768,
+        "plan_ctx": 2048
+      },
+      "limits_note": "This brain does one job at a time and does not plan ahead. Keep each request to a single step and it stays reliable.",
+      "basis": "conservative-default",
+      "tool_budget": 12,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen2.5:1.5b-instruct": {
+      "routing_tier": "rails",
+      "supports": {
+        "planning": false,
+        "json_mode": false,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 2048,
+        "num_predict": 256,
+        "plan_ctx": 2048
+      },
+      "limits_note": "This brain follows set phrasings only. It cannot plan, chain steps, or work out what you meant, so use the wordings in the phrasebook.",
+      "basis": "conservative-default",
+      "tool_budget": 8,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "llama3.2:1b": {
+      "routing_tier": "rails",
+      "supports": {
+        "planning": false,
+        "json_mode": false,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 2048,
+        "num_predict": 256,
+        "plan_ctx": 2048
+      },
+      "limits_note": "This brain follows set phrasings only. It cannot plan, chain steps, or work out what you meant, so use the wordings in the phrasebook.",
+      "basis": "conservative-default",
+      "tool_budget": 8,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen3-coder:30b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": true,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 16384,
+        "num_predict": 2048,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This model is for code. It writes and fixes code well; for everyday chat the bot uses its chat model.",
+      "basis": "conservative-default",
+      "tool_budget": 40,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen2.5-coder:14b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This model is for code. It writes and fixes code well; for everyday chat the bot uses its chat model.",
+      "basis": "conservative-default",
+      "tool_budget": 24,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen2.5-coder:7b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This model is for code. It writes and fixes code well; for everyday chat the bot uses its chat model.",
+      "basis": "conservative-default",
+      "tool_budget": 16,
+      "needs_thinking": false,
+      "vision": false
+    },
+    "qwen2.5vl:7b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This model reads pictures. For everyday chat the bot uses its chat model.",
+      "basis": "conservative-default",
+      "tool_budget": 8,
+      "needs_thinking": false,
+      "vision": true
+    },
+    "gemma3:4b": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 8192,
+        "num_predict": 768,
+        "plan_ctx": 4096
+      },
+      "limits_note": "This model reads pictures. For everyday chat the bot uses its chat model.",
+      "basis": "conservative-default",
+      "tool_budget": 8,
+      "needs_thinking": false,
+      "vision": true
+    },
+    "_default": {
+      "routing_tier": "guided",
+      "supports": {
+        "planning": false,
+        "json_mode": true,
+        "thinking": false
+      },
+      "budgets": {
+        "num_ctx": 4096,
+        "num_predict": 512,
+        "plan_ctx": 4096
+      },
+      "limits_note": "We have not tested this brain, so it is set up to be told one step at a time. Reports welcome if it does better than that.",
+      "basis": "conservative-default",
+      "tool_budget": 16,
+      "needs_thinking": false,
+      "vision": false
+    }
+  }
+}

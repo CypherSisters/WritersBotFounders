@@ -1,0 +1,11 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "__ID__",
+  "kind": "skill",
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "Say in one sentence what this skill is for.",
+  "author": "you",
+  "license": "MIT",
+  "consent": "This skill is text the brain reads. It runs nothing and uses no internet."
+}

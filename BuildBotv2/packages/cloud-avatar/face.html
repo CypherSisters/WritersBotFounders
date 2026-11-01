@@ -1,0 +1,88 @@
+<!-- Harvested from PuffPAIBuildBot@774e27a4:dashboard/app/_components/Avatar/PuffCloudAvatar.tsx (adapted: only its talking motion, attack and decay, and its gentle bob; the picture is the owner's own drawing, puff.webp, by Cypher Sisters) -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Puff</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  svg { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  @keyframes puffCloudBob { 0%, 100% { transform: translateY(-12px); } 50% { transform: translateY(12px); } }
+  .bob { animation: puffCloudBob 4s ease-in-out infinite; }
+  .bob.speaking { animation-duration: 2.4s; }
+  @media (prefers-reduced-motion: reduce) { .bob { animation: none; } }
+</style>
+</head>
+<body>
+<!-- Her drawing, as she made it (puff.webp, 2000 x 2000, transparent around the cloud). The view is
+     the cloud itself (y 424 to 1574). While the bot answers, a small mouth over her drawn smile opens and
+     closes, in her own ink (#000000) and the deep purple of her eyes (#500078). At rest it is hidden, so her
+     drawn smile shows. Copyright (c) 2026 Cypher Sisters. Apache-2.0 License. -->
+<svg viewBox="0 424 2000 1150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Puff, the PuffPAI cloud">
+  <g id="bob" class="bob">
+    <image href="puff.webp" x="0" y="0" width="2000" height="2000"/>
+    <path id="mouth" d="M860 830 Q910 896.00 961 830 Q910 896.00 860 830 Z" fill="#500078" stroke="#000000"
+          stroke-width="10" stroke-linecap="round" stroke-linejoin="round" visibility="hidden"/>
+  </g>
+</svg>
+<script id="puff-mouth">
+/* Her smile, measured in the 2000px drawing: its corners at (860, 830) and (961, 830), its lowest point at
+ * (910, 863), so one quadratic curve with its control at (910, 896) traces it. The mouth is a lens on that
+ * curve: the top edge rises and the bottom edge drops as it opens. At openness 0 the lens has no area and is
+ * hidden, so only her own drawn smile shows.
+ *
+ * The Desktop posts {type: "puffpai.avatar", talking: true|false, pulse: <chars just streamed>} while the
+ * bot answers in chat. This page has no other input: it reads nothing and sends nothing. */
+(function (root) {
+  "use strict";
+  var CORNER_L = 860, CORNER_R = 961, CORNER_Y = 830, MID_X = 910, REST_CY = 896;
+  var SHOWN = 0.02;                             // below this, her drawn smile shows on its own
+
+  function mouthPath(open) {
+    var top = REST_CY - 30 * open, bottom = REST_CY + 85 * open;
+    return "M" + CORNER_L + " " + CORNER_Y + " Q" + MID_X + " " + top.toFixed(2) + " " + CORNER_R + " " + CORNER_Y +
+           " Q" + MID_X + " " + bottom.toFixed(2) + " " + CORNER_L + " " + CORNER_Y + " Z";
+  }
+  /* Fast attack, slow decay (v1's audio follower), so it is lively without jitter. */
+  function nextOpen(open, target) {
+    return target > open ? open + (target - open) * 0.5 : open * 0.85;
+  }
+  /* How far one burst of streamed text opens the mouth: never shut, never all the way. */
+  function pulseTarget(chars) {
+    var n = Math.max(0, Math.floor(Number(chars) || 0));
+    return n ? Math.min(1, 0.35 + 0.12 * (n % 6)) : 0;
+  }
+  function shown(open) { return open >= SHOWN; }
+
+  var api = { mouthPath: mouthPath, nextOpen: nextOpen, pulseTarget: pulseTarget, shown: shown };
+  if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
+
+  var doc = root.document;
+  var mouth = doc.getElementById("mouth"), bob = doc.getElementById("bob");
+  var open = 0, target = 0, talking = false, frame = null;
+  function paint() {
+    mouth.setAttribute("d", mouthPath(open));
+    mouth.setAttribute("visibility", shown(open) ? "visible" : "hidden");
+  }
+  function tick() {
+    open = nextOpen(open, target);
+    target = 0;                                  // each pulse is one sample, like one audio frame
+    if (!talking && open < 0.005) { open = 0; paint(); frame = null; return; }
+    paint();
+    frame = root.requestAnimationFrame(tick);
+  }
+  function run() { if (frame === null) frame = root.requestAnimationFrame(tick); }
+  root.addEventListener("message", function (ev) {
+    if (ev.source !== root.parent) return;         // only the Desktop that framed this page
+    var d = ev.data;
+    if (!d || typeof d !== "object" || d.type !== "puffpai.avatar") return;
+    talking = d.talking === true;
+    bob.setAttribute("class", talking ? "bob speaking" : "bob");
+    if (talking) target = Math.max(target, pulseTarget(d.pulse));
+    run();
+  });
+  paint();
+})(this);
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "freshtable",
+  "kind": "app",
+  "name": "FreshTable",
+  "version": "2.0.0",
+  "description": "Recipes, a shopping list and a meal plan for the week.",
+  "author": "Cypher Sisters",
+  "license": "MIT",
+  "homepage": "https://github.com/example/freshtable",
+
+  "run": {
+    "windows": { "type": "command", "python": true,
+                 "setup": ["{python} -m pip install -r requirements.txt"],
+                 "start": ["{python}", "-m", "freshtable", "--port", "{port}"] },
+    "default": { "type": "docker_compose", "file": "compose.yaml" }
+  },
+  "health": { "url": "http://127.0.0.1:{port}/health", "expect": 200, "every_s": 60 },
+
+  "abilities": {
+    "mcp": { "transport": "http", "url": "http://127.0.0.1:{port}/mcp" },
+    "changes": ["add_recipe", "add_to_list", "clear_list"],
+    "examples": { "add_to_list": ["put milk on the shopping list"] }
+  },
+
+  "ui": {
+    "pages": [ { "id": "main", "title": "FreshTable", "path": "/", "show": "in_desktop" } ],
+    "tray":  [ { "label": "FreshTable", "icon": "icons/pot.svg", "opens": "main" } ],
+    "widgets": [ { "id": "list", "type": "list", "title": "Shopping list", "path": "/widget/list" } ]
+  },
+
+  "needs": {
+    "packages": [],
+    "hosts": [],
+    "keys": [],
+    "hardware": { "ram_gb": 1 },
+    "brain": { "text": true, "images": false }
+  },
+
+  "accepts": [ { "types": [".pdf", ".txt", "image/*"], "tool": "import_recipes" } ],
+  "setup_steps": [],
+  "data": { "keep_on_remove": "ask" },
+  "consent": "FreshTable stores your recipes and lists in its own data folder on this computer. It does not use the internet."
+}

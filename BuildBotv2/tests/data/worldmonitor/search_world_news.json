@@ -1,0 +1,432 @@
+{
+ "total_count": 72,
+ "items": [
+  {
+   "full_name": "koala73/worldmonitor",
+   "name": "worldmonitor",
+   "description": "A live intelligence dashboard that gathers news and tracks global situations.",
+   "stargazers_count": 89277,
+   "language": "TypeScript",
+   "topics": [
+    "agent",
+    "ai",
+    "dashboard",
+    "geopolitics",
+    "mcp",
+    "mcp-server",
+    "monitoring",
+    "news",
+    "opensource",
+    "osint",
+    "palantir",
+    "situation"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "AGPL-3.0"
+   }
+  },
+  {
+   "full_name": "samuelclay/NewsBlur",
+   "name": "NewsBlur",
+   "description": "A personal news reader with a social side, about the whole world.",
+   "stargazers_count": 7667,
+   "language": "HTML",
+   "topics": [
+    "android",
+    "elasticsearch",
+    "feed-reader",
+    "ios",
+    "mongodb",
+    "postgresql",
+    "python",
+    "redis",
+    "rss",
+    "rss-reader"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "cirosantilli/china-dictatorship",
+   "name": "china-dictatorship",
+   "description": "Political pages about the Chinese government, with news and links. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 3288,
+   "language": "HTML",
+   "topics": [
+    "996",
+    "censorship",
+    "censorship-circumvention",
+    "china",
+    "china-dictatorship",
+    "chinese-communist-party",
+    "covid-19",
+    "covid-19-china",
+    "dictator",
+    "dictatorship",
+    "falun-gong",
+    "gfw",
+    "great-firewall",
+    "human-rights",
+    "shadowsocks",
+    "socks5",
+    "tiananmen",
+    "totalitarian",
+    "xi-jinping",
+    "xinjiang"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "marc-shade/world-intel-mcp",
+   "name": "world-intel-mcp",
+   "description": "An MCP server of many tools for global intelligence from public sources, across the world, with news.",
+   "stargazers_count": 1025,
+   "language": "Python",
+   "topics": [
+    "ai-tools",
+    "ai-watch",
+    "anthropic",
+    "claude",
+    "cybersecurity",
+    "dashboard",
+    "geofencing",
+    "geopolitical",
+    "geospatial",
+    "intelligence",
+    "markets",
+    "mcp",
+    "migration",
+    "military",
+    "model-context-protocol",
+    "nuclear",
+    "osint",
+    "real-time",
+    "space-weather",
+    "threat-intelligence"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "mars885/gamedge",
+   "name": "gamedge",
+   "description": "An Android app for video games and gaming news from around the world.",
+   "stargazers_count": 717,
+   "language": "Kotlin",
+   "topics": [
+    "android",
+    "android-application",
+    "dagger-hilt",
+    "jetpack-android",
+    "kotlin",
+    "mvi",
+    "video-games",
+    "video-games-crawler"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "Apache-2.0"
+   }
+  },
+  {
+   "full_name": "hello-world-1989/cn-news",
+   "name": "cn-news",
+   "description": "Free proxy and VPN links, posted often.",
+   "stargazers_count": 630,
+   "language": null,
+   "topics": [
+    "anti-censorship",
+    "anticensorship",
+    "ban-gfw",
+    "blank-paper",
+    "clash",
+    "clash-meta",
+    "clashx",
+    "end-gfw",
+    "fanqiang",
+    "freefq",
+    "gfw",
+    "no-more-404",
+    "shadowshare",
+    "trojan",
+    "v2ray",
+    "v2rayfree",
+    "vmess",
+    "white-paper",
+    "whyyoutouzhele"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "Kaaveh/ComposeNews",
+   "name": "ComposeNews",
+   "description": "Sample code for good Android practices, about the Android world.",
+   "stargazers_count": 378,
+   "language": "Kotlin",
+   "topics": [
+    "android",
+    "architecture",
+    "best-practices",
+    "hacktoberfest",
+    "jetpack-compose"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "kmp",
+   "private": false,
+   "license": {
+    "spdx_id": "Apache-2.0"
+   }
+  },
+  {
+   "full_name": "cirosantilli/china-dictatroship-7",
+   "name": "china-dictatroship-7",
+   "description": "A backup copy of political pages about the Chinese government, with news. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 376,
+   "language": "HTML",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "Owlinkai/redroom",
+   "name": "redroom",
+   "description": "A real-time news OSINT platform.",
+   "stargazers_count": 248,
+   "language": "TypeScript",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "NOASSERTION"
+   }
+  },
+  {
+   "full_name": "danderfer/Comp_Sci_Sem_2",
+   "name": "Comp_Sci_Sem_2",
+   "description": "School course work.",
+   "stargazers_count": 216,
+   "language": "Python",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "mRFWq7LwNPZjaVv5v6eo/cihna-dictattorshrip-8",
+   "name": "cihna-dictattorshrip-8",
+   "description": "Another backup copy of political pages, with news. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 211,
+   "language": "HTML",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "AmazingAng/PolyWorld",
+   "name": "PolyWorld",
+   "description": "A live dashboard of prediction markets on a world map.",
+   "stargazers_count": 186,
+   "language": "TypeScript",
+   "topics": [
+    "betting",
+    "monitoring",
+    "monitoring-tool",
+    "news",
+    "polymarket",
+    "prediction-markets",
+    "twitter",
+    "warzone",
+    "world"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "FrancescoCaracciolo/DivergenceMeter",
+   "name": "DivergenceMeter",
+   "description": "Reads real world news to guess a number from a story.",
+   "stargazers_count": 159,
+   "language": "JavaScript",
+   "topics": [
+    "anime",
+    "sciadv",
+    "steins-gate",
+    "steinsgate"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "GPL-3.0"
+   }
+  },
+  {
+   "full_name": "OpenNewsLabs/news-graphics-team",
+   "name": "news-graphics-team",
+   "description": "A list of graphics teams in newsrooms around the world.",
+   "stargazers_count": 156,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "santosomar/who_and_what_to_follow",
+   "name": "who_and_what_to_follow",
+   "description": "People and sources to follow in the world of cyber security.",
+   "stargazers_count": 151,
+   "language": null,
+   "topics": [
+    "cyber-security",
+    "cybersecurity",
+    "incident-response",
+    "malware",
+    "network",
+    "news",
+    "security"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "loganmeetsworld/awesome-newsroom-tech",
+   "name": "awesome-newsroom-tech",
+   "description": "A list of newsrooms around the world that use software and data.",
+   "stargazers_count": 109,
+   "language": null,
+   "topics": [
+    "awesome-list",
+    "data-journalism",
+    "journalism",
+    "news",
+    "news-technology-services"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "BharathxD/ClaimeAI",
+   "name": "ClaimeAI",
+   "description": "An AI fact checker that compares claims in the news with real world sources.",
+   "stargazers_count": 106,
+   "language": "TypeScript",
+   "topics": [
+    "ai",
+    "ai-ethics",
+    "fact-checking",
+    "factuality",
+    "langgraph",
+    "llm",
+    "misinformation",
+    "research-implementation",
+    "tavily",
+    "verification"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "MarkipTheMudkip/in-class-project-2",
+   "name": "in-class-project-2",
+   "description": "A class project page about what might happen.",
+   "stargazers_count": 96,
+   "language": "HTML",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "bermufine/dcmp",
+   "name": "dcmp",
+   "description": "A video catalog in JSON. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 76,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "LGPL-2.1"
+   }
+  },
+  {
+   "full_name": "Aryia-Behroziuan/References",
+   "name": "References",
+   "description": "A list of book references.",
+   "stargazers_count": 75,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  }
+ ]
+}

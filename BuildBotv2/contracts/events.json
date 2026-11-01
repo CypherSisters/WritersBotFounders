@@ -1,0 +1,479 @@
+{
+  "contract": "puffpai-events/1",
+  "source": "docs/zones/ZONES_TOGETHER.md section 2 (wins on these seams), docs/01_ARCHITECTURE.md 'Bus'.",
+  "rules": [
+    "An event is fire and forget. A check asks and waits until deadline_ms; no answer by the deadline = the safe answer (safe_verdict).",
+    "Payloads are schema-locked: ids, enums, counts, hashes and fixed reason codes. No values, no free text. Unknown fields are refused.",
+    "Fields named in forbidden_field_names are refused anywhere in a payload, at any depth.",
+    "The key detector runs over every string in a message; a hit drops the message and publishes bus.rejected (why: key_shape).",
+    "Only the Core publishes the core_only namespaces. Providers and packages return results to the Core, and the Core publishes.",
+    "publishers lists the source kinds allowed to publish a message (core = the Core itself, agent = one of the seven agents inside the Core). No message here is publishable by a provider or a package.",
+    "visible_to lists who may receive it: core, agent, provider, package, ui (a package of kind ui). The Core maps a token to its audience; /v1/events filters by it.",
+    "classify is a direct Core call, never a Bus message, because it carries raw text."
+  ],
+  "core_only_namespaces": ["vault.*", "egress.decision", "consent.*", "provider.*"],
+  "source_kinds": ["core", "agent", "provider", "package"],
+  "audiences": ["core", "agent", "provider", "package", "ui"],
+  "forbidden_field_names": ["value", "values", "text", "content", "body", "raw", "secret", "password", "plaintext", "key_text"],
+  "bus_reason_codes": {
+    "no_answer": "no answer by the deadline (safe answer used)",
+    "no_answerer": "nobody answers this check (safe answer used)",
+    "answer_error": "the answerer crashed (safe answer used)",
+    "bad_answer": "the answer was not in the check's verdict list (safe answer used)",
+    "rejected": "the check itself broke the contract and was dropped (safe answer used)"
+  },
+
+  "envelope": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "v", "id", "at", "source", "payload"],
+      "properties": {
+        "type": { "type": "string", "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$" },
+        "v": { "const": 1 },
+        "id": { "$ref": "#/$defs/id" },
+        "at": { "$ref": "#/$defs/time" },
+        "source": { "$ref": "#/$defs/source" },
+        "session": { "$ref": "#/$defs/id_or_null" },
+        "turn": { "$ref": "#/$defs/id_or_null" },
+        "corr": { "$ref": "#/$defs/id_or_null" },
+        "payload": { "type": "object" }
+      }
+    },
+    "check": {
+      "description": "An event plus deadline_ms.",
+      "required": ["deadline_ms"],
+      "properties": { "deadline_ms": { "type": "integer", "minimum": 1, "maximum": 600000 } }
+    },
+    "reply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verdict", "reason_code", "by"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "verdict": { "type": "string" },
+        "reason_code": { "$ref": "#/$defs/code" },
+        "by": { "$ref": "#/$defs/id" }
+      }
+    }
+  },
+
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_.:@/-]{1,128}$" },
+    "id_or_null": { "anyOf": [ { "$ref": "#/$defs/id" }, { "type": "null" } ] },
+    "ref": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{16,128}$" },
+    "count": { "type": "integer", "minimum": 0 },
+    "time": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$" },
+    "time_or_null": { "anyOf": [ { "$ref": "#/$defs/time" }, { "type": "null" } ] },
+    "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+    "label": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$" },
+    "tier": { "enum": ["P0", "P1", "P2", "P3", "P4"] },
+    "host": { "type": "string", "pattern": "^([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:]{2,39})$" },
+    "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "slot": { "type": "string", "pattern": "^zone[1-3]\\.[a-z-]+$" },
+    "pkg_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+    "key_name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+    "floor_item": { "type": "string", "pattern": "^X([1-9]|1[0-9]|20)$" },
+    "subject": { "type": "string", "pattern": "^(pkg:[a-z][a-z0-9-]{1,39}|agent:[a-z]+|core:[a-z0-9_-]+|toolsmith:(cloud|search|read)|provider:[a-z][a-z0-9-]{1,39})$" },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": { "kind": { "enum": ["core", "agent", "provider", "package"] }, "id": { "$ref": "#/$defs/id" } }
+    },
+    "short": { "type": "string", "maxLength": 200, "description": "A rule or host string from a device plan; never a personal value." },
+    "consent_scope": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "target"],
+      "properties": {
+        "kind": { "enum": ["package", "host", "key_use", "send", "send_always", "device_change", "cloud", "provider_swap", "owner_file", "relax_label", "tool_call", "model_pull"] },
+        "target": { "$ref": "#/$defs/id" }
+      }
+    },
+    "wipe_state": { "enum": ["done", "not_present", "failed"] }
+  },
+
+  "messages": {
+    "data.labeled": {
+      "form": "event", "publishers": ["core", "agent"], "visible_to": ["core", "agent", "package"],
+      "notes": "Published by Archivist. A package sees only its own items.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["item", "labels", "top_tier", "kept", "checked"],
+        "properties": {
+          "item": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "path", "ref"],
+            "properties": {
+              "kind": { "enum": ["chat_turn", "tool_result", "file_chunk", "package_data", "outbound"] },
+              "path": { "enum": ["chat", "files", "package_data", "outbound"] },
+              "ref": { "$ref": "#/$defs/ref" }
+            }
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["label", "tier", "confidence", "maybe", "by"],
+              "properties": {
+                "label": { "$ref": "#/$defs/label" }, "tier": { "$ref": "#/$defs/tier" },
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                "maybe": { "type": "boolean" }, "by": { "$ref": "#/$defs/id" }
+              }
+            }
+          },
+          "top_tier": { "$ref": "#/$defs/tier" },
+          "handles": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+          "kept": { "enum": ["vault", "inbox", "held", "not_kept", "scrubbed"] },
+          "checked": { "enum": ["full", "floor_only"] }
+        }
+      }
+    },
+    "data.adjudicate": {
+      "form": "event", "publishers": ["core", "agent"], "visible_to": ["core", "agent"],
+      "notes": "Becomes a Your turn card only for P3/P4 maybe hits on files.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["item", "label", "maybe"],
+        "properties": {
+          "item": { "type": "object", "additionalProperties": false, "required": ["ref"], "properties": { "ref": { "$ref": "#/$defs/ref" } } },
+          "label": { "$ref": "#/$defs/label" },
+          "maybe": { "const": true }
+        }
+      }
+    },
+    "data.wiped": {
+      "form": "event", "publishers": ["core", "agent"], "visible_to": ["core", "agent", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["item", "surfaces"],
+        "properties": {
+          "item": { "type": "object", "additionalProperties": false, "required": ["ref"], "properties": { "ref": { "$ref": "#/$defs/ref" } } },
+          "surfaces": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "ui_echo": { "$ref": "#/$defs/wipe_state" }, "context": { "$ref": "#/$defs/wipe_state" },
+              "chat_store": { "$ref": "#/$defs/wipe_state" }, "index": { "$ref": "#/$defs/wipe_state" },
+              "scratch": { "$ref": "#/$defs/wipe_state" }, "logs": { "$ref": "#/$defs/wipe_state" },
+              "tool_trace": { "$ref": "#/$defs/wipe_state" }, "ledger": { "$ref": "#/$defs/wipe_state" }
+            }
+          }
+        }
+      }
+    },
+    "vault.stored": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["ref", "label", "tier", "path"],
+        "properties": {
+          "ref": { "$ref": "#/$defs/ref" }, "label": { "$ref": "#/$defs/label" }, "tier": { "$ref": "#/$defs/tier" },
+          "path": { "enum": ["direct", "inbox", "held"] }, "session": { "$ref": "#/$defs/id_or_null" },
+          "bound_hosts": { "type": "array", "items": { "$ref": "#/$defs/host" } }
+        }
+      }
+    },
+    "vault.accessed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core"],
+      "notes": "Nobody but the Core and the audit sees it.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["ref", "sink", "holder"],
+        "properties": {
+          "ref": { "$ref": "#/$defs/ref" },
+          "sink": { "enum": ["form_field", "owner_reveal", "package_env", "lease", "device_action"] },
+          "holder": { "$ref": "#/$defs/id" }, "session": { "$ref": "#/$defs/id_or_null" },
+          "step_up": { "enum": ["pin", "none"] }
+        }
+      }
+    },
+    "vault.expired": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["ref", "label", "why"],
+        "properties": { "ref": { "$ref": "#/$defs/ref" }, "label": { "$ref": "#/$defs/label" }, "why": { "enum": ["retention", "owner"] } }
+      }
+    },
+    "vault.locked": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["reason"],
+        "properties": { "reason": { "enum": ["boot", "idle", "owner", "provider_change", "tamper"] } }
+      }
+    },
+    "vault.unlocked": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["factor"],
+        "properties": {
+          "session": { "$ref": "#/$defs/id_or_null" },
+          "factor": { "enum": ["pin", "recovery", "unlock_provider"] },
+          "lease_until": { "$ref": "#/$defs/time_or_null" }
+        }
+      }
+    },
+    "vault.unlock_failed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["factor", "count"],
+        "properties": {
+          "factor": { "enum": ["pin", "recovery", "unlock_provider"] },
+          "count": { "$ref": "#/$defs/count" }, "backoff_s": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "egress.request": {
+      "form": "check", "publishers": ["core", "agent"], "visible_to": ["core", "agent"],
+      "answered_by": "agent:drawbridge (rules only, Z3 decide())",
+      "verdicts": ["allow", "deny", "ask"], "safe_verdict": "deny",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["req_id", "subject", "phase", "dest", "carries"],
+        "properties": {
+          "req_id": { "$ref": "#/$defs/id" },
+          "subject": { "$ref": "#/$defs/subject" },
+          "phase": { "enum": ["run", "install", "build"] },
+          "dest": {
+            "type": "object", "additionalProperties": false, "required": ["host"],
+            "properties": { "host": { "$ref": "#/$defs/host" }, "port": { "$ref": "#/$defs/port" }, "scheme": { "enum": ["http", "https"] } }
+          },
+          "method": { "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT"] },
+          "carries": {
+            "type": "object", "additionalProperties": false, "required": ["labels"],
+            "properties": {
+              "labels": { "type": "array", "items": { "$ref": "#/$defs/label" } },
+              "top_tier": { "$ref": "#/$defs/tier" },
+              "keys": { "type": "array", "items": { "$ref": "#/$defs/key_name" } },
+              "payload_sha": { "$ref": "#/$defs/hash" }
+            }
+          },
+          "under": { "$ref": "#/$defs/id_or_null" }
+        }
+      }
+    },
+    "egress.decision": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "notes": "Providers and packages see only decisions for their own subjects.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["req_id", "verdict", "by", "reason_code"],
+        "properties": {
+          "req_id": { "$ref": "#/$defs/id" },
+          "verdict": { "enum": ["allow", "deny", "ask"] },
+          "by": { "enum": ["floor", "policy", "owner"] },
+          "rule": { "$ref": "#/$defs/id_or_null" },
+          "reason_code": { "enum": ["bridge_closed", "switched_off", "not_on_list", "blocked_by_provider", "labelled", "needs_yes", "granted"] },
+          "ledger_id": { "$ref": "#/$defs/id_or_null" }
+        }
+      }
+    },
+    "egress.observed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["subject", "host", "via", "outcome"],
+        "properties": {
+          "subject": { "$ref": "#/$defs/subject" }, "host": { "$ref": "#/$defs/host" }, "port": { "$ref": "#/$defs/port" },
+          "via": { "enum": ["proxy", "direct"] }, "outcome": { "enum": ["allowed", "refused"] },
+          "reason_code": { "$ref": "#/$defs/code" },
+          "bytes_in": { "$ref": "#/$defs/count" }, "bytes_out": { "$ref": "#/$defs/count" },
+          "matched": { "$ref": "#/$defs/id_or_null" }
+        }
+      }
+    },
+    "bridge.posture": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["state", "by"],
+        "properties": {
+          "state": { "enum": ["open", "closed"] }, "by": { "$ref": "#/$defs/id" },
+          "hosts_changed": { "type": "array", "items": { "$ref": "#/$defs/host" } }
+        }
+      }
+    },
+    "device.proposal": {
+      "form": "check", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "answered_by": "the owner on a Core card (floor-level: PIN or Windows Hello, D29)",
+      "verdicts": ["allow", "deny"], "safe_verdict": "deny",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["plan_id", "device", "base_hash", "steps", "undo", "effects", "expires_at", "risk"],
+        "properties": {
+          "plan_id": { "$ref": "#/$defs/id" }, "device": { "$ref": "#/$defs/id" }, "base_hash": { "$ref": "#/$defs/hash" },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["what"],
+              "properties": { "what": { "$ref": "#/$defs/code" }, "before": { "$ref": "#/$defs/short" }, "after": { "$ref": "#/$defs/short" } }
+            }
+          },
+          "undo": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["what"],
+              "properties": { "what": { "$ref": "#/$defs/code" }, "before": { "$ref": "#/$defs/short" }, "after": { "$ref": "#/$defs/short" } }
+            }
+          },
+          "effects": {
+            "type": "object", "additionalProperties": false, "required": ["touches_dns_dhcp", "touches_mgmt_path"],
+            "properties": {
+              "devices": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+              "touches_dns_dhcp": { "type": "boolean" }, "touches_mgmt_path": { "type": "boolean" }
+            }
+          },
+          "expires_at": { "$ref": "#/$defs/time" },
+          "risk": { "enum": ["low", "high"] }
+        }
+      }
+    },
+    "device.changed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "ui"],
+      "notes": "A network-device provider sees only its own device.* events.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["plan_id", "consent_id", "applied", "read_back_ok"],
+        "properties": {
+          "plan_id": { "$ref": "#/$defs/id" }, "consent_id": { "$ref": "#/$defs/id" },
+          "applied": { "type": "boolean" }, "read_back_ok": { "type": "boolean" },
+          "new_hash": { "$ref": "#/$defs/hash" }, "undo_ref": { "$ref": "#/$defs/id_or_null" }
+        }
+      }
+    },
+    "device.drift": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["device", "what_changed"],
+        "properties": {
+          "device": { "$ref": "#/$defs/id" },
+          "what_changed": { "type": "array", "items": { "$ref": "#/$defs/code" } }
+        }
+      }
+    },
+    "consent.requested": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["consent_id", "scope", "floor", "card_sha"],
+        "properties": {
+          "consent_id": { "$ref": "#/$defs/id" }, "scope": { "$ref": "#/$defs/consent_scope" },
+          "floor": { "type": "boolean" }, "card_sha": { "$ref": "#/$defs/hash" }
+        }
+      }
+    },
+    "consent.granted": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "notes": "Core only, from an owner session. A tap on a floor-level card is refused (D29). Requesters see only their own.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["consent_id", "scope", "factor"],
+        "properties": {
+          "consent_id": { "$ref": "#/$defs/id" }, "scope": { "$ref": "#/$defs/consent_scope" },
+          "factor": { "enum": ["tap", "pin", "hello"] },
+          "expires": { "$ref": "#/$defs/time_or_null" },
+          "bound": {
+            "oneOf": [
+              { "type": "object", "additionalProperties": false, "required": ["payload_sha", "labels"],
+                "properties": { "payload_sha": { "$ref": "#/$defs/hash" }, "labels": { "type": "array", "items": { "$ref": "#/$defs/label" } } } },
+              { "type": "object", "additionalProperties": false, "required": ["package", "labels"],
+                "properties": { "package": { "$ref": "#/$defs/pkg_id" }, "labels": { "type": "array", "items": { "$ref": "#/$defs/label" } } } },
+              { "type": "object", "additionalProperties": false, "required": ["plan_sha"],
+                "properties": { "plan_sha": { "$ref": "#/$defs/hash" } } }
+            ]
+          }
+        }
+      }
+    },
+    "consent.revoked": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "provider", "package", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["consent_id", "scope"],
+        "properties": {
+          "consent_id": { "$ref": "#/$defs/id" }, "scope": { "$ref": "#/$defs/consent_scope" },
+          "factor": { "enum": ["tap", "pin", "hello"] }
+        }
+      }
+    },
+    "provider.installed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["slot", "id", "version", "origin", "floor_suite"],
+        "properties": {
+          "slot": { "$ref": "#/$defs/slot" }, "id": { "$ref": "#/$defs/pkg_id" },
+          "version": { "type": "string", "pattern": "^[0-9A-Za-z.+-]{1,40}$" },
+          "origin": { "type": "string", "pattern": "^(core|store:verified|store:community|github|local|adopted|made)$" },
+          "floor_suite": { "enum": ["pass", "fail"] }
+        }
+      }
+    },
+    "provider.changed": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["slot", "from", "to", "migration"],
+        "properties": {
+          "slot": { "$ref": "#/$defs/slot" },
+          "from": { "anyOf": [ { "$ref": "#/$defs/pkg_id" }, { "type": "null" } ] },
+          "to": { "anyOf": [ { "$ref": "#/$defs/pkg_id" }, { "type": "null" } ] },
+          "migration": { "enum": ["none", "running", "verified", "rolled_back"] }
+        }
+      }
+    },
+    "provider.floor_violation": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["slot", "id", "floor_item", "evidence_code", "action"],
+        "properties": {
+          "slot": { "$ref": "#/$defs/slot" }, "id": { "$ref": "#/$defs/pkg_id" },
+          "floor_item": { "$ref": "#/$defs/floor_item" }, "evidence_code": { "$ref": "#/$defs/code" },
+          "action": { "enum": ["refused", "disabled", "stopped", "fell_back"] }
+        }
+      }
+    },
+    "core.selftest": {
+      "form": "event", "publishers": ["core", "agent"], "visible_to": ["core", "agent", "ui"],
+      "notes": "The Core at start; Caretaker daily.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["results", "mode"],
+        "properties": {
+          "results": {
+            "type": "object",
+            "propertyNames": { "pattern": "^X([1-9]|1[0-9]|20)$" },
+            "additionalProperties": { "enum": ["pass", "fail", "degraded"] }
+          },
+          "mode": { "enum": ["normal", "safe"] }
+        }
+      }
+    },
+    "bus.rejected": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent"],
+      "notes": "Published by the Bus itself (source core:bus). type and source are recorded only when they are well formed, else 'unknown'. 'publisher' (a source not allowed to publish that type) is added to the doc's schema|key_shape list.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["source", "type", "why"],
+        "properties": {
+          "source": { "$ref": "#/$defs/source" },
+          "type": { "type": "string", "pattern": "^[a-z][a-z_.]{0,63}$" },
+          "field": { "type": "string", "pattern": "^[A-Za-z0-9_.\\[\\]]{0,128}$" },
+          "why": { "enum": ["schema", "key_shape", "publisher"] }
+        }
+      }
+    },
+    "checklist.changed": {
+      "form": "event", "publishers": ["core", "agent"], "visible_to": ["core", "agent", "package", "ui"],
+      "notes": "Lane L5. Majordomo (the Checklist) publishes it when a 'Your turn' step is added, done, skipped or reopened. Ids only; a UI reads the step itself from GET /v1/checklist. /v1/events shows a package only its own steps.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["step", "package", "change"],
+        "properties": {
+          "step": { "$ref": "#/$defs/id" },
+          "package": { "$ref": "#/$defs/id" },
+          "change": { "enum": ["added", "done", "skipped", "reopened"] }
+        }
+      }
+    },
+    "notify.posted": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "notes": "Lane L5. The Core publishes it for each POST /v1/notify. Ids only; a UI reads the notice from GET /v1/notify.",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["notice", "package", "urgency"],
+        "properties": {
+          "notice": { "$ref": "#/$defs/id" },
+          "package": { "$ref": "#/$defs/id" },
+          "urgency": { "enum": ["low", "normal", "high"] }
+        }
+      }
+    },
+    "wizard.progress": {
+      "form": "event", "publishers": ["core"], "visible_to": ["core", "agent", "ui"],
+      "notes": "Lane L5. A wizard step changed state (either renderer).",
+      "payload": {
+        "type": "object", "additionalProperties": false, "required": ["step", "state"],
+        "properties": {
+          "step": { "$ref": "#/$defs/id" },
+          "state": { "enum": ["done", "waiting", "not_built"] }
+        }
+      }
+    }
+  }
+}

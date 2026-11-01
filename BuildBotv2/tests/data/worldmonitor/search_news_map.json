@@ -1,0 +1,399 @@
+{
+ "total_count": 27,
+ "items": [
+  {
+   "full_name": "sshuair/awesome-gis",
+   "name": "awesome-gis",
+   "description": "A list of GIS sources: map tools, data, news and courses.",
+   "stargazers_count": 5591,
+   "language": null,
+   "topics": [
+    "awesome",
+    "geo",
+    "geospatial",
+    "geospatial-library",
+    "geotools",
+    "gis",
+    "map",
+    "spatial-analysis"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "cirosantilli/china-dictatorship",
+   "name": "china-dictatorship",
+   "description": "Political pages about the Chinese government, with news and links. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 3288,
+   "language": "HTML",
+   "topics": [
+    "996",
+    "censorship",
+    "censorship-circumvention",
+    "china",
+    "china-dictatorship",
+    "chinese-communist-party",
+    "covid-19",
+    "covid-19-china",
+    "dictator",
+    "dictatorship",
+    "falun-gong",
+    "gfw",
+    "great-firewall",
+    "human-rights",
+    "shadowsocks",
+    "socks5",
+    "tiananmen",
+    "totalitarian",
+    "xi-jinping",
+    "xinjiang"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "GauravSingh9356/J.A.R.V.I.S",
+   "name": "J.A.R.V.I.S",
+   "description": "A voice assistant in Python: email, text reading, news, a map and more.",
+   "stargazers_count": 1423,
+   "language": "Python",
+   "topics": [
+    "chatgpt",
+    "dictionary-application",
+    "difflib",
+    "hacktoberfest",
+    "hactober-accepted",
+    "hactoberfest2021",
+    "jarvis",
+    "jarvis-ai",
+    "newsapi",
+    "opencv",
+    "optical-character-recognition",
+    "optical-text-recognition",
+    "python",
+    "python3",
+    "pyttsx3",
+    "speech-recognition",
+    "tesseract",
+    "tesseract-ocr",
+    "weather-api",
+    "webbrowser"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "cirosantilli/china-dictatroship-7",
+   "name": "china-dictatroship-7",
+   "description": "A backup copy of political pages about the Chinese government, with news. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 376,
+   "language": "HTML",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "mRFWq7LwNPZjaVv5v6eo/cihna-dictattorshrip-8",
+   "name": "cihna-dictattorshrip-8",
+   "description": "Another backup copy of political pages, with news. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 211,
+   "language": "HTML",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "CC-BY-SA-4.0"
+   }
+  },
+  {
+   "full_name": "AmazingAng/PolyWorld",
+   "name": "PolyWorld",
+   "description": "A live dashboard of prediction markets on a world map.",
+   "stargazers_count": 186,
+   "language": "TypeScript",
+   "topics": [
+    "betting",
+    "monitoring",
+    "monitoring-tool",
+    "news",
+    "polymarket",
+    "prediction-markets",
+    "twitter",
+    "warzone",
+    "world"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "lbj96347/2020-virus-map",
+   "name": "2020-virus-map",
+   "description": "Puts virus cases from official news on a map.",
+   "stargazers_count": 110,
+   "language": "JavaScript",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "kayvane1/brave-api",
+   "name": "brave-api",
+   "description": "Searches words, images, news and maps with a search engine API.",
+   "stargazers_count": 90,
+   "language": "Python",
+   "topics": [
+    "brave",
+    "brave-api",
+    "brave-search",
+    "search-engine"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "staging",
+   "private": false,
+   "license": {
+    "spdx_id": "Apache-2.0"
+   }
+  },
+  {
+   "full_name": "bermufine/dcmp",
+   "name": "dcmp",
+   "description": "A video catalog in JSON. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long. Filler words written for this test, to make the text long.",
+   "stargazers_count": 76,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "LGPL-2.1"
+   }
+  },
+  {
+   "full_name": "amanimran786/osint-worldview",
+   "name": "osint-worldview",
+   "description": "An open dashboard for news, maps and risk signals.",
+   "stargazers_count": 69,
+   "language": "TypeScript",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "NOASSERTION"
+   }
+  },
+  {
+   "full_name": "HouseofLoops/headwater",
+   "name": "headwater",
+   "description": "One self-hosted API for maps, news and trends, in Docker.",
+   "stargazers_count": 66,
+   "language": "Python",
+   "topics": [
+    "api",
+    "autocomplete",
+    "docker",
+    "fastapi",
+    "google-maps",
+    "google-news",
+    "google-trends",
+    "python",
+    "scraping",
+    "self-hosted",
+    "serp",
+    "youtube-transcript"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "neooriginal/HowCloseToWorldEnd",
+   "name": "HowCloseToWorldEnd",
+   "description": "Guesses how close the world is to its end from news, and makes a map.",
+   "stargazers_count": 60,
+   "language": "JavaScript",
+   "topics": [
+    "doomsday",
+    "worldend"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "Ronald106/Surviv.io",
+   "name": "Surviv.io",
+   "description": "A browser game page.",
+   "stargazers_count": 56,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "carbon-evolution/osiris",
+   "name": "osiris",
+   "description": "A live OSINT map of flights, quakes, fires and news.",
+   "stargazers_count": 46,
+   "language": "TypeScript",
+   "topics": [
+    "cctv",
+    "dashboard",
+    "geospatial",
+    "gis",
+    "intelligence",
+    "maplibre",
+    "nextjs",
+    "osint",
+    "react",
+    "real-time",
+    "situational-awareness",
+    "threat-intelligence",
+    "typescript"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "Rynkll696/HH",
+   "name": "HH",
+   "description": "A Python voice assistant script.",
+   "stargazers_count": 42,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "Foundation42/CASSANDRA",
+   "name": "CASSANDRA",
+   "description": "A live map of signals: news, ships and planes.",
+   "stargazers_count": 36,
+   "language": "Zig",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "NOASSERTION"
+   }
+  },
+  {
+   "full_name": "datadesk/census-map-downloader",
+   "name": "census-map-downloader",
+   "description": "Downloads U.S. census maps.",
+   "stargazers_count": 35,
+   "language": "Python",
+   "topics": [
+    "census",
+    "data-journalism",
+    "journalism",
+    "mapping-la-pipeline",
+    "maps",
+    "news",
+    "python"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "Nate0634034090/bug-free-memory",
+   "name": "bug-free-memory",
+   "description": "Notes on cyber operations from around the world.",
+   "stargazers_count": 35,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "BSL-1.0"
+   }
+  },
+  {
+   "full_name": "pwichmann/supply_chain_mining",
+   "name": "supply_chain_mining",
+   "description": "Finds supply chain maps in news articles with neural networks.",
+   "stargazers_count": 33,
+   "language": "Python",
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "Gabriel1231n2j3n/hacks-para-krunker",
+   "name": "hacks-para-krunker",
+   "description": "A user script for a browser game map.",
+   "stargazers_count": 30,
+   "language": null,
+   "topics": [],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  }
+ ]
+}

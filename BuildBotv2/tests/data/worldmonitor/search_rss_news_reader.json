@@ -1,0 +1,116 @@
+{
+ "total_count": 43,
+ "items": [
+  {
+   "full_name": "Ranchero-Software/NetNewsWire",
+   "name": "NetNewsWire",
+   "description": "A feed reader for Apple computers and phones.",
+   "stargazers_count": 10485,
+   "language": "Swift",
+   "topics": [
+    "feed-reader",
+    "ios",
+    "macos",
+    "rss"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "samuelclay/NewsBlur",
+   "name": "NewsBlur",
+   "description": "A personal news reader with a social side, about the whole world.",
+   "stargazers_count": 7667,
+   "language": "HTML",
+   "topics": [
+    "feed-reader",
+    "rss",
+    "rss-reader"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "newsboat/newsboat",
+   "name": "newsboat",
+   "description": "A feed reader that runs in a terminal.",
+   "stargazers_count": 3929,
+   "language": "C++",
+   "topics": [
+    "atom-feed-reader",
+    "rss-feed-reader"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  {
+   "full_name": "nextcloud/news",
+   "name": "news",
+   "description": "A feed reader app for Nextcloud.",
+   "stargazers_count": 1011,
+   "language": "PHP",
+   "topics": [
+    "feed-reader",
+    "news",
+    "nextcloud"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "master",
+   "private": false,
+   "license": {
+    "spdx_id": "AGPL-3.0"
+   }
+  },
+  {
+   "full_name": "lwindolf/liferea",
+   "name": "liferea",
+   "description": "A desktop feed reader and news gatherer for Linux.",
+   "stargazers_count": 925,
+   "language": "C",
+   "topics": [
+    "feed",
+    "news-aggregator",
+    "rss"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": null
+  },
+  {
+   "full_name": "tt-rss/tt-rss",
+   "name": "tt-rss",
+   "description": "A web feed reader and news gatherer you host yourself.",
+   "stargazers_count": 867,
+   "language": "PHP",
+   "topics": [
+    "rss",
+    "rss-aggregator"
+   ],
+   "archived": false,
+   "fork": false,
+   "default_branch": "main",
+   "private": false,
+   "license": {
+    "spdx_id": "GPL-3.0"
+   }
+  }
+ ]
+}

@@ -1,0 +1,118 @@
+{
+ "added": [],
+ "apps": [
+  {
+   "commit": "3c90ea6b4a98382d2e9980abf310582f3e39750d",
+   "id": "calculator",
+   "kind": "tool",
+   "name": "Calculator",
+   "source": "store:calculator",
+   "version": "1.0.0"
+  },
+  {
+   "commit": "3c90ea6b4a98382d2e9980abf310582f3e39750d",
+   "id": "document-convert",
+   "kind": "tool",
+   "name": "Document convert",
+   "source": "store:document-convert",
+   "version": "1.0.0"
+  },
+  {
+   "commit": "3c90ea6b4a98382d2e9980abf310582f3e39750d",
+   "id": "document-search",
+   "kind": "tool",
+   "name": "Document search",
+   "source": "store:document-search",
+   "version": "1.0.0"
+  },
+  {
+   "id": "manuscript",
+   "kind": "app",
+   "name": "Manuscript",
+   "source": "apps/manuscript",
+   "version": "0.3.3"
+  },
+  {
+   "id": "maps",
+   "kind": "app",
+   "name": "Maps",
+   "source": "apps/maps",
+   "version": "2.1.0"
+  },
+  {
+   "id": "novel-mode",
+   "kind": "skill",
+   "name": "Novel mode",
+   "source": "apps/novel-mode",
+   "version": "1.0.2"
+  },
+  {
+   "commit": "4a8e072c072df4222e7853f75d107ce3b266581e",
+   "id": "radio",
+   "kind": "app",
+   "name": "World Radio",
+   "source": "store:radio",
+   "version": "1.0.1"
+  }
+ ],
+ "bot": {
+  "name": "Dewey",
+  "theme": "clean"
+ },
+ "exported_at": "2026-11-01T20:59:55+00:00",
+ "knowledge": {
+  "books": [],
+  "linked": [],
+  "pinned": []
+ },
+ "layout": {
+  "apps": {
+   "pages": [],
+   "view": "tiles"
+  },
+  "seen": {
+   "tiles": {
+    "apps": "Your apps",
+    "brain": "The brain",
+    "bridge": "The Bridge",
+    "building": "Building now",
+    "your-turn": "Your turn"
+   }
+  },
+  "tiles": {
+   "hidden": [
+    "bridge",
+    "brain"
+   ],
+   "names": {},
+   "order": [
+    "apps",
+    "building",
+    "your-turn",
+    "bridge",
+    "brain"
+   ],
+   "pinned": []
+  },
+  "updated_at": "2026-11-01T20:41:47Z",
+  "updated_by": "owner",
+  "version": 1
+ },
+ "opens": "window",
+ "persona": {
+  "text": "An editor in chief for a novelist and short-story writer working toward publication, developmental and line editing of chapters, world building with consistent rules, science fiction feasibility checks, character arcs, plot and subplot structure, query letters and submission formatting, manuscript and word processing, and a creative partner who is very interested in your users ideas and thoughts."
+ },
+ "schema": "puffpai-bot/1",
+ "stays": [
+  "Your vault and everything in it: keys, passwords and private details.",
+  "Your chats.",
+  "Paired devices and phones.",
+  "What is inside your apps. Each app starts empty there.",
+  "People and You.",
+  "The documents themselves. Linked folders and pinned documents go by name only, to link and pin again.",
+  "Books and model files. Books go by name only, and the brain is picked again in setup.",
+  "Your Yes answers: the Bridge, Drawbridge's setting, and changing your documents start as a new bot does, and each app asks its own Yes.",
+  "Tool servers and APIs you added, with their keys. They go by name only, to add again."
+ ],
+ "theme": {}
+}

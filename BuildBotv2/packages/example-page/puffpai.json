@@ -1,0 +1,18 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "example-page",
+  "kind": "page",
+  "name": "My notes (an example page you can copy)",
+  "version": "0.1.0",
+  "description": "An example Desktop page: a small notes pad, and a card with a short list. Static files only.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "icons/notes.svg",
+  "ui": {
+    "pages": [ { "id": "main", "title": "My notes", "file": "index.html", "show": "in_desktop" } ],
+    "tray": [ { "label": "My notes", "icon": "icons/notes.svg", "opens": "main" } ],
+    "widgets": [ { "id": "today", "type": "list", "title": "Today", "file": "widget.json" } ]
+  },
+  "needs": { "hosts": [], "keys": [] },
+  "consent": "A page for your Desktop. It runs nothing and uses no internet. Notes stay in this browser."
+}
