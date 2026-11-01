@@ -66,7 +66,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "manuscript"
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 40 * 1024 * 1024                  # a long novel with pictures, as base64
@@ -999,8 +999,7 @@ class Manuscripts:
     def manuscript_remove(self, title: Any = None) -> str:
         """Put one manuscript away: its whole folder moves into Removed inside Manuscripts. Nothing is deleted."""
         folder, idx = self._find(title)
-        st = read_json(folder / "status.json") if (folder / "status.json").exists() else {}
-        if isinstance(st, dict) and st.get("state") == "reading":
+        if self.reader.busy(folder):                 # 0.3.4: only a reading that is really running, never a stale status file
             raise Refused(f"Your bot is still reading {idx.get('title')}. Wait for it to finish, then put it away.")
         removed = self.shelf() / REMOVED
         removed.mkdir(parents=True, exist_ok=True)

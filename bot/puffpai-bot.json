@@ -30,7 +30,7 @@
    "kind": "app",
    "name": "Manuscript",
    "source": "apps/manuscript",
-   "version": "0.3.3"
+   "version": "0.3.4"
   },
   {
    "id": "maps",
@@ -59,7 +59,7 @@
   "name": "Dewey",
   "theme": "clean"
  },
- "exported_at": "2026-11-01T20:59:55+00:00",
+ "exported_at": "2026-11-01T21:36:48+00:00",
  "knowledge": {
   "books": [],
   "linked": [],
