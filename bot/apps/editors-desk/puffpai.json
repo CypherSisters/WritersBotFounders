@@ -3,7 +3,7 @@
   "id": "editors-desk",
   "kind": "app",
   "name": "Editor's Desk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A publishing house's stages of editing for your book, big to small: the story, the facts, the prose, the polish, and getting it out. It brings Manuscript's story bible and your text together in one place, finds plot holes and inconsistencies across the whole book, and shows each with its section and exact quote, why it matters and one way to fix it. Mark each Open, Fixed, Not a problem or Later. Edit your text right beside the findings, with every earlier version kept. Your editor works in the background with the model on this computer, and only when you say so. Your bot never writes your book.",
   "author": "Cypher Sisters",
   "license": "Apache-2.0",

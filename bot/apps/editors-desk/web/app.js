@@ -56,7 +56,8 @@
     for (const x of S.books) b.appendChild(el('option', {value: x.title, text: x.title}));
     b.disabled = false;
     const want = new URLSearchParams(location.search).get('title');
-    await pick(want && S.books.some(x => x.title === want) ? want : S.books[0].title);
+    const first = S.books.find(x => x.read) || S.books[0];        // a read book first, not one still waiting
+    await pick(want && S.books.some(x => x.title === want) ? want : first.title);
   }
 
   async function pick(title) {
