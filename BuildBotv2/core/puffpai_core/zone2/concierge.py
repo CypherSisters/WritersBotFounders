@@ -631,7 +631,8 @@ class Concierge:
                  "with each one's id, status and what it does.", s({}, []), list_installed),
             make("open_package", "Get the tools of one installed package by its id, to use them in this turn.",
                  s(idp, ["id"]), open_package),
-            make("search_knowledge", "Search the owner's knowledge and documents on this computer. "
+            make("search_knowledge", "Search the owner's knowledge on this computer: the books and articles on her Knowledge page, "
+                 "her linked folders and her documents. This is her knowledge; the Document search app is a separate, smaller store. "
                  + ADD_DOCUMENTS,
                  s({"query": {"type": "string"}, "limit": {"type": "integer"}}, ["query"]), search_knowledge),
             make("checklist_add", "Put a reminder on the owner's Checklist (a 'Your turn' card with a Done tick), "

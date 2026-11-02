@@ -19,6 +19,7 @@
       <button class="main" id="upload" type="button">Upload</button>
       <button id="remove" type="button" title="Put this manuscript away. Nothing is deleted." disabled>Remove</button>
       <input type="file" id="file" accept=".docx,.pdf,.txt,.md" hidden>
+      <a class="desk-link" id="deskopen" href="#">Open Editor's Desk</a>
     </div>
     <p class="say" id="upsay" aria-live="polite"></p>
     <div class="status" id="status" aria-live="polite"></div>
@@ -42,18 +43,18 @@
       <summary>Settings</summary>
       <label class="switch"><input type="checkbox" id="vaultfree" checked> Keep manuscripts out of the vault</label>
       <p class="hint">On: dates, names and places in your manuscripts are treated as the work and go to your bot's brain as written. Off: they are filed in your vault like anything else you tell your bot, for someone whose manuscripts hold real people's details.</p>
+      <p class="hint" id="booksize"></p>
       <p class="say" id="setsay" aria-live="polite"></p>
     </details>
     <div class="tabs" role="tablist" id="tabs"></div>
     <p class="maps-line tab-maps"><a class="maps-link" id="maps" href="#">See in Maps</a></p>
-    <form class="correct" id="correct" autocomplete="off" hidden>
-      <label for="fixin">Correct a fact</label>
-      <input id="fixin" type="text" maxlength="400" placeholder="Tom is her cousin, not her brother">
-      <button id="fixgo" type="submit">Correct</button>
+    <form class="correct" id="correct" autocomplete="off">
+      <label for="fixin">Something wrong?</label>
+      <input id="fixin" type="text" maxlength="400" placeholder="Say what it should be">
+      <button id="fixgo" type="submit">Fix it</button>
       <span class="say" id="fixsay" aria-live="polite"></span>
     </form>
     <div id="fixes"></div>
-    <div class="desk" id="desk"></div>
     <div class="blocks" id="blocks"></div>
     <div class="views" id="views"></div>
     <section class="notes" id="notes">

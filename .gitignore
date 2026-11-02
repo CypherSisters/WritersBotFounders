@@ -4,5 +4,6 @@ __pycache__/
 .pytest_cache/
 *.log
 *.cmd
+!Get the WritersBot window.cmd
 !BuildBotv2/scripts/**
 BuildBotv2/.venv/

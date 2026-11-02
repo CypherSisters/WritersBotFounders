@@ -104,10 +104,10 @@
   }
 
   function buildEl(v, open, lib, pic) {
-    const t = P.tile({ icon: v.active ? "progress_activity" : "inventory_2", title: v.goal || "A build", wide: true,
+    const t = P.tile({ icon: v.active ? "progress_activity" : "inventory_2", title: L.buildTitle(v.goal, v.booksOnly), wide: true,
                        stat: (v.active ? "LIVE, " : "") + v.created.replace("T", " ").slice(0, 16) });
     if (v.now) t.body.appendChild(el("p", { class: "now", text: (v.planning && L.stillWords(v.now, v.nowAt, Date.now())) || v.now }));
-    if (v.planning) t.body.appendChild(el("p", { class: "muted", text: "Toolsmith is planning: finding apps for each job." }));
+    if (v.planning) t.body.appendChild(el("p", { class: "muted", text: L.planningWords(v) }));
     if (v.said) t.body.appendChild(el("p", { class: "warn-t", text: v.said }));
     if (v.active && v.yes && v.unlock) t.body.appendChild(unlockEl(v));
     if (v.planLines.length) t.body.appendChild(el("details", open || !v.yes ? { open: true } : {}, [el("summary", { text: v.yes ? "The plan you said Yes to" : "The plan" }),
@@ -121,7 +121,7 @@
     if (pic) t.body.appendChild(pictureEl(v.id, pic));
     if (lib) t.body.appendChild(libraryEl(lib));
     if (v.setup.length) t.body.appendChild(el("p", { class: "small", text: "Programs it needs first: " + v.setup.join(", ") + ". They are on Your turn." }));
-    if (!v.jobs.length && !v.planning) t.body.appendChild(el("p", { class: "empty", text: "No jobs in this build." }));
+    if (!v.jobs.length && !v.planning && !v.booksOnly) t.body.appendChild(el("p", { class: "empty", text: "No jobs in this build." }));
     if (v.canAgain) t.body.appendChild(againEl(v));
     v.jobs.forEach((j) => t.body.appendChild(jobEl(j)));
     if (v.knowledge.length) t.body.appendChild(el("details", {}, [el("summary", { class: "small", text: "Knowledge for this build (" + v.knowledge.length + "): Wikipedia and Gutenberg are read after your Yes" }),

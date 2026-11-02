@@ -1,0 +1,125 @@
+{
+  "manuscripts": [
+    {
+      "title": "Salt Moon",
+      "folder": "Salt Moon",
+      "original": "original.docx",
+      "sections": [
+        {
+          "n": 1,
+          "heading": "The Brine Bell",
+          "words": 122
+        },
+        {
+          "n": 2,
+          "heading": "Salt Flats",
+          "words": 133
+        },
+        {
+          "n": 3,
+          "heading": "Quill",
+          "words": 94
+        },
+        {
+          "n": 4,
+          "heading": "The Lantern Goes Dark",
+          "words": 99
+        },
+        {
+          "n": 5,
+          "heading": "What Halden Knew",
+          "words": 99
+        },
+        {
+          "n": 6,
+          "heading": "Pell's Map",
+          "words": 107
+        },
+        {
+          "n": 7,
+          "heading": "Low Tide",
+          "words": 91
+        },
+        {
+          "n": 8,
+          "heading": "The Long Light",
+          "words": 111
+        }
+      ],
+      "chapters": [
+        {
+          "n": 1,
+          "heading": "The Brine Bell",
+          "words": 122
+        },
+        {
+          "n": 2,
+          "heading": "Salt Flats",
+          "words": 133
+        },
+        {
+          "n": 3,
+          "heading": "Quill",
+          "words": 94
+        },
+        {
+          "n": 4,
+          "heading": "The Lantern Goes Dark",
+          "words": 99
+        },
+        {
+          "n": 5,
+          "heading": "What Halden Knew",
+          "words": 99
+        },
+        {
+          "n": 6,
+          "heading": "Pell's Map",
+          "words": 107
+        },
+        {
+          "n": 7,
+          "heading": "Low Tide",
+          "words": 91
+        },
+        {
+          "n": 8,
+          "heading": "The Long Light",
+          "words": 111
+        }
+      ],
+      "status": {
+        "state": "done",
+        "step": "Read all 8 sections",
+        "done": 8,
+        "total": 8
+      }
+    }
+  ],
+  "tabs": [
+    {
+      "id": "world",
+      "label": "World"
+    },
+    {
+      "id": "characters",
+      "label": "Characters"
+    },
+    {
+      "id": "plot",
+      "label": "Plot and subplots"
+    },
+    {
+      "id": "themes",
+      "label": "Themes"
+    },
+    {
+      "id": "science",
+      "label": "Science"
+    },
+    {
+      "id": "editing",
+      "label": "Editing"
+    }
+  ]
+}

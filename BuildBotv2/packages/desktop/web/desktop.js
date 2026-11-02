@@ -340,9 +340,11 @@
     const box = el("div");
     // One "Your plan" card per build: a second Yes for the same build redraws its card, never adds one.
     const run = String(Math.random());
+    const books = c.title === L.BOOKS_CARD;            // Knowledge shows these as they come
+    const head = books ? "Your books" : "Your plan";
     let card = Array.from($("notices").querySelectorAll("[data-plan-yes]")).find((n) => n.getAttribute("data-plan-yes") === c.plan.build);
-    if (card) clear(card).append(el("h3", { text: "Your plan" }), log, box);
-    else card = el("div", { class: "card note", "data-plan-yes": c.plan.build }, [el("h3", { text: "Your plan" }), log, box]);
+    if (card) clear(card).append(el("h3", { text: head }), log, box);
+    else card = el("div", { class: "card note", "data-plan-yes": c.plan.build }, [el("h3", { text: head }), log, box]);
     card.setAttribute("data-run", run);
     const mine = () => card.getAttribute("data-run") === run;   // a newer Yes took this card over
     $("notices").prepend(card);
@@ -357,7 +359,7 @@
       if (r.status !== 200) { await sleep(1000); continue; }
       const p = L.storeProgress(r.data);
       clear(log);
-      p.lines.forEach((t) => log.appendChild(el("p", { text: t })));
+      (books ? ["Getting them. Knowledge shows how it goes."] : p.lines).forEach((t) => log.appendChild(el("p", { text: t })));
       if (p.asking !== shown) {                        // the store app's own Yes card, from the Core
         shown = p.asking;
         clear(box);
@@ -369,7 +371,7 @@
     if (!mine()) return;
     clear(box);
     const x = el("button", { class: "link", text: "Dismiss", on: { click: () => card.remove() } });
-    card.appendChild(el("div", { class: "row end" }, [el("a", { href: "#building", text: "Open Building" }), x]));
+    card.appendChild(el("div", { class: "row end" }, [books ? null : el("a", { href: "#building", text: "Open Building" }), x]));
     redraw("building");
   }
 

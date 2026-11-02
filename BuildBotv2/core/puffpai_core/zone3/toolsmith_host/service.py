@@ -80,6 +80,12 @@ _LEFT_RE = re.compile(r"^Toolsmith: job (\S{1,120}) " + re.escape(agent_mod.LEFT
 _CRASH_RE = re.compile(r"^Toolsmith stopped: " + _CLASS + r"\s*$")
 _LOG_TAIL_BYTES = 256_000
 NO_PLAN_LINE = "Toolsmith could not make a plan this time. Try again."
+#: Find books, when it can't look: the real reason.
+BOOKS_LOCKED_LINE = ("Your vault is locked, and your bot checks your words against the names kept in it before they go out, "
+                     "so nothing was looked up. Unlock your vault on the Vault page and try again.")
+BOOKS_CLOSED_LINE = "The Bridge is closed, so your bot can't reach any library, and nothing was looked up."
+BOOKS_NO_WORDS_LINE = ("Nothing was looked up: those words can't be sent. A search takes plain letters, so no numbers, and no "
+                       "name of someone your bot knows. Try the book's title in other words, or its subject.")
 #: A Yes from before her plan card said a cloud build reads public pages and tries other apps (D121).
 AGAIN_OLDER_YES_LINE = "Your last Yes did not say Toolsmith may read public pages and try other apps."
 #: Her GitHub key in the vault, named like Toolsmith's cloud keys (``toolsmith.<provider>``): used only on
@@ -389,7 +395,9 @@ class ToolsmithHost:
         return {"id": b["id"], "goal": b["goal"], "created_at": b["created_at"],
                 "jobs": [{"id": j["id"], "name": j["name"], "status": store.job_status(b, j),
                           **({"library": True} if store.library_job(j) else {})} for j in b["jobs"]],
-                "library": knowledge_mod.progress(b)}         # the knowledge fetch, for Home (lane I19b)
+                "library": knowledge_mod.progress(b),         # the knowledge fetch, for Home (lane I19b)
+                # A books-only build has no jobs, so its rail row reads these.
+                **({"books_only": True, "planning": bool(b.get("planning")), "yes": bool(b.get("yes"))} if b.get("books_only") else {})}
 
     # -- plan, Yes, start (the owner) ------------------------------------------------
 
@@ -398,13 +406,89 @@ class ToolsmithHost:
         self._refuse_if_paused()
         return self.plan_build(self.draft(goal, jobs)["id"])
 
-    def plan_books(self, words: str) -> dict:
+    def plan_books(self, words: str | list[str], *, goal: str = "", only: Any = None, wait: bool = True) -> dict:
         """Books only (D136, v1's Find more knowledge): the plan's card with no app looked for and no model asked, so
-        it costs nothing. Her words are the one topic, screened as every topic is."""
+        it costs nothing. Her words, or a list's topics, are the topics, screened as every topic is. *only*: a reading
+        list's sources, with no catalog asked (``knowledge.READING_SOURCES``). With *wait* False it answers at once, with
+        ``planning`` true, and the page follows the build while it looks."""
         self._refuse_if_paused()
-        b = self.draft(words, [{"name": words, "does": words}])
-        self.store.change(b["id"], lambda x: x.update(books_only=True))
-        return self.plan_build(b["id"])
+        topics = [words] if isinstance(words, str) else list(words)
+        for old in self.store.all() if not only else []:   # a newer search takes the place of a card still waiting
+            cid = str((old.get("consent") or {}).get("id") or "") if isinstance(old, dict) and old.get("books_only") and not old.get("knowledge_only") else ""
+            if cid and not old.get("yes") and self._card_waiting(cid):
+                self.ports.consent_expire(cid, "A newer search took its place.")
+        b = self.draft(goal or topics[0], [{"name": t, "does": t} for t in topics])
+        self.store.change(b["id"], lambda x: x.update(books_only=True, **({"knowledge_only": list(only)} if only else {})))
+        if wait:
+            return self.plan_build(b["id"])
+        self.store.change(b["id"], lambda x: x.update(planning=True, said=""))
+        threading.Thread(target=self._plan_books_now, args=(b["id"],), name=f"books-{b['id']}", daemon=True).start()
+        return self.view(b["id"])
+
+    def _plan_books_now(self, build_id: str) -> None:
+        try:
+            self.plan_build(build_id)
+        except Paused:                                 # _launch said so on the build
+            pass
+        except Exception:  # noqa: BLE001 - the page follows this build, so it must end with a line
+            logger.exception("the books plan of %s", build_id)
+            self.store.change(build_id, lambda x: x.update(planning=False, said=NO_PLAN_LINE))
+
+    def books_can(self, bridge: dict) -> dict:
+        """Can Find books look right now, and where? ``{can, line, ask, after_yes}``. *can*: ``ok``; ``no_search`` (a plan
+        can be made and read after her Yes, but the libraries asked while it is made are not on her search Yes);
+        ``bridge_closed``, ``paused``, ``locked``, which stop it. *bridge*: ``Bridge.view``, since her search Yes opens its
+        hosts only while a build runs, so ``search_places`` says nothing out here. Reads only: no line in the outside log."""
+        why = self.paused_reason()
+        if why:
+            return {"can": "paused", "line": PAUSED_LINE.format(why=why if why.endswith(".") else why + "."), "ask": [], "after_yes": []}
+        after = knowledge_mod.after_yes_names()
+        if self._household() is None:
+            return {"can": "locked", "line": BOOKS_LOCKED_LINE, "ask": [], "after_yes": after}
+        if bridge.get("setting") != "open":
+            return {"can": "bridge_closed", "line": BOOKS_CLOSED_LINE, "ask": [], "after_yes": after}
+        ask = knowledge_mod.catalog_names(bridge.get("search_hosts") if bridge.get("search") else [])
+        left = [n for n in knowledge_mod.catalog_names() if n not in ask]
+        if left:
+            return {"can": "no_search", "ask": ask, "after_yes": after,
+                    "line": f"Toolsmith's search is off, so {knowledge_mod._and_list(left)} can't be asked. "
+                            f"{knowledge_mod._and_list(after)} can still be read after your Yes."}
+        return {"can": "ok", "line": "", "ask": ask, "after_yes": after}
+
+    def reading_view(self, topics: list[str]) -> dict:
+        """Where a moved bot's reading list stands (D148): ``{state: offer | asking | fetching | done, line, build,
+        consent_id}``. It counts as read when any plan with every one of its topics read something, here or before it moved."""
+        want = {t.lower() for t in topics}
+        rows = sorted((b for b in self.store.all() if isinstance(b, dict)), key=lambda b: str(b.get("created_at") or ""), reverse=True)
+        out = {"state": "offer", "line": "", "build": "", "consent_id": ""}
+        for b in rows:
+            kp = b.get("knowledge_plan") or {}
+            have = {str(t).lower() for t in kp.get("topics") or []}
+            if not b.get("knowledge_only") and not (want and want <= have):
+                continue
+            run = b.get("knowledge_run") if isinstance(b.get("knowledge_run"), dict) else {}
+            lib = knowledge_mod.progress(b) or {}
+            if b.get("planning"):
+                return {**out, "state": "asking", "build": b["id"]}
+            if lib.get("state") == "done":
+                if lib.get("done"):
+                    return {**out, "state": "done", "build": b["id"], "line": str(run.get("line") or "")}
+                out["line"] = str(run.get("line") or "")       # the last try read nothing, and it says why
+                continue
+            if b.get("yes"):
+                return {**out, "state": "fetching", "build": b["id"], "line": str(lib.get("now") or "")}
+            cid = str((b.get("consent") or {}).get("id") or "")
+            if cid and self._card_waiting(cid):
+                return {**out, "state": "asking", "build": b["id"], "consent_id": cid}
+        return out
+
+    def reading_plan(self, topics: list[str]) -> dict:
+        """The list's one plan card: only Wikipedia and Gutenberg, no catalog, no model, nothing before her Yes. Pressed
+        twice, the card that waits is shown again."""
+        now = self.reading_view(topics)
+        if now["state"] != "offer":
+            return self.view(now["build"])
+        return self.plan_books(topics, goal=knowledge_mod.READING_GOAL, only=knowledge_mod.READING_SOURCES, wait=False)
 
     def draft(self, goal: str, jobs: Any = None, left_out: Any = None) -> dict:
         """A build with its goal and jobs (the wizard's goal step), not planned yet. *left_out*: what she asked
@@ -439,8 +523,8 @@ class ToolsmithHost:
     def _model_needs_begin(self, build_id: str) -> None:
         """Ask :meth:`_model_needs` on a thread of its own, so a slow brain never holds up the plan; the plan's
         card waits for it a short while (:data:`MODEL_NEEDS_WAIT_S`), then goes on without a model offer."""
-        if not callable(getattr(self.ports, "model_needs", None)):
-            return
+        if not callable(getattr(self.ports, "model_needs", None)) or (self.store.read(build_id) or {}).get("books_only"):
+            return                                     # books only: no model is asked, and no card waits on one
         th = threading.Thread(target=self._model_needs, args=(build_id,), name=f"model-needs-{build_id}", daemon=True)
         with self._lock:
             self._needs[build_id] = th
@@ -1462,7 +1546,7 @@ class ToolsmithHost:
         return {"build": {"id": b["id"], "goal": b["goal"], "jobs_in": b["jobs_in"], "jobs": b["jobs"],
                           "planning": bool(b.get("planning")), "yes": bool(b.get("yes")),
                           "knowledge": bool((b.get("knowledge_plan") or {}).get("topics")),
-                          "books_only": bool(b.get("books_only"))},
+                          "books_only": bool(b.get("books_only")), "no_catalogs": bool(b.get("knowledge_only"))},
                 "settings": {"budgets": st["budgets"], "timing": st["timing"], "where": "cloud" if cloud else "local",
                              "provider": st.get("provider") if cloud else None,
                              "model": st.get("model") if cloud else None,
@@ -1562,6 +1646,8 @@ class ToolsmithHost:
             # Nothing to install: no Yes card at all (one that could be answered would cover nothing).
             def empty(x: dict) -> None:
                 x["consent"]["said"] = store.EMPTY_PLAN_LINE
+                if x.get("books_only"):
+                    x["consent"]["said"] = BOOKS_LOCKED_LINE if self._household() is None else BOOKS_NO_WORDS_LINE
                 for j in x["jobs"]:
                     j["run"].update(state="nothing_found", line=store.nothing_line(j, find_mod.pasted_any(x["jobs"])))
             self.store.change(build_id, empty)

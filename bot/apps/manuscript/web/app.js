@@ -1,4 +1,4 @@
-/* Manuscript 0.3.5, the page. See CONTRACT.md for the routes and the block format.
+/* Manuscript 0.5.0, the page. See CONTRACT.md for the routes and the block format.
 
    Every call goes to the page's own origin with no token; the PuffPAI Desktop's proxy adds the key.
 
@@ -18,10 +18,8 @@
      GET    api/notes?title&tab         empty notes, kept in memory
      POST   api/notes                   kept in memory only, nothing is written
      POST   api/analyze                 shows the reading again (status starts over at reading)
-     GET    api/tab?tab=desk            fixtures/desk.sample.json as the desk's items
-     GET    api/desk, POST api/desk     fixtures/desk.sample.json; Keep, Dismiss and notes kept in memory only
      POST   api/show, POST api/upload   refused with a plain message: there is no bot behind the sample page
-     POST   api/correct                 refused the same way
+     POST   api/correct, api/edit, api/correct/undo   refused the same way
 */
 (function () {
   'use strict';
@@ -31,18 +29,13 @@
   const $ = id => document.getElementById(id);
   const DEFAULT_TABS = [{id: 'characters', label: 'Characters'}, {id: 'plot', label: 'Plot and subplots'},
     {id: 'timeline', label: 'Timeline'}, {id: 'structure', label: 'Structure'}, {id: 'world', label: 'World'},
-    {id: 'science', label: 'Science'}, {id: 'themes', label: 'Themes'}, {id: 'voice', label: 'Voice'},
-    {id: 'desk', label: "Editor's desk"}];
+    {id: 'science', label: 'Science'}, {id: 'themes', label: 'Themes'}, {id: 'voice', label: 'Voice'}];
   const EXAMPLES = {world: 'every place in the story', characters: 'the character arc of someone',
     plot: 'the threads of the first half', timeline: 'the events in story order', structure: 'the turning points',
-    themes: 'where the story talks about home', science: 'the claims about the moon', voice: 'the dialogue habits',
-    desk: 'the pacing notes'};
+    themes: 'where the story talks about home', science: 'the claims about the moon', voice: 'the dialogue habits'};
   // The standard Maps board for each tab; a tab without one opens the Maps list.
   const TAB_BOARD = {characters: 'std-relationships', plot: 'std-threads', timeline: 'std-timeline',
     structure: 'std-structure', world: 'std-world'};
-  const SEVERITY = {high: 'High', medium: 'Medium', low: 'Low'};
-  const KIND_WORDS = {plot_hole: 'Plot hole', timeline: 'Timeline', science: 'Science', character: 'Character',
-    continuity: 'Continuity', question: 'Question'};
   const smooth = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
   const S = {
@@ -51,6 +44,7 @@
     stamp: null, dirty: false, status: null, model: null, statusTimer: null,
     pointer: null, pointerSeen: null, pointerBusy: false, viewsBusy: false, newestView: undefined,
     viewStates: null, fastTimer: null,
+    editing: null, drafts: {}, fixWatch: null, fixTimer: null,
   };
 
   // ---------------------------------------------------------------- calls
@@ -70,7 +64,7 @@
   }
   const q = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
 
-  const F = {statusCalls: 0, removed: new Set(), cleared: false, notes: {}, desk: {}};
+  const F = {statusCalls: 0, removed: new Set(), cleared: false, notes: {}};
   async function fixture(path, method, body) {
     const [route, qs] = path.split('?');
     const p = new URLSearchParams(qs || '');
@@ -94,22 +88,10 @@
       case 'api/tab': {
         const t = p.get('tab');
         if (t === 'characters' || t === 'plot') { const d = await get('tab.' + t + '.json'); d.views = keep(d.views); return d; }
-        if (t === 'desk') {
-          const d = await get('desk.sample.json');
-          return {blocks: [], views: [], desk: d.items.map(x => F.desk[x.id] ? Object.assign({}, x, F.desk[x.id]) : x)};
-        }
-        return {blocks: [{type: 'markdown', text: 'The sample page has no sample for this tab. Try **Characters**, **Plot and subplots** or the **Editor\'s desk**.'}], views: []};
+        return {blocks: [{type: 'markdown', text: 'The sample page has no sample for this tab. Try **Characters** or **Plot and subplots**.'}], views: []};
       }
-      case 'api/desk': {
-        if (method === 'POST') {
-          const was = F.desk[body.id] || {};
-          F.desk[body.id] = body.action === 'note' ? Object.assign({}, was, {writer_note: body.note || ''})
-            : Object.assign({}, was, {state: body.action === 'keep' ? 'kept' : 'dismissed'});
-          return {message: 'Kept on this sample page only. Nothing was written.'};
-        }
-        return get('desk.sample.json');
-      }
-      case 'api/correct': throw new Error('This is the sample page, so there is no story bible to correct.');
+      case 'api/correct': case 'api/correct/undo': case 'api/edit':
+        throw new Error('This is the sample page, so there is no story bible to correct.');
       case 'api/views': {
         if (method === 'DELETE') { F.removed.add(p.get('id')); return {message: 'Removed that view.'}; }
         const all = await get('views.sample.json');
@@ -127,6 +109,7 @@
       case 'api/analyze': F.statusCalls = 0; return {message: 'This is the sample page, so it only shows a reading.'};
       case 'api/show': throw new Error('This is the sample page, so your bot is not here to make a view.');
       case 'api/upload': throw new Error('This is the sample page, so uploads are off.');
+      case 'api/size': return {line: 'This book uses 4.3 MB: pictures 3.9 MB.'};
       case 'api/settings':
         if (method === 'POST') { F.vault = body.vault_free; return {settings: {vault_free: F.vault}, message: 'Kept on this sample page only. Nothing was written.'}; }
         return {settings: {vault_free: F.vault !== false}};
@@ -162,13 +145,14 @@
   const tabMaps = tab => mapsHref(TAB_BOARD[tab] || '');
   // Inside the PuffPAI window or the dashboard this page is a frame, and on the home network each app page has
   // its own port, so a /pkg/ link would not resolve there. A framed page asks its parent to open Maps instead, with
-  // only the query (never an address); the window decides. Outside a frame the plain link stands.
+  // only the query (never an address); the window decides. Outside a frame the plain link stands. Editor's Desk opens
+  // the same way.
   document.addEventListener('click', ev => {
-    const a = ev.target && ev.target.closest ? ev.target.closest('a.maps-link') : null;
+    const a = ev.target && ev.target.closest ? ev.target.closest('a.maps-link, a.desk-link') : null;
     if (!a || window.parent === window) return;
     const i = (a.getAttribute('href') || '').indexOf('?');
     ev.preventDefault();
-    window.parent.postMessage({puffpai: 'open', pkg: 'maps', query: i >= 0 ? a.getAttribute('href').slice(i + 1) : ''}, '*');
+    window.parent.postMessage({puffpai: 'open', pkg: a.classList.contains('desk-link') ? 'editors-desk' : 'maps', query: i >= 0 ? a.getAttribute('href').slice(i + 1) : ''}, '*');
   });
   const sectionsOf = b => (b && (b.sections || b.chapters)) || [];
   function leaveOk() { return !S.dirty || confirm('Your notes on this tab are not saved. Leave them?'); }
@@ -234,6 +218,7 @@
     sel.disabled = !S.books.length;
     $('remove').disabled = !S.books.length;
     if (S.book) sel.value = S.book;
+    $('deskopen').href = location.origin + '/pkg/editors-desk/' + (S.book ? '?' + q({title: S.book}) : '');
   }
   function drawSections() {
     const sel = $('sec');
@@ -256,6 +241,7 @@
     if (first) openSection(first.n); else emptyReader('This manuscript has no sections yet.');
     loadStatus();
     loadTab();
+    loadSize();
     if (changing) loadNotes();
     pollPointer();
   }
@@ -289,6 +275,13 @@
     r.textContent = '';
     r.appendChild(node('h2', '', s.heading || 'Section ' + s.n));
     r.appendChild(node('div', 'meta', (s.title || S.book) + ', section ' + s.n + (s.words ? ', ' + s.words + ' words' : '') + '. Read only.'));
+    if (s.changed) {                             // Editor's Desk changed it after the last reading
+      const p = node('p', 'changed', 'This section changed since your bot last read it. ');
+      const b = node('button', 'link', 'Read again'); b.type = 'button';
+      b.onclick = () => { s.changed = false; p.remove(); startReading(); };
+      p.appendChild(b);
+      r.appendChild(p);
+    }
     const t = node('div', 'text');
     r.appendChild(t);
     let range = null;
@@ -343,6 +336,7 @@
       else box.appendChild(line);
     } else if (st.state === 'done') {
       line.textContent = S.model ? 'Read by ' + S.model + ' on this computer.' : 'Read on this computer.';
+      if (st.unchanged) line.textContent += ' Nothing changed since then, so nothing was read again.';
       box.appendChild(line); action = 'Read again';
     } else if (st.state === 'failed') {
       line.textContent = 'The reading stopped. ' + (st.step || '');
@@ -418,10 +412,9 @@
     $('notes-h').textContent = 'Your ' + tabLabel(S.tab) + ' notes';
     $('maps').href = tabMaps(S.tab);
     $('maps').textContent = TAB_BOARD[S.tab] ? 'See in Maps' : 'See in Maps (all boards)';
-    $('correct').hidden = !(S.tab === 'characters' || S.tab === 'world');
   }
   function switchTab(id) {
-    S.tab = id; S.dirty = false; S.tabData = null; S.viewStates = null;
+    S.tab = id; S.dirty = false; S.tabData = null; S.viewStates = null; S.editing = null; S.drafts = {};
     drawTabs(); loadTab(); loadNotes();
   }
 
@@ -433,8 +426,9 @@
       const d = await call('api/tab?' + q({title: title, tab: tab}));
       if (token !== S.tabToken) return;
       const arr = v => Array.isArray(v) ? v : [];
-      S.tabData = {title: title, tab: tab, blocks: arr(d.blocks), views: arr(d.views), desk: arr(d.desk),
-        cards: arr(d.cards), corrections: arr(d.corrections)};
+      S.tabData = {title: title, tab: tab, blocks: arr(d.blocks), views: arr(d.views),
+        cards: arr(d.cards), corrections: arr(d.corrections), rewriting: arr(d.rewriting),
+        block_keys: d.block_keys || {}, edits: d.edits || {items: {}, adds: [], folds: [], people: [], places: []}};
     } catch (e) {
       if (token !== S.tabToken) return;
       S.tabData = null;
@@ -443,6 +437,23 @@
       return;
     }
     drawTab(scrollTo);
+    watchFixes();
+  }
+
+  // While your bot is working out a correction or rewriting a paragraph, look again every 3 seconds. Never over what
+  // she is typing in an editor: the next look waits for her.
+  function watchFixes() {
+    clearTimeout(S.fixTimer);
+    const d = S.tabData;
+    if (!d) return;
+    const seen = S.fixWatch && d.corrections.find(c => c.id === S.fixWatch);
+    if (seen && seen.state !== 'working') { say($('fixsay'), seen.message || ''); S.fixWatch = null; }
+    const busy = d.rewriting.length || d.corrections.some(c => c.state === 'working' || c.prose_state === 'rewriting');
+    if (!busy) return;
+    S.fixTimer = setTimeout(() => {
+      const at = document.activeElement;
+      if (at && at.closest && at.closest('.editor')) watchFixes(); else loadTab();
+    }, 3000);
   }
 
   // Every re-draw comes from one GET api/tab, so the default blocks and the saved views always come together. The
@@ -452,111 +463,282 @@
     if (!d) return;
     const bh = $('blocks'), vh = $('views'), side = bh.closest('.region');
     const keepSide = side ? side.scrollTop : 0, keepPage = window.scrollY;
-    bh.textContent = ''; vh.textContent = ''; $('fixes').textContent = ''; $('desk').textContent = '';
-    try { drawFixes(d); drawDesk(d); drawTabParts(d, bh, vh); } finally {
+    bh.textContent = ''; vh.textContent = ''; $('fixes').textContent = '';
+    try { drawFixes(d); drawTabParts(d, bh, vh); } finally {
       if (side) side.scrollTop = keepSide;
       window.scrollTo(window.scrollX, keepPage);
     }
     if (scrollTo) { const c = document.getElementById('view-' + scrollTo); if (c) c.scrollIntoView({block: 'start', behavior: smooth}); }
+    reopenEditor();
   }
 
-  // The writer's corrections for this tab: applied ones say so, the rest are kept as her own words.
+  // The writer's corrections for this tab, what each came to, and an Undo on each. A long list folds its older ones.
+  function fixLine(c) {
+    const li = node('li', c.state === 'working' ? 'fix working' : c.applied ? 'fix done' : 'fix');
+    const said = c.what + (c.correction && String(c.what).toLowerCase().indexOf(String(c.correction).toLowerCase()) < 0 ? ' (' + c.correction + ')' : '');
+    const top = node('div', 'fix-top');
+    if (c.state === 'working') top.appendChild(node('span', 'spinner'));
+    top.appendChild(node('span', 'fix-said', (c.state === 'working' ? 'Your bot is working on this: ' : c.applied ? 'You corrected this: ' : 'You said: ') + said));
+    const un = node('button', 'link undo', 'Undo'); un.type = 'button';
+    un.setAttribute('aria-label', 'Undo: ' + c.what);
+    un.onclick = () => undoFix(c, un);
+    top.appendChild(un);
+    li.appendChild(top);
+    if (c.applied && c.line && c.by !== 'hand') li.appendChild(node('p', 'fix-more', 'Changed: ' + c.line + '.'));
+    if (c.partial) li.appendChild(node('p', 'fix-more', 'Part of what you said could not be matched, so that part did not change.'));
+    if (!c.applied && c.why) li.appendChild(node('p', 'fix-more', c.why));
+    if (c.looks) li.appendChild(node('p', 'fix-more', 'A picture Maps already painted keeps the old look until you press Paint again on it.'));
+    if (c.prose_state === 'rewriting') li.appendChild(node('p', 'fix-more', 'Your bot is rewriting the paragraphs this touched.'));
+    if (c.prose_state === 'after reading') li.appendChild(node('p', 'fix-more', 'The paragraphs this touched are rewritten when the reading ends.'));
+    if (c.prose_state === 'failed') li.appendChild(node('p', 'fix-more', 'Your bot could not rewrite the paragraphs this touched. Press Edit to change them yourself.'));
+    return li;
+  }
   function drawFixes(d) {
     const box = $('fixes');
     if (!d.corrections.length) return;
+    const newest = d.corrections.slice().reverse();
     const ul = node('ul', 'fixes');
-    for (const c of d.corrections) {
-      const said = c.what + (c.correction && String(c.what).toLowerCase().indexOf(String(c.correction).toLowerCase()) < 0 ? ' (' + c.correction + ')' : '');
-      ul.appendChild(node('li', c.applied ? 'fix done' : 'fix', (c.applied ? 'You corrected this: ' : 'You said: ') + said));
-    }
+    newest.slice(0, 5).forEach(c => ul.appendChild(fixLine(c)));
     box.appendChild(ul);
-  }
-
-  // The editor's desk: items by severity, each with its sections, note, fix, and Keep, Dismiss, Add a note.
-  // Dismissed items fold under "Dismissed".
-  function drawDesk(d) {
-    const box = $('desk');
-    if (d.tab !== 'desk') return;
-    if (!d.desk.length) {
-      box.appendChild(node('p', 'empty', (S.status || {}).state === 'done' ? 'Nothing on the desk. Your bot found nothing that needs your eye.'
-        : 'The desk fills in when your bot has read the book.'));
-      return;
-    }
-    const live = d.desk.filter(x => x.state !== 'dismissed'), gone = d.desk.filter(x => x.state === 'dismissed');
-    for (const it of live) box.appendChild(deskItem(it));
-    if (gone.length) {
+    if (newest.length > 5) {
       const det = node('details', 'dismissed');
-      det.appendChild(node('summary', '', 'Dismissed (' + gone.length + ')'));
-      for (const it of gone) det.appendChild(deskItem(it));
+      det.appendChild(node('summary', '', 'Older corrections (' + (newest.length - 5) + ')'));
+      const more = node('ul', 'fixes');
+      newest.slice(5).forEach(c => more.appendChild(fixLine(c)));
+      det.appendChild(more);
       box.appendChild(det);
     }
   }
-
-  function deskItem(it) {
-    const card = node('article', 'desk-item sev-' + (it.severity || 'medium') + (it.state === 'kept' ? ' kept' : ''));
-    const head = node('div', 'desk-head');
-    head.appendChild(node('span', 'pill sev', SEVERITY[it.severity] || 'Medium'));
-    head.appendChild(node('span', 'kind', KIND_WORDS[it.kind] || 'Question'));
-    if (it.state === 'kept') head.appendChild(node('span', 'pill kept-pill', 'Kept'));
-    const secs = Array.isArray(it.sections) ? it.sections : [];
-    if (secs.length) {
-      const where = node('span', 'secs', secs.length > 1 ? 'Sections ' : 'Section ');
-      secs.forEach((n, i) => {
-        const b = node('button', 'jump', String(n)); b.type = 'button';
-        b.title = 'Open section ' + n;
-        b.onclick = () => jump(n, it.note, '');
-        if (i) where.appendChild(document.createTextNode(', '));
-        where.appendChild(b);
-      });
-      head.appendChild(where);
-    }
-    card.appendChild(head);
-    card.appendChild(node('h4', 'desk-note', it.note || ''));
-    if (it.why) card.appendChild(node('p', 'desk-why', 'Why it matters: ' + it.why));
-    for (const w of (Array.isArray(it.where) ? it.where : [])) {      // the passages that show it
-      if (!w || !w.quote) continue;
-      const p = node('p', 'desk-quote', '\u201c' + w.quote + '\u201d ');
-      if (w.section !== null && w.section !== undefined) {
-        const b = node('button', 'jump', 'Section ' + w.section); b.type = 'button';
-        b.title = 'Open section ' + w.section;
-        b.onclick = () => jump(w.section, w.quote, '');
-        p.appendChild(b);
-      }
-      card.appendChild(p);
-    }
-    if (it.fix) card.appendChild(node('p', 'desk-fix', 'Fix: ' + it.fix));
-    if (it.writer_note) card.appendChild(node('p', 'desk-mine', 'Your note: ' + it.writer_note));
-    const row = node('div', 'row');
-    const act = (label, action) => {
-      const b = node('button', '', label); b.type = 'button';
-      b.onclick = () => deskAct(it, action, undefined, b);
-      return b;
-    };
-    if (it.state !== 'kept') row.appendChild(act('Keep', 'keep'));
-    if (it.state !== 'dismissed') row.appendChild(act('Dismiss', 'dismiss'));
-    const add = node('button', '', it.writer_note ? 'Change your note' : 'Add a note'); add.type = 'button';
-    add.onclick = () => {
-      if (card.querySelector('.desk-pad')) return;
-      const f = node('form', 'desk-pad');
-      const ta = node('textarea'); ta.value = it.writer_note || ''; ta.setAttribute('aria-label', 'Your note on this item');
-      const save = node('button', 'main', 'Save note'); save.type = 'submit';
-      f.appendChild(ta); f.appendChild(save);
-      f.onsubmit = ev => { ev.preventDefault(); if (ta.value.trim()) deskAct(it, 'note', ta.value, save); };
-      card.appendChild(f);
-      ta.focus();
-    };
-    row.appendChild(add);
-    card.appendChild(row);
-    return card;
+  async function undoFix(c, btn) {
+    btn.disabled = true;
+    try {
+      const got = await call('api/correct/undo', 'POST', {title: S.book, id: c.id});
+      say($('fixsay'), got.message || '');
+      if (S.fixWatch === c.id) S.fixWatch = null;
+      await loadTab();
+    } catch (e) { say($('fixsay'), e.message, true); btn.disabled = false; }
   }
 
-  async function deskAct(it, action, note, btn) {
+  // ---------------------------------------------------------------- Edit, right on the page (0.4)
+
+  // The quiet Edit control of one entry, or null when it has none. Its form opens beside it; a re-draw reopens it,
+  // with what she typed still there.
+  function editButton(key) {
+    const items = (S.tabData && S.tabData.edits.items) || {};
+    if (!items[key]) return null;
+    const b = node('button', 'edit-btn', 'Edit'); b.type = 'button';
+    b.dataset.edit = key;
+    b.setAttribute('aria-label', 'Edit ' + items[key].label);
+    b.onclick = () => { S.editing = S.editing === key ? null : key; drawTab(); };
+    return b;
+  }
+  function reopenEditor() {
+    if (!S.editing) return;
+    const add = S.editing.startsWith('add:');
+    const found = [...document.querySelectorAll(add ? '[data-add]' : '[data-edit]')].find(b => (add ? 'add:' + b.dataset.add : b.dataset.edit) === S.editing);
+    if (!found) { S.editing = null; return; }
+    const form = add ? addForm(S.editing.slice(4)) : editor(S.editing);
+    if (!form) { S.editing = null; return; }
+    const row = found.closest('tr');
+    if (row) {
+      const tr = node('tr', 'editor-row'), td = node('td');
+      td.colSpan = row.children.length;
+      td.appendChild(form); tr.appendChild(td);
+      row.after(tr);
+      // the table sits in a sideways scroll box; the form must stay in the pane
+      form.classList.add('in-table');
+    } else {
+      const host = found.closest('li, article') || found.parentNode;
+      host.appendChild(form);
+    }
+  }
+  async function editAct(ops, btn) {
     if (btn) btn.disabled = true;
     try {
-      const got = await call('api/desk', 'POST', {title: S.book, action: action, id: it.id, note: note});
-      say($('asksay'), got.message || '');
+      const got = await call('api/edit', 'POST', {title: S.book, ops: ops});
+      say($('fixsay'), got.message || '');
       await loadTab();
-    } catch (e) { say($('asksay'), e.message, true); if (btn) btn.disabled = false; }
+      return true;
+    } catch (e) { say($('fixsay'), e.message, true); if (btn) btn.disabled = false; return false; }
+  }
+  function belongsTo(it, field, itemKey) {
+    const who = it.kind === 'place' ? S.tabData.edits.places : S.tabData.edits.people;
+    const others = who.filter(w => w.key !== it.key);
+    if (!others.length) return null;
+    const sel = node('select', 'belongs');
+    sel.setAttribute('aria-label', 'Belongs to');
+    sel.appendChild(node('option', '', 'Belongs to...')).value = '';
+    for (const w of others) { const o = node('option', '', w.name); o.value = w.key; sel.appendChild(o); }
+    sel.onchange = () => {
+      if (!sel.value) return;
+      const op = {key: it.key, action: 'move', field: field, to: sel.value};
+      if (itemKey !== undefined) op.item = itemKey;
+      editAct([op], sel);
+    };
+    return sel;
+  }
+  function scalarInput(it, f, draft) {
+    const now = Object.prototype.hasOwnProperty.call(draft, f.name) ? draft[f.name] : String(f.value === null || f.value === undefined ? '' : f.value);
+    let inp;
+    if (f.type === 'long') { inp = node('textarea'); inp.value = now; }
+    else if (f.type === 'select') {
+      inp = node('select');
+      f.options.forEach((v, i) => { const o = node('option', '', (f.labels && f.labels[i]) || v || '(none)'); o.value = v; inp.appendChild(o); });
+      inp.value = now;
+    } else {
+      inp = node('input');
+      inp.type = f.type === 'number' ? 'number' : 'text';
+      inp.value = now;
+    }
+    inp.oninput = () => { draft[f.name] = inp.value; };
+    inp.onchange = inp.oninput;
+    return inp;
+  }
+  function listField(it, f) {
+    const box = node('div', 'ed-list');
+    box.appendChild(node('span', 'ed-label', f.label));
+    if (f.items.length) {
+      const ul = node('ul');
+      for (const x of f.items) {
+        const li = node('li');
+        li.appendChild(node('span', 'ed-text', x.text + (x.section !== null && x.section !== undefined ? ' [' + x.section + ']' : '')));
+        if (f.moves) { const m = belongsTo(it, f.name, x.key); if (m) li.appendChild(m); }
+        const rm = node('button', 'x', 'x'); rm.type = 'button';
+        rm.title = 'Remove this'; rm.setAttribute('aria-label', 'Remove ' + x.text);
+        rm.onclick = () => editAct([{key: it.key, action: 'remove', field: f.name, item: x.key}], rm);
+        li.appendChild(rm);
+        ul.appendChild(li);
+      }
+      box.appendChild(ul);
+    }
+    const row = node('div', 'ed-add');
+    let inp, who = null;
+    if (f.add === 'rels' || f.add === 'who') {
+      who = node('select');
+      who.setAttribute('aria-label', 'Who');
+      for (const w of S.tabData.edits.people.filter(w => w.key !== it.key)) { const o = node('option', '', w.name); o.value = w.id; who.appendChild(o); }
+      row.appendChild(who);
+    }
+    if (f.add !== 'who') {
+      inp = node('input');
+      inp.type = f.add === 'secs' ? 'number' : 'text';
+      inp.placeholder = f.add === 'rels' ? 'what they are, like cousin' : f.add === 'secs' ? 'section' : 'add one';
+      inp.setAttribute('aria-label', 'Add to ' + f.label);
+      row.appendChild(inp);
+    }
+    const go = node('button', '', 'Add'); go.type = 'button';
+    go.onclick = () => {
+      const v = inp ? inp.value.trim() : '';
+      if (inp && !v) return;
+      const value = f.add === 'rels' ? {to: who.value, kind: v} : f.add === 'who' ? who.value : v;
+      editAct([{key: it.key, action: 'add', field: f.name, value: value}], go);
+    };
+    row.appendChild(go);
+    box.appendChild(row);
+    return box;
+  }
+  function editor(key) {
+    const it = S.tabData.edits.items[key];
+    if (!it) return null;
+    const draft = S.drafts[key] || (S.drafts[key] = {});
+    const form = node('form', 'editor');
+    form.setAttribute('aria-label', 'Edit ' + it.label);
+    for (const f of it.fields) {
+      if (f.type === 'list') { form.appendChild(listField(it, f)); continue; }
+      const lab = node('label', 'ed-field');
+      lab.appendChild(node('span', 'ed-label', f.label));
+      lab.appendChild(scalarInput(it, f, draft));
+      form.appendChild(lab);
+      if (f.moves && f.value) { const m = belongsTo(it, f.name); if (m) form.appendChild(m); }
+    }
+    const row = node('div', 'row');
+    const save = node('button', 'main', 'Save'); save.type = 'submit';
+    row.appendChild(save);
+    const close = node('button', '', 'Close'); close.type = 'button';
+    close.onclick = () => { S.editing = null; delete S.drafts[key]; drawTab(); };
+    row.appendChild(close);
+    if (it.removable) {
+      const rm = node('button', 'link', 'Remove this ' + it.word); rm.type = 'button';
+      rm.onclick = async () => { if (await editAct([{key: key, action: 'remove'}], rm)) { S.editing = null; delete S.drafts[key]; drawTab(); } };
+      row.appendChild(rm);
+    }
+    form.appendChild(row);
+    form.onsubmit = async ev => {
+      ev.preventDefault();
+      const ops = [];
+      for (const f of it.fields) {
+        if (f.type === 'list' || !Object.prototype.hasOwnProperty.call(draft, f.name)) continue;
+        if (String(draft[f.name]) !== String(f.value === null || f.value === undefined ? '' : f.value)) ops.push({key: key, action: 'set', field: f.name, value: draft[f.name]});
+      }
+      if (ops.length && !(await editAct(ops, save))) return;
+      S.editing = null; delete S.drafts[key];
+      drawTab();
+    };
+    return form;
+  }
+  function addForm(kind) {
+    const add = (S.tabData.edits.adds || []).find(a => a.kind === kind);
+    if (!add) return null;
+    const key = 'add:' + kind, draft = S.drafts[key] || (S.drafts[key] = {});
+    const form = node('form', 'editor');
+    form.setAttribute('aria-label', 'Add ' + add.word);
+    for (const f of add.fields) {
+      const lab = node('label', 'ed-field');
+      lab.appendChild(node('span', 'ed-label', f.label));
+      lab.appendChild(scalarInput(add, f, draft));
+      form.appendChild(lab);
+    }
+    const row = node('div', 'row');
+    const save = node('button', 'main', 'Add it'); save.type = 'submit';
+    row.appendChild(save);
+    const close = node('button', '', 'Close'); close.type = 'button';
+    close.onclick = () => { S.editing = null; delete S.drafts[key]; drawTab(); };
+    row.appendChild(close);
+    form.appendChild(row);
+    form.onsubmit = async ev => {
+      ev.preventDefault();
+      if (await editAct([{key: add.key, action: 'add', value: Object.assign({}, draft)}], save)) {
+        S.editing = null; delete S.drafts[key]; drawTab();
+      }
+    };
+    return form;
+  }
+  // What no block row shows (a timeline's events, the setting, the summaries) folded under the blocks, and Add.
+  function drawEditExtras(d, bh) {
+    for (const fold of d.edits.folds || []) {
+      const det = node('details', 'edit-fold');
+      det.appendChild(node('summary', '', fold.label));
+      const ul = node('ul', 'items');
+      for (const key of fold.keys) {
+        const it = d.edits.items[key];
+        if (!it) continue;
+        const li = node('li');
+        li.appendChild(node('span', '', it.label + ' '));
+        li.appendChild(editButton(key));
+        ul.appendChild(li);
+      }
+      det.appendChild(ul);
+      if (S.editing && fold.keys.includes(S.editing)) det.open = true;
+      bh.appendChild(det);
+    }
+    if ((d.edits.adds || []).length) {
+      const row = node('p', 'adds');
+      row.appendChild(node('span', '', 'Add: '));
+      d.edits.adds.forEach((a, i) => {
+        if (i) row.appendChild(document.createTextNode(', '));
+        const b = node('button', 'edit-btn', a.word); b.type = 'button';
+        b.dataset.add = a.kind;
+        b.onclick = () => { S.editing = S.editing === 'add:' + a.kind ? null : 'add:' + a.kind; drawTab(); };
+        row.appendChild(b);
+      });
+      bh.appendChild(row);
+    }
+  }
+  function rewritingNote(host) {
+    const m = node('p', 'making');
+    m.appendChild(node('span', 'spinner'));
+    m.appendChild(document.createTextNode('Your bot is rewriting this...'));
+    host.appendChild(m);
   }
 
   // A main character's card: name, role, an importance pill, personality, write-up, first seen, See in Maps.
@@ -593,21 +775,34 @@
     }
     const a = node('a', 'maps-link', 'See in Maps'); a.href = mapsHref('std-relationships', c.id);
     foot.appendChild(a);
+    const ed = editButton(c.key);
+    if (ed) foot.appendChild(ed);
     card.appendChild(foot);
+    if ((S.tabData.rewriting || []).includes(c.key)) rewritingNote(card);
     host.appendChild(card);
   }
 
   function drawTabParts(d, bh, vh) {
     const cardAt = new Map(d.cards.map(c => [c.block, c]));
-    const opts = {onJump: jump, maps: tabMaps(d.tab)};
+    const opts = {onJump: jump, maps: tabMaps(d.tab), onEdit: editButton};
     if (d.blocks.length) {
-      d.blocks.forEach((b, i) => { if (cardAt.has(i)) drawCard(cardAt.get(i), bh); else Blocks.render([b], bh, opts); });
+      d.blocks.forEach((b, i) => {
+        if (cardAt.has(i)) { drawCard(cardAt.get(i), bh); return; }
+        Blocks.render([b], bh, opts);
+        const key = d.block_keys[String(i)];
+        if (key && bh.lastChild) {                  // a paragraph of prose: its own Edit, and what is being rewritten
+          const ed = editButton(key);
+          if (ed) { const p = node('p', 'prose-foot'); p.appendChild(ed); bh.lastChild.appendChild(p); }
+          if (d.rewriting.includes(key)) rewritingNote(bh.lastChild);
+        }
+      });
     } else {
       const st = (S.status || {}).state;
       bh.appendChild(node('p', 'empty', st === 'reading' ? 'Your bot is still reading. This tab fills in as it goes.'
         : st === 'done' ? 'Nothing for this tab in the story yet. Ask for something above.'
           : 'Start reading and your bot fills this tab.'));
     }
+    drawEditExtras(d, bh);
     if (d.views.length) vh.appendChild(node('h3', 'views-h', 'Saved views'));
     for (const v of d.views) {
       const card = node('article', 'view');
@@ -721,17 +916,20 @@
     } catch (e) { say($('asksay'), e.message, true); } finally { btn.disabled = false; }
   });
 
-  // "Correct a fact", on Characters and World: her words go to api/correct; the bible changes where it can.
+  // "Something wrong?", on every tab: her words go to api/correct. The plain shapes answer at once; the rest may take
+  // your bot a while, and the tab shows it when it is done.
   $('correct').addEventListener('submit', async ev => {
     ev.preventDefault();
     const what = $('fixin').value.trim();
     if (!what || !S.book) return;
     const btn = $('fixgo');
     btn.disabled = true;
+    say($('fixsay'), 'Your bot is reading that...');
     try {
-      const got = await call('api/correct', 'POST', {title: S.book, what: what});
+      const got = await call('api/correct', 'POST', {title: S.book, what: what, tab: S.tab});
       say($('fixsay'), got.message || '');
       $('fixin').value = '';
+      S.fixWatch = got.correction && got.correction.state === 'working' ? got.correction.id : null;
       await loadTab();
     } catch (e) { say($('fixsay'), e.message, true); } finally { btn.disabled = false; }
   });
@@ -843,6 +1041,13 @@
     box.disabled = false;
   };
   loadSettings();
+
+  async function loadSize() {
+    if (!S.book || !$('settings').open) return;
+    try { $('booksize').textContent = (await call('api/size?' + q({title: S.book}))).line || ''; }
+    catch (e) { $('booksize').textContent = ''; }
+  }
+  $('settings').addEventListener('toggle', loadSize);
 
   if (FIXTURE) $('sample').hidden = false;
   setInterval(pollPointer, 2000);

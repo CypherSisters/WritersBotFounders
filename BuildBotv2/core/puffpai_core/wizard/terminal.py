@@ -354,7 +354,9 @@ def moved_lines(said: dict) -> list[str]:
     from ..bot_move import STAYS
     out = []
     for key, head in (("linked", "Link these folders again, if you have them here"), ("pinned", "Pin these documents again"),
-                      ("books", "Find these books again on Knowledge"), ("added", "Add these tool servers and APIs again")):
+                      ("books", "These books can come back from Recommended for this bot, on Knowledge"),
+                      ("topics", "Books and articles on these can come with one Yes, from Recommended for this bot, on Knowledge"),
+                      ("added", "Add these tool servers and APIs again")):
         if said.get(key):
             out.append(f"{head}: {', '.join(said[key])}.")
     if said.get("not_here"):
@@ -414,7 +416,7 @@ def add_moved_apps(core: Any, record: dict, ask: Callable[[str], str], write: Ca
             write(f"    {line}")
         if ask("  Say Yes to this? [y/N] ").strip().lower() not in ("y", "yes") or staged["floor"]:
             core.consent.answer(staged["consent_id"], "no", by="owner")
-            write(f"  Not added. You can add it later on Apps.")
+            write("  Not added. You can add it later from Recommended for this bot, on Knowledge.")
             continue
         core.consent.answer(staged["consent_id"], "yes", "tap", by="owner", card_sha=card_sha(staged["card"]))
         result = core.packages.wait(staged["consent_id"], timeout_s=1800)

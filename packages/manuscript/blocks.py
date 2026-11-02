@@ -10,6 +10,7 @@ Copyright (c) 2026 Cypher Sisters. Apache-2.0 License.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 
@@ -22,6 +23,22 @@ MAX_DEPTH = 8                    # a tree deeper than this is cut, so a looping 
 def slug(text: Any) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
     return s[:60].strip("-") or "x"
+
+
+# What names an entry of each kind in the bible, for the page's Edit controls and the writer's stored fixes (fixing.py).
+IDENT = {"character": ("id",), "place": ("id",), "thread": ("id",), "event": ("what",),
+         "theme": ("name",), "world_rule": ("rule",), "science": ("claim",), "continuity": ("note",),
+         "history": ("what",), "geography": ("from", "to", "note"),
+         "scene": ("section", "n"), "act": ("name",), "turning_point": ("name",), "voice_section": ("section",),
+         "tic": ("phrase",), "habit": ("character", "habit"), "section_summary": ("section",)}
+
+
+def entry_key(kind: str, e: Any) -> str:
+    """One entry's address on the page: "character:tom", "event:3fa91c20de"."""
+    got = [str((e if isinstance(e, dict) else {}).get(f)) for f in IDENT.get(kind, ())]
+    if IDENT.get(kind) == ("id",):
+        return f"{kind}:{got[0]}"
+    return f"{kind}:{hashlib.sha1(' '.join(got).lower().encode('utf-8')).hexdigest()[:10]}"
 
 
 def _s(v: Any) -> str:
@@ -84,8 +101,11 @@ def clean_block(raw: Any) -> dict | None:
         if not isinstance(cols, list) or not cols:
             return None
         rows = rows if isinstance(rows, list) else []
-        return {"type": kind, "columns": [_s(c) for c in cols],
-                "rows": [[_cell(c) for c in r] for r in rows if isinstance(r, list)]}
+        out = {"type": kind, "columns": [_s(c) for c in cols],
+               "rows": [[_cell(c) for c in r] for r in rows if isinstance(r, list)]}
+        if isinstance(raw.get("keys"), list) and len(raw["keys"]) == len(out["rows"]):
+            out["keys"] = [_s(k) for k in raw["keys"]]               # each row's entry, for its Edit control
+        return out
     if kind == "timeline":
         items = raw.get("items")
         if not isinstance(items, list):
@@ -119,8 +139,8 @@ def clean_block(raw: Any) -> dict | None:
         items = raw.get("items")
         if not isinstance(items, list):
             return None
-        out = [_with_section({"text": _s(it.get("text"))}, it) if isinstance(it, dict) else {"text": _s(it)}
-               for it in items]
+        out = [_with_section({"text": _s(it.get("text")), **({"key": _s(it["key"])} if it.get("key") else {})}, it)
+               if isinstance(it, dict) else {"text": _s(it)} for it in items]
         out = [o for o in out if o["text"].strip()]
         return {"type": kind, "items": out} if out else None
     if kind == "quote":
@@ -275,7 +295,8 @@ def cards(bible: dict) -> list[dict]:
                                        f"**Looks:** {_bracketed(looks)}" if looks else "") if str(x).strip())
         out.append({"id": c.get("id"), "name": c.get("name"), "role": c.get("role") or "",
                     "importance": "main", "personality": _s(c.get("personality")), "write_up": _s(c.get("write_up")),
-                    "first_seen": first, "corrected": bool(c.get("corrected")), "looks": looks, "text": text})
+                    "first_seen": first, "corrected": bool(c.get("corrected")), "looks": looks, "text": text,
+                    "key": entry_key("character", c)})
     return out
 
 
@@ -285,7 +306,7 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
     names = {c.get("id"): c.get("name") for c in chars}
     out: list[dict] = []
     briefs = b.get("briefs") if isinstance(b.get("briefs"), dict) else {}
-    brief = _s(briefs.get("desk" if tab == "editing" else tab)).strip()
+    brief = _s(briefs.get(tab)).strip()
     if brief:
         out.append({"type": "markdown", "text": brief})              # every tab opens with what it adds up to
     if tab == "characters":
@@ -299,7 +320,8 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
                         "rows": [[{"text": f"{c.get('name')}" + (" (you corrected this)" if c.get("corrected") else ""),
                                    "section": c.get("first_seen")}, c.get("importance") or "", c.get("role"),
                                   {"text": f"Section {c.get('first_seen')}", "section": c.get("first_seen")},
-                                  _one_line(c.get("write_up") or c.get("wants"))] for c in rest]})
+                                  _one_line(c.get("write_up") or c.get("wants"))] for c in rest],
+                        "keys": [entry_key("character", c) for c in rest]})
         if chars:
             edges = []
             for c in chars:
@@ -321,11 +343,12 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
             out.append({"type": "table", "columns": ["Thread", "Kind", "Sections", "Open or paid off"],
                         "rows": [[{"text": t.get("name"), "section": _first(t.get("sections"))}, t.get("kind"),
                                   _sections_text(t.get("sections")), "open" if t.get("open") else "paid off"]
-                                 for t in threads]})
+                                 for t in threads], "keys": [entry_key("thread", t) for t in threads]})
         flags = [c for c in b.get("continuity") or [] if isinstance(c, dict) and c.get("kind") in ("mismatch", "gap")]
         if flags:
             out.append({"type": "list", "items": [{"text": f"{c.get('kind').capitalize()}: {c.get('note')}",
-                                                   "section": _first(c.get("sections"))} for c in flags]})
+                                                   "section": _first(c.get("sections")),
+                                                   "key": entry_key("continuity", c)} for c in flags]})
     elif tab == "world":
         st = b.get("setting") if isinstance(b.get("setting"), dict) else {}
         if str(st.get("one_paragraph") or "").strip():
@@ -342,12 +365,12 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
                                                        "section": _first(h.get("sections")), "who": []}
                                                       for h in hist]})
         elif hist:
-            out.append({"type": "list", "items": [{"text": h.get("what"), "section": _first(h.get("sections"))}
-                                                  for h in hist]})
+            out.append({"type": "list", "items": [{"text": h.get("what"), "section": _first(h.get("sections")),
+                                                   "key": entry_key("history", h)} for h in hist]})
         rules = [r for r in b.get("world_rules") or [] if isinstance(r, dict)]
         if rules:
-            out.append({"type": "list", "items": [{"text": r.get("rule"), "section": _first(r.get("sections"))}
-                                                  for r in rules]})
+            out.append({"type": "list", "items": [{"text": r.get("rule"), "section": _first(r.get("sections")),
+                                                   "key": entry_key("world_rule", r)} for r in rules]})
         places = [p for p in b.get("places") or [] if isinstance(p, dict)]
         if places:
 
@@ -359,20 +382,22 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
                         "rows": [[{"text": p.get("name") + (" (you corrected this)" if p.get("corrected") else ""),
                                    "section": _first(p.get("appearances"))}, p.get("kind"),
                                   p.get("where") or st.get("place_in_world") or "",
-                                  p.get("notes"), details(p), _sections_text(p.get("appearances"))] for p in places]})
+                                  p.get("notes"), details(p), _sections_text(p.get("appearances"))] for p in places],
+                        "keys": [entry_key("place", p) for p in places]})
         geo = [g for g in b.get("geography") or [] if isinstance(g, dict) and _s(g.get("note")).strip()]
         if geo:
             out.append({"type": "markdown", "text": "### Distances and directions"})
             out.append({"type": "table", "columns": ["From", "To", "Distance or direction", "In the text"],
                         "rows": [[g.get("from"), g.get("to"), {"text": g.get("note"), "section": g.get("section")},
                                   {"text": g.get("quote") or f"Section {g.get('section')}", "section": g.get("section")}]
-                                 for g in geo]})
+                                 for g in geo], "keys": [entry_key("geography", g) for g in geo]})
     elif tab == "themes":
         themes = [t for t in b.get("themes") or [] if isinstance(t, dict)]
         if themes:
             out.append({"type": "list", "items": [{"text": t.get("name"),
                                                    "section": _first([e.get("section") for e in t.get("evidence") or []
-                                                                      if isinstance(e, dict)])} for t in themes]})
+                                                                      if isinstance(e, dict)]),
+                                                   "key": entry_key("theme", t)} for t in themes]})
             for t in themes:
                 ev = [e for e in t.get("evidence") or [] if isinstance(e, dict) and str(e.get("quote") or "").strip()]
                 if ev:
@@ -385,16 +410,8 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
             out.append({"type": "table", "columns": ["Claim", "Section", "Plausible", "Note"],
                         "rows": [[{"text": s.get("claim"), "section": s.get("section")},
                                   {"text": str(s.get("section")), "section": s.get("section")},
-                                  s.get("plausible"), s.get("note")] for s in sci]})
-    elif tab in ("desk", "editing"):
-        # the desk's own items come beside the blocks, with their buttons (the server's "desk" list); the blocks
-        # are the reading's editing notes, section by section, as 0.2.1's Editing tab had them
-        notes = sorted((e for e in b.get("editing") or [] if isinstance(e, dict)),
-                       key=lambda e: (_section(e.get("section")) if _section(e.get("section")) is not None else 10**6))
-        if notes:
-            out.append({"type": "table", "columns": ["Section", "Kind", "Note"],
-                        "rows": [[{"text": str(e.get("section")), "section": e.get("section")}, e.get("kind"),
-                                  e.get("note")] for e in notes]})
+                                  s.get("plausible"), s.get("note")] for s in sci],
+                        "keys": [entry_key("science", s) for s in sci]})
     elif tab == "timeline":
         events = [e for e in b.get("events") or [] if isinstance(e, dict)]
         if events:
@@ -424,14 +441,16 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
             out.append({"type": "table", "columns": ["Act", "From", "To"],
                         "rows": [[{"text": a.get("name"), "section": a.get("from")},
                                   {"text": f"Section {a.get('from')}", "section": a.get("from")},
-                                  {"text": f"Section {a.get('to')}", "section": a.get("to")}] for a in acts]})
+                                  {"text": f"Section {a.get('to')}", "section": a.get("to")}] for a in acts],
+                        "keys": [entry_key("act", a) for a in acts]})
         points = [{"text": f"{t.get('name')}" + (f": {t.get('note')}" if t.get("note") else ""),
-                   "section": t.get("section")} for t in st.get("turning_points") or [] if isinstance(t, dict)]
+                   "section": t.get("section"), "key": entry_key("turning_point", t)}
+                  for t in st.get("turning_points") or [] if isinstance(t, dict)]
         for k, label in (("midpoint", "Midpoint"), ("climax", "Climax")):
             m = st.get(k) if isinstance(st.get(k), dict) else {}
             if _section(m.get("section")) is not None:
                 points.append({"text": f"{label}" + (f": {m.get('note')}" if m.get("note") else ""),
-                               "section": m.get("section")})
+                               "section": m.get("section"), "key": f"{k}:"})
         if points:
             out.append({"type": "list", "items": points})
         scenes = [s for s in b.get("scenes") or [] if isinstance(s, dict)]
@@ -439,21 +458,24 @@ def tab_blocks(bible: dict, tab: str) -> list[dict]:
             out.append({"type": "table", "columns": ["Section", "Scene", "Purpose", "Point of view", "Words"],
                         "rows": [[{"text": str(s.get("section")), "section": s.get("section")}, str(s.get("n")),
                                   {"text": s.get("purpose"), "section": s.get("section")}, s.get("pov"),
-                                  str(s.get("words"))] for s in scenes]})
+                                  str(s.get("words"))] for s in scenes], "keys": [entry_key("scene", s) for s in scenes]})
     elif tab == "voice":
         v = b.get("voice") if isinstance(b.get("voice"), dict) else {}
         rows = [s for s in v.get("by_section") or [] if isinstance(s, dict)]
         if rows:
             out.append({"type": "table", "columns": ["Section", "Point of view", "Tense", "Slips"],
                         "rows": [[{"text": str(s.get("section")), "section": s.get("section")}, s.get("pov"),
-                                  s.get("tense"), "; ".join(str(x) for x in s.get("slips") or [])] for s in rows]})
+                                  s.get("tense"), "; ".join(str(x) for x in s.get("slips") or [])] for s in rows],
+                        "keys": [entry_key("voice_section", s) for s in rows]})
         tics = [t for t in v.get("tics") or [] if isinstance(t, dict)]
         if tics:
             out.append({"type": "list", "items": [{"text": f"\"{t.get('phrase')}\", {t.get('count')} times, in "
                                                            f"sections {_sections_text(t.get('sections'))}",
-                                                   "section": _first(t.get("sections"))} for t in tics]})
+                                                   "section": _first(t.get("sections")),
+                                                   "key": entry_key("tic", t)} for t in tics]})
         habits = [h for h in v.get("dialogue_habits") or [] if isinstance(h, dict)]
         if habits:
             out.append({"type": "table", "columns": ["Character", "How they talk"],
-                        "rows": [[h.get("character"), h.get("habit")] for h in habits]})
+                        "rows": [[h.get("character"), h.get("habit")] for h in habits],
+                        "keys": [entry_key("habit", h) for h in habits]})
     return clean_blocks(out)

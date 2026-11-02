@@ -1,17 +1,22 @@
 # Novel mode: the design
 
-WritersBot's first skill. The writer adds a novel, the bot reads it, every tab fills, Maps draws it, the editor's desk
-lists what needs the writer's eye, and every line points back into the manuscript. The writer never has to know
+WritersBot's first skill. The writer adds a novel, the bot reads it, every tab fills, Maps draws it, Editor's Desk
+edits it, and every line points back into the manuscript. The writer never has to know
 which app does what. This page is the plan for three pieces that are built together: **Manuscript 0.3**, **Maps 1.0**
 and the **Novel mode skill**. Nothing here is built yet.
 
 The owner's rules, carried through: the manuscript text is never changed by the bot; the bot reads with the model
 on this computer; plain words everywhere.
 
+**Since Manuscript 0.5.0 (the owner: "Let's take the editor out of manuscript. That app just keeps track of
+everything.")** there are eight tabs: the Editor's desk tab below is gone, and all the editing is in the Editor's Desk
+app (`EDITORS_DESK.md` in the WritersBot tree). Novel mode 1.0.5 goes through its findings one at a time. Where this
+page still says nine tabs or the desk, that was the plan for 0.3.
+
 ## 1. The tabs, final list
 
 Six tabs today: World, Characters, Plot and subplots, Themes, Science, Editing. Three were missing for a novel, and
-Editing was too thin for what the writer asked for. Nine tabs:
+Editing was too thin for what the writer asked for. Nine tabs (eight since 0.5.0, below the table):
 
 | Tab | What it holds | New? |
 |---|---|---|
@@ -23,7 +28,7 @@ Editing was too thin for what the writer asked for. Nine tabs:
 | **Science** | each claim, where it is, plausible or not, the smallest change that fixes it, what research would settle it | as now |
 | **Themes** | themes and motifs with their evidence, images that repeat, what the ending says about each theme | as now |
 | **Voice** | point of view and tense per section and any slips; sentence rhythm; repeated words and tics; dialogue habits per character | **new** |
-| **Editor's desk** | the consolidated list the writer asked for: plot holes, timeline mismatches, science that fails, character holes (a want that never pays off, a trait that disappears), continuity slips, open questions. Each with its severity, the sections involved, and one suggested fix. Replaces Editing. | **reworked** |
+| **Editor's desk** | the consolidated list the writer asked for: plot holes, timeline mismatches, science that fails, character holes (a want that never pays off, a trait that disappears), continuity slips, open questions. Each with its severity, the sections involved, and one suggested fix. Replaces Editing. | **reworked**; gone in 0.5.0, now the Editor's Desk app |
 
 Every item on every tab carries its section numbers, and clicking one opens that section in the manuscript pane
 with the passage highlighted. That is the contract's `section` field on blocks, kept everywhere.
@@ -37,13 +42,13 @@ conversation, using Manuscript's and Maps' tools:
    brain checks `manuscript_list`. A manuscript that is there but not read gets `manuscript_analyze`.
 2. **Reading.** The brain says what is happening and how long it may take, then stays out of the way. The page shows
    "Reading section 3 of 42". When done, the brain says what it found in two lines: how many characters, threads,
-   places, and how many items on the editor's desk.
+   places and events.
 3. **Walk the tabs.** One tab at a time, short: "Characters: eleven, four main. Here is the cast." For each tab the
    brain offers to open it in the pane (`manuscript_show`) and to draw it (`maps_draw`). The writer can stop,
    correct or add at any point: "No, Tom is her cousin, not her brother" becomes a note on the Characters tab
    (`manuscript_notes_append`) and a correction in the bible (`manuscript_correct`, below), and Maps redraws.
-4. **The editor's desk last.** The brain reads the desk items in order of severity, one at a time, and for each asks
-   whether to keep it, dismiss it, or add the writer's own note. Dismissed items stay listed but folded.
+4. **Editing, in Editor's Desk.** The brain reads the editor's letter, runs a check only on the writer's yes, and goes
+   through the findings one at a time: what, where, why it matters, one way to fix it; then Fixed, Not a problem or Later.
 5. **Stay in Novel mode.** From then on, questions go to the book: "show me all the supporting characters and whether
    any of them interact" returns a list under Characters (`manuscript_show`) and a graphic in Maps (`maps_draw`),
    both from the same ask, in one turn. "Where does Ilsa first meet the lamplighter" sets the pointer.
@@ -118,7 +123,8 @@ are drawings, not paintings. One line in Maps says "Pictures come later" so nobo
 - `manuscript_correct(title, what, correction)`: the writer's fix to a bible fact, kept in `corrections.json` and
   applied on top of every reading so a re-read never undoes it. Shown on the tab as "You corrected this".
 - The editor's desk: `desk.json` with items `{id, kind, severity, sections, note, fix, state: open | kept | dismissed,
-  writer_note}`, and `manuscript_desk(title, action, id, note)` for the chat and the page.
+  writer_note}`, and `manuscript_desk(title, action, id, note)` for the chat and the page. (0.5.0 took both out:
+  Editor's Desk carries `desk.json` over once.)
 - `manuscript_show` asks with a drawing twin also write a board spec, and the answer says "and it is drawn in Maps".
 - Every tab gets **See in Maps**.
 

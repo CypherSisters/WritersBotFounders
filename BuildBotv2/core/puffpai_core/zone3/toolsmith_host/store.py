@@ -744,7 +744,7 @@ class Builds:
         raw = body.get("knowledge") if isinstance(body.get("knowledge"), dict) else {}
         kp = knowledge_mod.plan_of(knowledge_mod.clean_topics(raw.get("topics")), finds=b.get("knowledge_finds"),
                                    context=" ".join([str(b["goal"])] + [f"{j['name']} {j['does']}" for j in out_jobs]),
-                                   goal=b["goal"])
+                                   goal=b["goal"], only=b.get("knowledge_only"))
         asked = raw.get("asked") if isinstance(raw.get("asked"), dict) else None    # counts only (D84)
         knowledge = knowledge_mod.rows(kp)
         if kp["topics"]:
@@ -772,6 +772,8 @@ class Builds:
                                by_place=x.get("searches_by_place"), whole=x.get("read_whole"),
                                places=body.get("places"), late=list(x.get("knowledge_down") or []), owner=owner))
             x.pop("held_names", None)              # said once, in the card's own line; kept nowhere else
+            if x.get("books_only"):                    # the one line above her card
+                x["looked"] = knowledge_mod.looked(kp, x.get("knowledge_finds"), x.get("knowledge_down"), kp["topics"])
             x.pop("knowledge_finds", None)         # what was on offer is on the plan now
             if asked is not None:                  # the build log: topics the brain gave vs kept (D84)
                 x["knowledge_asked"] = {k: int(v) for k, v in asked.items()

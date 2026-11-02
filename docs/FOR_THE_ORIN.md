@@ -59,8 +59,8 @@ Run the script as yourself, with no sudo. Under sudo it says so and goes on as y
    finished already (`"complete": true` in `settings/wizard.json` in the bot's folder), the script skips steps 4 and 6
    and prints the everyday commands. If it has not, `start`, `pair` and `chat` run setup first.
 
-Then, still in setup and still in that terminal, each app in the bundle shows its own Yes card: Manuscript, Maps,
-Novel mode (text only), Calculator, Document convert, Document search and World Radio. The bot's main apps download what
+Then, still in setup and still in that terminal, each app in the bundle shows its own Yes card: Manuscript, Editor's
+Desk, Maps, Novel mode (text only), Calculator, Document convert, Document search and World Radio. The bot's main apps download what
 they need while they install, so if the Bridge is closed, setup first asks to open it for this. Press Enter for Yes. With
 a plain No the Bridge stays closed and Manuscript does not install; setup says so and names the command to try again.
 Type `y` on each card; Enter alone means No there. An app you say No to is not added.
@@ -86,12 +86,20 @@ idle; the window shows a PIN box at the top when it does.
 | Add again an app that is missing or broken | `./install-writersbot.sh update` |
 | Yes cards from a terminal | `docker exec -it writersbot-box bash -c "cd /data/bot/code; .venv/bin/puffpai turn"` then `... puffpai yes <id>` |
 | Restart the Core without a terminal | `docker exec -d writersbot-box bash -c "cd /data/bot/code && exec .venv/bin/puffpai serve >>/data/bot/puffpai/writersbot/logs/serve.out 2>&1"` then reload the window |
-| Bring the bot's own apps up to this copy | `./install-writersbot.sh update` (see below) |
+| Bring the bot's Core, window and own apps up to this copy | `./install-writersbot.sh update` (see below) |
 | Change the memory cap | stop, `docker rm writersbot-box`, run with `MEMORY=12g ./install-writersbot.sh start`, adding `DATA=/your/folder` if you use your own (the bot lives on the mount; nothing is lost) |
 
 **`./install-writersbot.sh update`** is for a bot already set up, after you get the newest version (section 10). Run it
-at a terminal. It copies this folder's bundle to `<DATA>/from/writersbot`, then brings Novel mode, Manuscript, Maps and
-Document convert forward, in that order, each with its own Yes card here. Type `y` on each.
+at a terminal. First it brings the Core and the window up to this copy, if they differ. Then it puts the bundle's list of
+books and articles on Knowledge, under Recommended for this bot, where they wait for a Yes. Then it copies this folder's
+bundle to `<DATA>/from/writersbot` and brings Novel mode, Manuscript, Editor's Desk, Maps and Document convert forward, in
+that order, each with its own Yes card here. Type `y` on each. Editor's Desk is new: on a bot from before it, `update` adds it,
+and it downloads nothing, so it needs no Bridge.
+
+- For the Core and the window it says so in one line, waits if Manuscript is reading a book, and keeps a copy of what was
+  there at `<DATA>/before-update.tar`. It restarts the Core process, never the container, so a bot that keeps its books
+  in the container is safe. If the new Core does not answer within two minutes, it puts the old one back and says so.
+- A restart locks the vault. If the window shows a PIN box at the top, type your PIN there. Reload the window once (F5).
 
 - An app already at the bundle's version is skipped with one line. An app that is missing is added, and one that is broken
   is taken out and added again keeping its data, each with its own Yes card.
@@ -101,7 +109,7 @@ Document convert forward, in that order, each with its own Yes card here. Type `
 - Document convert on a bot from the first bundle came from the store. It is taken out, keeping its data, and added
   again from the bundle. Say No on its card and it stays out until you run this again.
 - If the bot is not running, the script starts it in the background and leaves it running.
-- It does not touch the Core's code, the vault, the name, the look, the role, the manuscripts or the notes. Books kept
+- It does not touch the vault, the settings, the chats, the name, the look, the role, the manuscripts or the notes. Books kept
   inside the container (section 8) stay there; it says so.
 - Afterward, reload the window once (F5).
 

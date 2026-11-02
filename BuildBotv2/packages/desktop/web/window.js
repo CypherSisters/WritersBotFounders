@@ -431,7 +431,7 @@
     c.buttons.forEach((b) => {
       if (b.id === "no" && o.aside && c.plan) return;
       const yes = b.id === "yes";
-      row.appendChild(btn(yes && c.plan && !c.needsPin ? "Build this plan" : b.label, () => answer(yes), yes ? "primary" : ""));
+      row.appendChild(btn(yes && c.plan && !c.needsPin ? (c.title === L.BOOKS_CARD ? "Get these" : "Build this plan") : b.label, () => answer(yes), yes ? "primary" : ""));
     });
     if (o.aside && c.plan) row.appendChild(btn("Not now", () => { if (after) after("aside"); }));
     row.appendChild(btn("What does this mean?", () => { why.hidden = !why.hidden; }));
@@ -488,7 +488,8 @@
     if (status !== 200) return;
     syncCards(cards);
     const busy = Array.from(S.views.values()).find((v) => v.busy && v.turn);
-    cards.filter((c) => !S.inChat.has(c.id) && (busy || c.plan)).forEach((c) => {
+    // A plan of books has its card on Knowledge, where it was asked for, and on Your turn.
+    cards.filter((c) => !S.inChat.has(c.id) && (busy || (c.plan && c.title !== L.BOOKS_CARD))).forEach((c) => {
       S.inChat.add(c.id);
       const v = busy || currentView();
       const host = busy ? busy.turn.asks : say(v, "Toolsmith made a plan. It waits for your Yes.").asks;
@@ -512,8 +513,9 @@
   /* After a Yes on a plan card (lane I16): the Core adds the ticked store apps, then starts; this follows it. */
   async function afterPlanYes(c) {
     const v = currentView();
-    const m = say(v, "Yes recorded (card " + L.cardShort(c.id) + "). Building. You can follow it in the side pane and keep chatting.");
-    openTab(buildingTab());
+    const books = c.title === L.BOOKS_CARD;             // Knowledge shows these as they come
+    const m = say(v, "Yes recorded (card " + L.cardShort(c.id) + "). " + (books ? "Getting them. Knowledge shows how it goes, and you can keep chatting." : "Building. You can follow it in the side pane and keep chatting."));
+    if (!books) openTab(buildingTab());
     const log = el("div", { class: "w-fine" }), box = el("div");
     m.asks.append(log, box);
     const path = "/v1/toolsmith/builds/" + encodeURIComponent(c.plan.build);
@@ -597,7 +599,7 @@
     builds.forEach((b) => {
       const chip = L.buildChip(b, S.waiting.has(b.id));
       box.appendChild(el("button", { class: "w-item", title: b.goal || "A build", "data-rail-build": b.id, on: { click: () => openTab(buildingTab()) } }, [
-        el("span", { class: "w-name", text: b.goal || "A build" }), el("span", { class: "w-grow" }),
+        el("span", { class: "w-name", text: L.buildTitle(b.goal, b.books_only) }), el("span", { class: "w-grow" }),
         chip.tone === "live" ? spin() : pill(chip.words, chip.tone)]));
     });
   }
@@ -1005,8 +1007,8 @@
     const v = L.buildView(full);
     const chip = L.buildChip(b, S.waiting.has(b.id));
     const started = v.created ? v.created.replace("T", " ").slice(0, 16) : "";
-    const out = [el("h5", { text: "Build \"" + (v.goal || "a build") + "\"" + (started ? ", started " + started : "") })];
-    if (v.planning) out.push(el("p", { class: "w-fine", text: "Toolsmith is planning: finding apps for each job." }));
+    const out = [el("h5", { text: (v.booksOnly ? L.buildTitle(v.goal, true) : "Build \"" + (v.goal || "a build") + "\"") + (started ? ", started " + started : "") })];
+    if (v.planning) out.push(el("p", { class: "w-fine", text: L.planningWords(v) }));
     if (v.now) out.push(el("p", { class: "w-fine", text: (v.planning && L.stillWords(v.now, v.nowAt, Date.now())) || v.now }));
     if (v.said) out.push(el("p", { class: "w-fine", text: v.said }));
     if (chip.tone === "wait" && v.consentId && !v.yes) {
@@ -1017,7 +1019,7 @@
     if (v.active && v.yes && v.unlock) out.push(unlockEl());
     if (v.store.record) v.store.lines.forEach((t) => out.push(el("p", { class: "w-fine", text: t })));
     if (v.setup.length) out.push(el("p", { class: "w-fine", text: "Programs it needs first: " + v.setup.join(", ") + ". They are on Your turn." }));
-    if (!v.jobs.length && !v.planning) out.push(el("p", { class: "w-fine", text: "No jobs in this build." }));
+    if (!v.jobs.length && !v.planning && !v.booksOnly) out.push(el("p", { class: "w-fine", text: "No jobs in this build." }));
     v.jobs.forEach((j) => out.push(...jobEl(j)));
     if (v.canAgain) out.push(againEl(v));
     if (v.cost) out.push(el("p", { class: "w-fine", text: "Cloud cost so far: " + v.cost }));
@@ -1570,6 +1572,7 @@
     if (name === "/build") {
       if (!rest) { say(view, "Say what to build, like /build a recipe box for my family."); return; }
       const s = L.addSource(rest);
+      if (s.kind === "books") { window.Puff.askBooks(s.words); say(view, "That is for Knowledge, so it is looking for books there, in the side pane."); return; }
       await askPlan(view, s.plan || { goal: rest.slice(0, 600) }, "Toolsmith is finding apps for that and planning. This can take a few minutes.");
       return;
     }
@@ -1602,6 +1605,7 @@
       const s = L.addSource(rest);
       if (s.kind === "empty") { say(view, "Say what to add: a folder, a GitHub address, or a package id."); return; }
       if (s.kind === "folder" || s.kind === "builtin") { await addFrom(view, s.source); return; }
+      if (s.kind === "books") { window.Puff.askBooks(s.words); say(view, "That is for Knowledge, so it is looking for books there, in the side pane."); return; }
       await askPlan(view, s.plan, "Toolsmith is reading that and planning. This can take a few minutes.");
       return;
     }

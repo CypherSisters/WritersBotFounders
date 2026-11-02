@@ -111,7 +111,7 @@ def test_export_writes_what_travels_and_nothing_private(state, tmp_path):
     assert apps["hub"]["source"] == "https://github.com/x/hub" and apps["made"]["source"] == "apps/made"
     assert "desktop" not in apps
     assert rec["knowledge"]["linked"] == ["Writing"] and rec["knowledge"]["pinned"] == ["My Novel.docx"]
-    assert rec["knowledge"]["books"] == [{"source": "kn-kiwix-gardens", "title": "Gardens"}]
+    assert rec["knowledge"]["books"] == [{"source": "kn-kiwix-gardens", "title": "Gardens", "from": "download"}]
     assert rec["added"] == ["My Tools"]
     # the app's code, but nothing that can't be scanned or that holds what someone typed
     carried = {p.name for p in (out / "apps" / "made").rglob("*")}
@@ -460,3 +460,114 @@ def test_setup_run_again_leaves_what_she_changed(state, tmp_path, monkeypatch, d
     jsonfile.write(second / "settings" / "wizard.json", {**wizard, "complete": True})
     assert take_moved(core2, str(out))[1] is True
     assert bot.read(second)["name"] == "Renamed"
+
+
+# -- D148: Recommended for this bot ---------------------------------------------------------------
+
+class _Rows:
+    def __init__(self, rows=()):
+        self.rows = list(rows)
+
+    def list(self):
+        return self.rows
+
+
+def _moved_record(tmp_path):
+    """A moved bot's record, with one of each kind of row."""
+    out = tmp_path / "bundle"
+    (out / "apps" / "made").mkdir(parents=True)
+    (out / "apps" / "far").mkdir(parents=True)
+    (out / "apps" / "far" / "puffpai.json").write_text(json.dumps({"id": "far", "run": {"plan9": {"type": "command", "start": ["x"]}}}), encoding="utf-8")
+    return {"_folder": str(out), "bot": {"name": "Editor"}, "apps": [
+        {"id": "office", "name": "Office files", "kind": "tool", "source": "office"},
+        {"id": "made", "name": "Made thing", "kind": "app", "source": "apps/made"},
+        {"id": "far", "name": "Far thing", "kind": "app", "source": "apps/far"},
+        {"id": "gone", "name": "Too big", "kind": "app", "left_out": "it is too big for a folder like this"}],
+        "knowledge": {"books": [{"source": "kn-store-atlas", "title": "Atlas", "from": "store"},
+                                {"source": "kn-kiwix-gardens", "title": "Gardens", "from": "download"},
+                                {"source": "kn-own-letters", "title": "Letters"},
+                                {"source": "../bad", "title": "x", "from": "store"}]}}
+
+
+def test_export_says_where_a_book_came_from(state, tmp_path):
+    reg = Registry([{"id": "kn-a-b", "name": "From the store", "kind": "knowledge", "origin": "store:kn-a-b", "status": "stopped"},
+                    {"id": "kn-c-d", "name": "Downloaded", "kind": "knowledge", "origin": "adopted:https://x/y.zim", "status": "stopped"},
+                    {"id": "kn-own-e", "name": "Dropped", "kind": "knowledge", "origin": "local:/a/b.zim", "status": "stopped"}])
+    _apps, books, _carried = bot_move._app_rows(state, reg, Packages())   # noqa: SLF001
+    assert {b["source"]: b.get("from") for b in books} == {"kn-a-b": "store", "kn-c-d": "download", "kn-own-e": None}
+    assert "https://x" not in json.dumps(books)                           # no address goes: the title finds it
+
+
+def test_a_real_export_and_import_makes_the_list(state, tmp_path):
+    _bot(state)
+    reg, pk = _world(tmp_path)
+    out = tmp_path / "editor-bot"
+    bot_move.export(state, reg, pk, out)
+    there = tmp_path / "new" / "state"
+    make(there)
+    bot_move.apply(there, bot_move.read(out), None)
+    rows = {r["id"]: r for r in bot_move.recommended(there, _Rows())}
+    assert rows["kn-kiwix-gardens"]["get"] == "find" and rows["office"]["get"] == "add" and rows["weather"]["source"] == "store:weather"
+    assert rows["made"]["source"] == str(out / "apps" / "made")
+    assert not rows["office"].get("line")
+
+
+def test_the_list_says_how_each_comes_back(state, tmp_path):
+    bot_move.apply(state, _moved_record(tmp_path), None)
+    rows = {r["id"]: r for r in bot_move.recommended(state, _Rows())}
+    assert rows["office"]["get"] == "add" and rows["office"]["source"] == "office"
+    assert rows["made"]["get"] == "add" and rows["made"]["source"] == str(tmp_path / "bundle" / "apps" / "made")
+    assert rows["kn-store-atlas"]["get"] == "add" and rows["kn-store-atlas"]["source"] == "store:kn-store-atlas"
+    assert rows["kn-kiwix-gardens"]["get"] == "find" and rows["kn-kiwix-gardens"]["name"] == "Gardens"
+    assert rows["kn-own-letters"]["get"] == "ask" and "Ask Toolsmith" in rows["kn-own-letters"]["line"]
+    assert rows["gone"]["get"] == "ask" and "too big" in rows["gone"]["line"]
+    assert rows["far"]["get"] == "ask" and "another kind of computer" in rows["far"]["line"]
+    assert "../bad" not in rows and "source" not in rows["far"]
+
+
+def test_a_row_leaves_when_it_is_here_and_comes_back_if_removed(state, tmp_path):
+    bot_move.apply(state, _moved_record(tmp_path), None)
+    assert "office" in {r["id"] for r in bot_move.recommended(state, _Rows())}
+    here = _Rows([{"id": "office", "status": "stopped"}, {"id": "kn-new-id", "name": "Gardens", "kind": "knowledge", "status": "stopped"}])
+    left = {r["id"] for r in bot_move.recommended(state, here)}
+    assert "office" not in left and "kn-kiwix-gardens" not in left        # a book found again can have another id
+    assert "office" in {r["id"] for r in bot_move.recommended(state, _Rows([{"id": "office", "status": "removed"}]))}
+
+
+def test_a_bot_that_didnt_move_has_no_list_and_a_broken_file_is_no_list(state):
+    assert bot_move.recommended(state, _Rows()) == []
+    (state / "settings").mkdir(parents=True, exist_ok=True)
+    (state / "settings" / bot_move.LIST).write_text("not json", encoding="utf-8")
+    assert bot_move.recommended(state, _Rows()) == []
+
+
+def test_the_list_by_real_clicks(state, tmp_path, monkeypatch, drawbridge):
+    """Real Edge, real Core. Knowledge shows the list in the dashboard and the window. Add asks the normal Yes, and nothing is
+    added before it. Find it asks Find books with the book's title. An ask row has no button."""
+    from test_i10a_desktop_clicks import EDGE, WHERE, _call, _desktop, _point
+    if EDGE is None:
+        pytest.skip("Microsoft Edge")
+    bot_move.apply(state, _moved_record(tmp_path), None)
+    item = "[data-recommended-get=office]"
+    with _desktop(state, tmp_path, monkeypatch, complete=True) as b:
+        b.click(*_point(b, ".rail a.item[href='#knowledge']", 0))
+        assert b.wait(f"!!document.querySelector('{item}')", timeout_s=30), b.js(WHERE)
+        assert b.js("document.querySelector('[data-tile=recommended]').textContent").count("Ask Toolsmith") >= 2
+        assert b.js("!document.querySelector('[data-recommended-get=kn-own-letters]')")
+        b.click(*_point(b, item, 0))
+        assert b.wait("document.querySelector('[data-recommended-box=office]').querySelectorAll('button').length > 0", timeout_s=60), b.js(WHERE)
+        got = _call(b, "GET", "/v1/knowledge/recommended")
+        assert got["status"] == 200 and "office" in [r["id"] for r in got["data"]["rows"]]     # not added before her Yes
+        # Find it goes to Find books, by the book's title: no Toolsmith is started here
+        b.js("window.__sent = []; const real = window.fetch; window.fetch = (u, o) => { if (String(u).indexOf('/v1/knowledge/find') >= 0 && !(o && o.method === 'POST')) return Promise.resolve(new Response(JSON.stringify({can: 'ok', ask: [], after_yes: []}), {status: 200, headers: {'Content-Type': 'application/json'}})); if (String(u).indexOf('/v1/knowledge/find') >= 0) { window.__sent.push(o.body); return Promise.resolve(new Response(JSON.stringify({error: 'not here'}), {status: 409, headers: {'Content-Type': 'application/json'}})); } return real(u, o); }")
+        b.click(*_point(b, "[data-recommended-get=kn-kiwix-gardens]", 0))
+        assert b.wait("window.__sent.length === 1", timeout_s=15), b.js(WHERE)
+        assert json.loads(b.js("window.__sent[0]")) == {"words": "Gardens"}
+        # the window draws the same list
+        b.js("location.assign('/window/')")
+        assert b.wait("!!document.querySelector('[data-rail=knowledge]')", timeout_s=30), b.js(WHERE)
+        for _try in range(3):                            # the rail is drawn again as the window starts
+            b.click(*_point(b, "[data-rail=knowledge]", 0))
+            if b.wait("!!document.querySelector('[data-recommended-list]')", timeout_s=10):
+                break
+        assert b.js("!!document.querySelector('[data-recommended-list]')"), b.js(WHERE)

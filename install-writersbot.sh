@@ -7,7 +7,7 @@
 #   ./install-writersbot.sh                      build the image, install, then setup (asks about the model, the vault, the Bridge, Toolsmith)
 #   ./install-writersbot.sh --no-setup           build and install only; run setup later with: ./install-writersbot.sh setup
 #   ./install-writersbot.sh setup|start|stop|pair|chat     the bot's everyday commands, same as the box it came from
-#   ./install-writersbot.sh update               bring the bot's own apps up to this copy, each with its Yes card; nothing else changes
+#   ./install-writersbot.sh update               bring the bot's Core, window and own apps up to this copy, each app with its Yes card; its data is not touched
 #   ./install-writersbot.sh --pictures           also set up the picture program on this Orin (install-pictures.sh)
 #
 # Running it again is safe: what is already done is skipped.
@@ -289,7 +289,7 @@ everyday() {
     echo "  ./install-writersbot.sh stop     stop the bot and the container"
     echo "  ./install-writersbot.sh pair     a sign-in code for the window or a browser, which use http://$LAN:$(host_port)"
     echo "  ./install-writersbot.sh chat     another chat, while it runs"
-    echo "  ./install-writersbot.sh update   brings the bot's own apps up to this copy, and adds back any missing or broken"
+    echo "  ./install-writersbot.sh update   brings the bot's Core, window and own apps up to this copy, and adds any app that is new, missing or broken"
 }
 
 # Small questions and the Bridge, in the Core's own Python in the container. It reads the Registry, the Bridge, and the
@@ -307,6 +307,8 @@ ask = sys.argv[1]
 if ask == "plan":                      # for each id: id, what to do, name, version here, version in this copy
     rows = {a["id"]: a for a in json.load(sys.stdin)["apps"]}
     for pid in sys.argv[2:]:
+        if pid not in rows:            # an older bundle without this app: nothing to bring
+            continue
         app, row = rows[pid], Registry().get(pid)
         if row is None:
             how = "missing"
@@ -352,12 +354,29 @@ elif ask == "bridge":                  # no word: what the Bridge is set to now.
         print(body.get("error") if isinstance(body, dict) else body)
         sys.exit(1)
     print(body.get("setting"))
+elif ask == "topics":                  # the bundle's reading list, for Recommended for this bot: only this one key of this one file
+    from puffpai_core import jsonfile
+    topics = (json.load(sys.stdin).get("knowledge") or {}).get("topics") or []
+    path = state / "settings" / "moved_list.json"
+    got = jsonfile.read(path, {})
+    got = got if isinstance(got, dict) else {}
+    if topics and got.get("topics") != topics:
+        got["topics"] = topics
+        jsonfile.write(path, got)
+        print("added")
+    else:
+        print("same")
 PY
 )"
 box_py() { docker exec -i "$NAME" /data/bot/code/.venv/bin/python -c "$BOX_PY" "$@"; }
 box_cli() { docker exec -it "$NAME" bash -c "cd /data/bot/code && .venv/bin/puffpai $1"; }
 
-UPDATE_ORDER="novel-mode manuscript maps document-convert"
+# Her data never goes through here: only these folders of the code, never .venv, the launchers or a cache. The Core reads
+# contracts/ and templates/ as it runs.
+PARTS_SUMS='find core packages contracts templates -type f ! -path "*/__pycache__/*" ! -name "*.pyc" ! -path "*.egg-info/*" ! -path "*/.venv/*" ! -path "*/node_modules/*" -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum'
+CORE_CHANGED=0
+
+UPDATE_ORDER="novel-mode manuscript editors-desk maps document-convert"
 BUNDLE_RECORD="$HERE/bot/puffpai-bot.json"
 
 core_answers() { docker exec "$NAME" bash -c "cd /data/bot/code && .venv/bin/puffpai bridge status" >/dev/null 2>&1; }
@@ -388,6 +407,96 @@ stop_if_reading() {
         *) echo "  A book's status says a reading is running, and Manuscript could not confirm it, so it counts as running: an update would stop it. $1 Run this again when the reading is done." ;;
     esac
     exit 1
+}
+
+core_stop() {
+    local i
+    docker exec "$NAME" bash -c "cd /data/bot/code && .venv/bin/puffpai shutdown" >/dev/null 2>&1 || true
+    for i in $(seq 1 30); do
+        if ! core_answers; then return 0; fi
+        sleep 2
+    done
+    return 1
+}
+
+# Detached, in the container that is already there: the container is never restarted, since an older bot keeps its books
+# inside it. Its process number goes on the mount, so a Core that never answers can be stopped by that number alone.
+core_start_and_wait() {
+    local i
+    docker exec -d "$NAME" bash -c "cd /data/bot/code && echo \$\$ >/data/bot/tmp/core-update.pid && exec .venv/bin/puffpai serve >>/data/bot/puffpai/$BOT/logs/serve.out 2>&1"
+    for i in $(seq 1 40); do
+        sleep 3
+        if core_answers; then return 0; fi
+    done
+    return 1
+}
+
+core_kill_started() {
+    docker exec "$NAME" bash -c 'p="$(cat /data/bot/tmp/core-update.pid 2>/dev/null)"; [ -n "$p" ] && kill "$p" 2>/dev/null; sleep 5; [ -n "$p" ] && kill -9 "$p" 2>/dev/null; true' >/dev/null 2>&1 || true
+}
+
+# The Core and any built-in package that differ from this copy. At its next start the Core itself brings its installed copy
+# of the window up to packages/desktop (PackageManager.check_builtins), which is why the Core must restart. pyproject.toml has
+# not changed since the first public version, so nothing is installed with pip.
+update_core() {
+    local here box parts gone fresh
+    here="$(cd "$CODE" && bash -c "$PARTS_SUMS" | LC_ALL=C sort)"
+    box="$(docker exec "$NAME" bash -c "cd /data/bot/code && $PARTS_SUMS" | LC_ALL=C sort)" || { echo "  The bot's Core could not be read, so nothing was updated."; exit 1; }
+    parts="$(LC_ALL=C comm -3 <(printf '%s\n' "$here") <(printf '%s\n' "$box") | sed -E -e 's/^[[:space:]]*//' -e 's/^[0-9a-f]+ [ *]//' | awk -F/ 'NF { print ($1 == "packages" ? $1 "/" $2 : $1) }' | LC_ALL=C sort -u)"
+    parts="$(for p in $parts; do if [ -e "$CODE/$p" ]; then echo "$p"; fi; done)"
+    if [ -z "$parts" ]; then
+        echo "  The Core and the window are the same as this copy."
+        return 0
+    fi
+    if core_answers; then stop_if_reading "Nothing was changed."; fi
+    echo "  The bot's Core and window are older than this copy, so they are updated now, and the Core restarts. Its vault, settings, chats and books are not touched."
+    if core_answers; then
+        if ! core_stop; then echo "  The bot did not stop, so nothing was changed. Try again, or: ./install-writersbot.sh stop"; exit 1; fi
+    fi
+    # shellcheck disable=SC2086
+    docker exec "$NAME" bash -c "cd /data/bot/code && for p in $(echo $parts); do if [ -e \"\$p\" ]; then echo \"\$p\"; fi; done | tar cf /data/bot/before-update.tar --exclude=__pycache__ --exclude='*.pyc' --exclude='*.egg-info' --exclude=.venv -T -" \
+        || { echo "  A copy of the old Core could not be kept on the data folder, so nothing was changed. Is its disk full?"; exit 1; }
+    gone="$(LC_ALL=C comm -13 <(printf '%s\n' "$here" | sed -E 's/^[0-9a-f]+ [ *]//' | LC_ALL=C sort) <(printf '%s\n' "$box" | sed -E 's/^[0-9a-f]+ [ *]//' | LC_ALL=C sort))"
+    fresh="$(LC_ALL=C comm -23 <(printf '%s\n' "$here" | sed -E 's/^[0-9a-f]+ [ *]//' | LC_ALL=C sort) <(printf '%s\n' "$box" | sed -E 's/^[0-9a-f]+ [ *]//' | LC_ALL=C sort))"
+    # shellcheck disable=SC2086
+    tar cf - -C "$CODE" --exclude=.venv --exclude=bots --exclude='*-buildbot.sh' --exclude=__pycache__ --exclude='*.pyc' --exclude='*.egg-info' $parts \
+        | docker exec -i "$NAME" tar xf - -C /data/bot/code
+    remove_listed "$gone"
+    CORE_CHANGED=1
+    CORE_STARTED=1
+    if core_start_and_wait; then
+        echo "  The bot's Core is back, on the new code."
+        case " $(echo $parts) " in *" packages/desktop "*) ;; *) return 0 ;; esac
+        if [ "$(docker exec "$NAME" bash -c "cd /data/bot/code && sha256sum packages/desktop/web/pages/knowledge.js | cut -d' ' -f1" 2>/dev/null)" != "$(docker exec "$NAME" bash -c "cd /data/bot/puffpai/$BOT/packages/desktop/web/pages && sha256sum knowledge.js | cut -d' ' -f1" 2>/dev/null || true)" ]; then
+            echo "  The window's new pages did not come through by themselves. Look for their Yes card on Your turn, or run: docker exec -it $NAME bash -c \"cd /data/bot/code && .venv/bin/puffpai update desktop\""
+        fi
+        return 0
+    fi
+    echo "  The bot did not come back on the new code within two minutes, so the old code is put back."
+    core_kill_started
+    remove_listed "$fresh"
+    docker exec "$NAME" tar xf /data/bot/before-update.tar -C /data/bot/code
+    if core_start_and_wait; then
+        echo "  The bot is running again on its old code, and nothing else was changed. To see why the new code did not start: docker exec $NAME tail /data/bot/puffpai/$BOT/logs/serve.out"
+    else
+        echo "  The bot did not start on its old code either. A copy of that code is at /data/bot/before-update.tar in the container. To see why: docker exec $NAME tail /data/bot/puffpai/$BOT/logs/serve.out"
+    fi
+    exit 1
+}
+
+remove_listed() {
+    if [ -n "$1" ]; then
+        printf '%s\n' "$1" | docker exec -i "$NAME" bash -c 'cd /data/bot/code && while IFS= read -r f; do rm -f -- "$f"; done'
+    fi
+}
+
+# The books and articles the bot came with. A bot set up from an older bundle never had this list.
+seed_topics() {
+    local got
+    got="$(box_py topics <"$BUNDLE_RECORD" 2>/dev/null)" || got=""
+    if [ "$got" = added ]; then
+        echo "  The books and articles this bot came with are on Knowledge now, under Recommended for this bot. Nothing downloads until you say Yes there."
+    fi
 }
 
 BRIDGE_OPENED=0
@@ -421,13 +530,15 @@ bridge_for_update() {
 
 update_bot() {
     local plan id how name have want answer needs_bridge=0 pending=0 left=0
-    say "Updating this bot's own apps from this copy"
+    say "Updating this bot from this copy"
     if keeps_files_inside; then
         echo "  This bot's books are inside its container, and this update leaves them there. To back them up: docs/FOR_THE_ORIN.md section 8."
     fi
+    update_core
+    seed_topics
     plan="$(box_py plan $UPDATE_ORDER <"$BUNDLE_RECORD")" || { echo "  The bot's list of apps could not be read, so nothing was updated."; exit 1; }
     while IFS=$'	' read -r id how name have want; do
-        # Novel mode is only text and Maps needs nothing downloaded (run.default.setup in their puffpai.json).
+        # Novel mode is only text, and Maps and Editor's Desk need nothing downloaded (run.default.setup in their puffpai.json).
         case "$how" in
             update|replace|broken|missing)
                 pending=1
@@ -447,7 +558,7 @@ update_bot() {
         case "$how" in
             current) echo; echo "  $name is at $want already, so it is skipped." ;;
             missing)
-                echo; echo "  $name is not on this bot. Its Yes card comes next; say No to leave it out."
+                echo; echo "  Adding $name $want to this bot. Its Yes card comes next; say No to leave it out."
                 box_cli "add /data/bot/from/writersbot/apps/$id" || true ;;
             broken)
                 echo; echo "  $name did not finish installing, so it is taken out and added again from this copy. Its data stays."
@@ -457,7 +568,7 @@ update_bot() {
                 if [ "$id" = manuscript ]; then stop_if_reading "The apps before it are done; the rest were not changed."; fi
                 box_cli "update $id" || true ;;
             replace)
-                echo; echo "  $name: $have to $want. The one here came from somewhere else (the store), so it is taken out and added again from this copy. Its data stays."
+                echo; echo "  $name: $have to $want. The one here was added from another folder or from the store, so it is taken out and added again from this copy. Its data stays."
                 read -r -p "  Its Yes card comes next. If you say No there, it stays out until you run this again. Go on? [Y/n] " answer || answer=n
                 case "$answer" in
                     [Nn]*) echo "  $name was left as it is." ;;
@@ -472,17 +583,18 @@ update_bot() {
         case "$how" in
             update|replace) echo "  $name is still at $have, not $want. To try again: ./install-writersbot.sh update"; left=1 ;;
             broken) echo "  $name did not finish installing. To try again: ./install-writersbot.sh update"; left=1 ;;
-            missing) echo "  $name is not on this bot. To add it: ./install-writersbot.sh update"; left=1 ;;
+            missing) echo "  $name was not added. To add it: ./install-writersbot.sh update"; left=1 ;;
         esac
     done <<<"$plan"
     if [ "$left" = 1 ]; then
         echo "  To see why an app failed: docker exec -it $NAME bash -c \"cd /data/bot/code && .venv/bin/puffpai logs <its id>\""
         say "Not every app finished. Reload the window once (press F5) for the ones that did."
-    elif [ "$pending" = 1 ]; then
-        say "Done. Reload the window once (press F5), so the apps' pages open again."
+    elif [ "$pending" = 1 ] || [ "$CORE_CHANGED" = 1 ]; then
+        say "Done. Reload the window once (press F5), so its pages open again."
+        if [ "$CORE_CHANGED" = 1 ]; then echo "  A restart locks the vault. If the window shows a PIN box at the top, type your PIN there."; fi
         if [ "$CORE_STARTED" = 1 ]; then echo "  The bot is running in the background. ./install-writersbot.sh stop stops it."; fi
     else
-        say "Every app is up to date. Nothing else was changed."
+        say "Everything is up to date. Nothing else was changed."
     fi
     if [ "$left" = 1 ]; then exit 1; fi
 }

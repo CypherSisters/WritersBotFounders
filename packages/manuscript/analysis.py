@@ -11,19 +11,22 @@ computer. The brain on the owner's computer is small (about 8,192 tokens of cont
    pictures (how people and places look, distances and directions, the era's visible marks); a section too long to
    carry that in the same ask gets a third, small ask for it instead, and so does a section cached before 0.3.3. ``<think>`` blocks are dropped before parsing;
    bad JSON gets one repair call, then the section is skipped with a note. Both are cached by the section's sha.
-2. Merge: deterministic. The same name, an alias, or a first name that matches exactly one known character merges.
+2. Merge: deterministic. The same name, a real alias (not "she" or "the doctor"), or a first name that matches exactly
+   one known character and no other surname merges. "he" or "she" as a name is nobody.
    Voice (point of view and tense by section, tics, dialogue habits) is put together here, by counting.
 3. Synthesize: an arc call per character with four or more appearances, one call for threads and continuity, one for
-   themes, one for the story order of the events, one for the structure, one for the editor's desk. Each gets the
-   merged facts, never the whole text.
-4. ``bible.json`` is written after every step and ``status.json`` is kept current. Before each write the writer's own
-   corrections and desk choices are put back on top (the ``after`` hook). Nothing here writes a section.
+   themes, one for the story order of the events, one for the structure. Each gets the merged facts, never the whole
+   text. A re-read that finds every section's text and cache as the last whole reading left them, and no new word from
+   the writer, asks nothing and keeps that reading (``read_of``).
+4. ``bible.base.json`` (the bible as read) and ``bible.json`` (that with the writer's own corrections on top) are written after every step, through the ``publish`` hook, and ``status.json`` is kept current. Synthesis
+   asks are made from the corrected facts and told her corrections are settled. Nothing here writes a section.
 
 Copyright (c) 2026 Cypher Sisters. Apache-2.0 License.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import heapq
 import itertools
@@ -44,15 +47,14 @@ from typing import Any, Callable
 from blocks import slug
 
 BIBLE = "bible.json"
+BASE = "bible.base.json"         # 0.4: the bible as read, before her corrections, so an undo needs no re-read
 STATUS = "status.json"
 CACHE = "cache"
 BUDGET = 5000                    # tokens of input per ask
 PART_WORDS = 2200
 SHORT_PART_WORDS = 1000          # a story with no headings is read finer, so the model notices more
 SCHEMA = "manuscript-bible/2"
-SEVERITY = ("high", "medium", "low")
-DESK_KINDS = ("plot_hole", "timeline", "science", "character", "continuity", "question")
-BRIEF_TABS = ("characters", "plot", "timeline", "structure", "world", "science", "themes", "voice", "desk")
+BRIEF_TABS = ("characters", "plot", "timeline", "structure", "world", "science", "themes", "voice")
 MAIN_ROLES = ("protagonist", "antagonist", "narrator", "main character", "deuteragonist")
 QUOTE_MAX = 200
 NOTE_MAX = 400
@@ -63,9 +65,11 @@ REPAIR = "Return only the JSON."
 LOOKS_MAX = 12                   # looks kept per character
 DETAILS_MAX = 10                 # details kept per place
 LOOK_QUOTE = 120                 # a look's or detail's quote, in characters
-GENERAL = "A general suggestion: "  # a desk fix from the template, when the desk ask wrote none for the item
 TITLES = {"mr", "mrs", "ms", "miss", "dr", "doctor", "sir", "lady", "lord", "aunt", "uncle", "captain", "the",
           "old", "young", "father", "mother", "professor", "king", "queen"}
+PRONOUNS = {"he", "she", "him", "her", "his", "hers", "they", "them", "their", "i", "me", "my", "we", "us", "our", "you",
+            "your", "it", "someone", "somebody", "nobody", "unknown", "unnamed"}
+SOMEONE = {"the", "a", "an", "her", "his", "their", "my", "our", "that", "this"}   # "the doctor", "her brother"
 
 
 def now() -> str:
@@ -239,6 +243,22 @@ class BrainQueue:
             job.run()
 
 
+class Settled:
+    """A brain whose every ask is told what the writer has settled, so what it writes agrees with her."""
+
+    def __init__(self, brain: Any, lines: Callable[[], list[str]]) -> None:
+        self.brain, self.lines = brain, lines
+        self.missed = 0                 # asks that came back with nothing usable, even after the repair call
+
+    def chat(self, messages: list[dict], patient: bool = True) -> tuple[str, str]:
+        said = self.lines()
+        if said:
+            head = ("The writer has corrected these facts. They are settled: treat them as true whatever any other "
+                    "note here says, and never bring back what she removed or changed:\n- " + "\n- ".join(said))
+            messages = [{**messages[0], "content": f"{messages[0]['content']}\n\n{head}"}] + messages[1:]
+        return self.brain.chat(messages, patient)
+
+
 class QueuedBrain:
     """The reading's brain: each of its calls waits its turn in the queue, behind the owner's own asks."""
 
@@ -285,6 +305,8 @@ def ask_json(brain: Brain, system: str, user: str, ok: Callable[[Any], bool], pa
     messages += [{"role": "assistant", "content": strip_think(text)[:6000]}, {"role": "user", "content": REPAIR}]
     text, model2 = brain.chat(messages, patient)
     got = parse_json(text)
+    if (got is None or not ok(got)) and isinstance(brain, Settled):
+        brain.missed += 1
     return (got if got is not None and ok(got) else None), (model2 or model)
 
 
@@ -329,6 +351,24 @@ def _first_name(key: str) -> str:
     return "" if not parts or parts[0].rstrip(".") in TITLES else parts[0]
 
 
+def _nobody(name: str) -> bool:
+    """A pronoun is not a person: facts under "he" or "she" have no named owner."""
+    return _norm(name) in PRONOUNS
+
+
+def _generic(alias: str) -> bool:
+    """A description, not a name: "she", "the doctor", "her brother", "doctor". Many people can be called that."""
+    key = _norm(alias)
+    return (not key or key in PRONOUNS or key in TITLES or key.split()[0] in SOMEONE
+            or not str(alias).strip()[:1].isupper())
+
+
+def _other_surname(a: str, b: str) -> bool:
+    """Two full names that end differently: "Tom Hale" and "Tom Ross" are two people."""
+    x, y = a.split(), b.split()
+    return len(x) > 1 and len(y) > 1 and x[-1] != y[-1]
+
+
 # -- extraction ---------------------------------------------------------------------------------------
 
 EXTRACT_SYSTEM = (
@@ -344,7 +384,9 @@ EXTRACT_SYSTEM = (
     '"continuity":[{"kind":"mismatch, gap or question","note":""}],'
     '"editing":[{"kind":"pacing, point of view, clarity, dialogue or repetition","note":""}],'
     '"setting":{"world":"","place":"","era":"","technology":""},"history":[{"when":"","what":""}],"summary":""}\n'
-    "Only what this section says. When a person or place is one of the known names, use that name. beat is what the "
+    "Only what this section says. When a person or place is one of the known names, use that name; a new person gets "
+    "their own entry, even when the name is close to a known one. name is a real name or how the section calls them; "
+    "never he, she or they. beat is what the "
     "character does or learns here, one short sentence. parents, children and partners are names. placement says "
     "whether an event happens in the story's present, earlier (a flashback) or later. where is the country, region "
     "or planet a place is in, when the section says. setting is any clue to the world, the place in it, the era "
@@ -356,7 +398,9 @@ LOOKS_RULES = (
     "what they always wear), one detail to an entry. age_words are the section's own words on the character's age. "
     "details are what a place looks like, is made of, sounds and smells like, its weather and light, one to an "
     "entry. geography is distances, travel times and directions between named places. setting_look is what the era "
-    "and its technology look like (lamps, carts, domes, uniforms). Only what the text says, nothing guessed. Each of "
+    "and its technology look like (lamps, carts, domes, uniforms). Put a detail under a person only when the section "
+    "makes plain it is that person; when it says only he or she and you can't tell who, leave it out. Only what the "
+    "text says, nothing guessed. Each of "
     "these quotes is copied exactly from the section and is under 120 characters."
 )
 EXTRACT_LOOKS_SYSTEM = (                 # the facts ask with the evidence for pictures, for a section it fits
@@ -600,7 +644,7 @@ def empty_bible(title: str, total: int) -> dict:
             "editing": [], "scenes": [], "geography": [],
             "structure": {"acts": [], "turning_points": [], "midpoint": {"section": None, "note": ""},
                           "climax": {"section": None, "note": ""}},
-            "voice": {"by_section": [], "tics": [], "dialogue_habits": []}, "desk": [],
+            "voice": {"by_section": [], "tics": [], "dialogue_habits": []},
             "setting": {"world": "", "place_in_world": "", "era": "", "technology": "", "one_paragraph": "",
                         "look": []},
             "history": [], "cast_summary": "", "briefs": {k: "" for k in BRIEF_TABS},
@@ -612,17 +656,23 @@ class _People:
         self.people: list[dict] = []
 
     def keys(self, p: dict) -> set:
-        return {_norm(p["name"])} | {_norm(a) for a in p["aliases"]}
+        return {_norm(p["name"])} | {_norm(a) for a in p["aliases"] if not _generic(a)}
 
     def find(self, name: str, aliases: list[str] = ()) -> dict | None:
-        want = {_norm(name)} | {_norm(a) for a in aliases}
-        want.discard("")
+        """The name itself first, in anyone; then a real alias, unless the two full names say two people; then a first
+        name exactly one person has, and no other surname."""
+        key = _norm(name)
         for p in self.people:
-            if want & self.keys(p):
+            if key and key in self.keys(p):
                 return p
-        first = _first_name(_norm(name))
+        want = {_norm(a) for a in aliases if not _generic(a)}
+        for p in self.people:
+            if want & self.keys(p) and not _other_surname(key, _norm(p["name"])):
+                return p
+        first = _first_name(key)
         if first:
-            hits = [p for p in self.people if first in {_first_name(k) for k in self.keys(p)}]
+            hits = [p for p in self.people if not _other_surname(key, _norm(p["name"]))
+                    and any(_first_name(k) == first and not _other_surname(key, k) for k in self.keys(p))]
             if len(hits) == 1:
                 return hits[0]
         return None
@@ -638,7 +688,7 @@ class _People:
             p["aliases"].append(p["name"])               # "Jennifer" then "Jennifer Hale": the fuller name leads
             p["name"] = name
         for a in aliases + ([name] if name != p["name"] else []):
-            if _norm(a) != _norm(p["name"]) and _norm(a) not in {_norm(x) for x in p["aliases"]}:
+            if not _nobody(a) and _norm(a) != _norm(p["name"]) and _norm(a) not in {_norm(x) for x in p["aliases"]}:
                 p["aliases"].append(a)
         return p
 
@@ -672,7 +722,7 @@ def merge(title: str, order: list[tuple[int, str]], found: dict[int, dict], craf
             age = c.get("age_words")
             age = _t((age.get("words") or age.get("text")) if isinstance(age, dict) else age, 120)
             got = _evidence(c.get("looks"))
-            if not name or not (got or age):
+            if not name or _nobody(name) or not (got or age):
                 continue
             p = people.add(name, _names(c.get("aliases")))
             if n not in p["appearances"]:
@@ -708,7 +758,7 @@ def merge(title: str, order: list[tuple[int, str]], found: dict[int, dict], craf
             continue
         for c in _dicts(ext.get("characters")):
             name = _t(c.get("name"), 120)
-            if not name:
+            if not name or _nobody(name):
                 continue
             p = people.add(name, _names(c.get("aliases")))
             p["role"] = p["role"] or _t(c.get("role"), 60)
@@ -888,7 +938,6 @@ def merge(title: str, order: list[tuple[int, str]], found: dict[int, dict], craf
                 habits.append({"character": who, "habit": h["habit"]})
     bible["voice"]["tics"] = sorted((t for t in tics.values() if t["count"] >= 2), key=lambda t: -t["count"])[:30]
     bible["voice"]["dialogue_habits"] = habits
-    bible["desk"] = base_desk(bible)
     return bible
 
 
@@ -908,21 +957,6 @@ def minor_write_up(c: dict) -> str:
     return (line + (f": {beat}" if beat else ".")).strip()
 
 
-# -- the editor's desk ------------------------------------------------------------------------------
-
-def desk_item(kind: str, severity: str, sections: Any, note: Any, fix: Any = "", why: Any = "",
-              where: list[dict] | None = None) -> dict:
-    """One desk item. Its id comes from its kind and note, so a re-read that finds the same thing keeps the
-    writer's Keep, Dismiss or note on it. ``why``: what a reader would feel or miss; ``where``: one to three
-    [{section, quote}] showing the problem."""
-    kind = kind if kind in DESK_KINDS else "question"
-    note = _t(note)
-    digest = hashlib.sha1(f"{kind}|{note.lower()}".encode("utf-8")).hexdigest()[:10]
-    return {"id": f"d-{digest}", "kind": kind, "severity": severity if severity in SEVERITY else "medium",
-            "sections": _ints(sections), "note": note, "why": _t(why, 600), "where": list(where or [])[:3],
-            "fix": _t(fix), "state": "open", "writer_note": ""}
-
-
 def timeline_conflicts(bible: dict) -> list[dict]:
     """Story order against telling order: an event told right after one that, in the story's own time, it comes
     before."""
@@ -934,49 +968,6 @@ def timeline_conflicts(bible: dict) -> list[dict]:
                         "flashback": e.get("placement") == "earlier",
                         "note": f"\"{e['what']}\" (section {e['section']}) happens before \"{p['what']}\" "
                                 f"(section {p['section']}), but it is told after it."})
-    return out
-
-
-def base_desk(bible: dict, final: bool = False) -> list[dict]:
-    """The desk items the facts give without asking: continuity notes, science that fails, timeline conflicts and,
-    once the whole book is read (``final``), threads that never pay off."""
-    items = []
-    for c in bible.get("continuity") or []:
-        kind = c.get("kind")
-        if kind == "mismatch":
-            items.append(desk_item("continuity", "medium", c.get("sections"), c.get("note"),
-                                   GENERAL + "Pick one version and make the other section match."))
-        elif kind == "gap":
-            items.append(desk_item("continuity", "low", c.get("sections"), c.get("note"),
-                                   GENERAL + "Say what happens in between, or mark the jump in time."))
-        else:
-            items.append(desk_item("question", "low", c.get("sections"), c.get("note")))
-    for s in bible.get("science") or []:
-        if s.get("plausible") == "no":
-            items.append(desk_item("science", "medium", [s.get("section")],
-                                   f"{s.get('claim')}: {s.get('note')}".strip(": "),
-                                   GENERAL + "Change the claim to fit what is known, or show why it works in "
-                                   "this world."))
-    for t in timeline_conflicts(bible):
-        items.append(desk_item("timeline", "low" if t["flashback"] else "medium", t["sections"], t["note"],
-                               GENERAL + "If it is a flashback, make the jump clear (a date, a season, years "
-                               "before). If not, move it or change when it happens."))
-    if final:
-        for t in bible.get("threads") or []:
-            if t.get("open"):
-                secs = _ints(t.get("sections"))
-                items.append(desk_item("plot_hole", "medium", secs[:1] + secs[-1:],
-                                       f"The thread \"{t.get('name')}\" is set up and never paid off.",
-                                       GENERAL + "Pay it off before the end, or cut the setup."))
-    return dedupe_desk(items)
-
-
-def dedupe_desk(items: list[dict]) -> list[dict]:
-    out, seen = [], set()
-    for it in items:
-        if it["note"] and it["id"] not in seen:
-            seen.add(it["id"])
-            out.append(it)
     return out
 
 
@@ -1116,19 +1107,6 @@ STRUCTURE_SYSTEM = (
     '"note":""}],"midpoint":{"section":1,"note":""},"climax":{"section":1,"note":""}}. Acts cover the sections in '
     "order. A turning point is where the story changes direction. Use only the facts given. Keep notes short."
 )
-DESK_SYSTEM = (
-    "You help fill a writer's editor's desk: the list of what in her manuscript needs her eye, from the facts her "
-    'bot noted. Answer with one JSON object only: {"desk":[{"item":0,"kind":"plot_hole, character or question",'
-    '"severity":"high, medium or low","sections":[1],"note":"","why":"","where":[{"section":1,"quote":""}],'
-    '"fix":""}]}. First write up each item already on the desk, giving its number as item. Each item has four '
-    "parts. note is one plain sentence naming the problem, in words she understands without any other notes. why "
-    "is one or two sentences on what a reader would feel or miss because of it. where is one to three quotes, each "
-    "copied exactly from one fact line below (the lines that start with a section in brackets, like [3]) and under "
-    "120 characters, with that section. fix is one or two sentences on what to change for this item in this book, "
-    "naming the people, places or events, not a general rule. Then add new items with item 0: plot holes, "
-    "characters whose want never pays off or whose trait disappears, and questions a reader would ask, each with "
-    "the same four parts. Use only the facts given. An empty list is fine."
-)
 
 
 def apply_story_order(bible: dict, ids: list[Any]) -> None:
@@ -1159,7 +1137,6 @@ def synth_timeline(brain: Brain, bible: dict) -> str:
                           lambda g: isinstance(g, dict) and isinstance(g.get("story_order"), list))
     if got is not None:
         apply_story_order(bible, got["story_order"])
-    bible["desk"] = base_desk(bible)
     return model
 
 
@@ -1191,68 +1168,6 @@ def synth_structure(brain: Brain, bible: dict) -> str:
            for t in _dicts(got.get("turning_points")) if _ints(t.get("section")) and _t(t.get("name"), 120)]
     bible["structure"] = {"acts": acts, "turning_points": tps, "midpoint": _at(got.get("midpoint")),
                           "climax": _at(got.get("climax"))}
-    return model
-
-
-def _desk_where(raw: Any, sent: str) -> list[dict]:
-    """The quotes the desk ask gave, kept only when each is in one of the fact lines it was sent; the section is
-    that line's, never the number the model wrote. At most three, each at most 120 characters."""
-    lines = [(int(m.group(1)), " ".join(ln.lower().split())) for ln in sent.split("\n")
-             for m in [re.match(r"\[(\d+)\] ", ln)] if m]
-    out: list[dict] = []
-    for w in raw if isinstance(raw, list) else []:
-        q = _t(w.get("quote") if isinstance(w, dict) else w, 400).strip('"\u201c\u201d ')
-        low = " ".join(q.lower().split())
-        hit = next((n for n, ln in lines if low and low in ln), None)
-        if hit is not None and q[:LOOK_QUOTE] not in {x["quote"] for x in out}:
-            out.append({"section": hit, "quote": q[:LOOK_QUOTE]})
-        if len(out) >= 3:
-            break
-    return out
-
-
-def synth_desk(brain: Brain, bible: dict) -> str:
-    base = base_desk(bible, final=True)
-    bible["desk"] = base
-    room = BUDGET - tokens(DESK_SYSTEM) - 200
-    near = {n for d in base for n in d["sections"]}
-    lines = ["Already on the desk:"] + [f"{i}. {d['kind']}, sections {d['sections']}: {d['note']}"
-                                        for i, d in enumerate(base, 1)]
-    lines += ["Facts, by section:"]
-    lines += [f"[{c['sections'][0]}] {c['kind']}: {c['note']}" for c in bible["continuity"] if c.get("sections")]
-    events = sorted(bible["events"], key=lambda e: e["section"] not in near)   # the items' own sections first
-    lines += [f"[{e['section']}] {e['what']}" + (f" ({e['when']})" if e.get("when") else "") for e in events]
-    lines += [f"[{s['section']}] {s['summary']}" for s in bible["summary"]["by_section"]]
-    lines += [f"[{e['section']}] {th['name']}: \"{e['quote']}\"" for th in bible["themes"]
-              for e in th.get("evidence") or [] if isinstance(e, dict) and e.get("quote")]
-    lines += [f"[{x['section']}] {c['name']}: {x['detail']}" + (f", \"{x['quote']}\"" if x.get("quote") else "")
-              for c in bible["characters"] for x in c.get("looks") or []]
-    lines += ["People:"] + [f"{c['name']} ({c['role']}), in sections {c['appearances']}; wants {c['wants']}; "
-                            f"fears {c['fears']}; traits {', '.join(c['traits'])}; last beat: "
-                            f"{c['arc'][-1]['beat'] if c['arc'] else ''}" for c in bible["characters"]]
-    lines += ["Threads:"] + [f"{t['name']} ({'open' if t['open'] else 'paid off'}), sections {t['sections']}"
-                             for t in bible["threads"]]
-    sent = fit(lines, room)
-    got, model = ask_json(brain, DESK_SYSTEM, sent, lambda g: isinstance(g, dict) and isinstance(g.get("desk"), list))
-    if got is None:
-        return model
-    extra = []
-    for d in _dicts(got.get("desk"))[:40]:
-        k = _ints(d.get("item"))
-        where = _desk_where(d.get("where"), sent)
-        if k and 1 <= k[0] <= len(base):           # a write-up of an item found from the facts; it keeps its id
-            it = base[k[0] - 1]
-            it["note"] = _t(d.get("note")) or it["note"]
-            it["why"] = _t(d.get("why"), 600) or it["why"]
-            it["where"] = where or it["where"]
-            it["fix"] = _t(d.get("fix")) or it["fix"]
-            continue
-        kind = _t(d.get("kind"), 30).lower().replace(" ", "_")
-        if _t(d.get("note")):
-            fix = _t(d.get("fix"))
-            extra.append(desk_item(kind, _t(d.get("severity"), 10).lower(), d.get("sections"), d.get("note"),
-                                   fix, d.get("why"), where))
-    bible["desk"] = dedupe_desk(base + extra)
     return model
 
 
@@ -1288,8 +1203,6 @@ BRIEF_ASKS = {
     "science": "Which claims hold, which do not, and what would settle the doubtful ones.",
     "themes": "What the story is about underneath, and what the ending says about it.",
     "voice": "How the story is told: point of view, tense, rhythm, the habits of the prose and of the dialogue.",
-    "desk": ("A letter from her editor: first what is strongest in the book, then what needs work first, in that "
-             "order, warm and direct."),
 }
 
 
@@ -1370,8 +1283,7 @@ def tab_facts(bible: dict, tab: str) -> list[str]:
     all_lines = fact_lines(bible)
     pick = {"characters": ("Character",), "plot": ("Thread", "Event", "Continuity"),
             "timeline": ("Event",), "structure": ("Structure", "Scene"), "world": ("Place", "World rule"),
-            "science": ("Science",), "themes": ("Theme",), "voice": ("Voice", "Dialogue"),
-            "desk": ("Editor's desk",)}[tab]
+            "science": ("Science",), "themes": ("Theme",), "voice": ("Voice", "Dialogue")}[tab]
     lines = [ln for ln in all_lines if ln.startswith(pick)]
     if tab == "characters":
         lines += [f"{c['name']} is a {c['importance']} character. {c.get('write_up') or ''}"
@@ -1387,8 +1299,6 @@ def tab_facts(bible: dict, tab: str) -> list[str]:
         lines = [f"Setting: {st['world']}; {st['place_in_world']}; {st['era']}; {st['technology']}. "
                  f"{st['one_paragraph']}"] + [f"History: {h['when']}: {h['what']} {h['sections']}"
                                               for h in bible["history"]] + lines
-    elif tab == "desk":
-        lines += [ln for ln in all_lines if ln.startswith(("Theme", "Thread"))][:12]
     return lines + ["Sections:"] + _summaries(bible)
 
 
@@ -1404,20 +1314,57 @@ def synth_brief(brain: Brain, bible: dict, tab: str) -> str:
     return model
 
 
+def carry(before: Any, after: Any, into: dict) -> None:
+    """What one synthesis step changed, from the corrected copy it worked on to the bible as read: a field at a time,
+    a character or an event by its id, any other list whole."""
+    for k, v in after.items():
+        if k in before and before[k] == v:
+            continue
+        if isinstance(v, dict) and isinstance(before.get(k), dict) and isinstance(into.get(k), dict):
+            carry(before[k], v, into[k])
+        elif k in ("characters", "events") and isinstance(into.get(k), list):
+            was = {x.get("id"): x for x in before.get(k) or []}
+            mine = {x.get("id"): x for x in into[k]}
+            for x in v:
+                if x.get("id") in mine and x.get("id") in was:
+                    carry(was[x["id"]], x, mine[x["id"]])
+        else:
+            into[k] = v
+
+
 # -- the reading thread -------------------------------------------------------------------------------
 
 Loader = Callable[[Path], tuple[str, list[tuple[int, str, str, str]]]]
 
 
+def read_of(title: str, secs: list[tuple[int, str, str, str]], as_written: Any, settled: list[str]) -> str:
+    """What a whole reading was made from: the sections' text, the vault setting and her corrections."""
+    what = [SCHEMA, title, bool(as_written), settled, [(n, h, sha) for n, h, _text, sha in secs]]
+    return hashlib.sha256(json.dumps(what, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def cached_whole(folder: Path, sha: str) -> bool:
+    """A section's cache entry holds all three asks, so reading it again would ask nothing."""
+    got = read_json(folder / CACHE / f"{sha}.json")
+    return isinstance(got, dict) and all(isinstance(got.get(k), dict) for k in ("extraction", "craft", "looks"))
+
+
 class Reader:
     """One reading at a time per manuscript, each a thread. ``load(folder)`` -> (title, [(n, heading, text, sha)])."""
 
-    def __init__(self, brain: Brain, load: Loader, after: Callable[[Path, dict], Any] | None = None,
-                 as_written: Callable[[], bool] | None = None) -> None:
+    def __init__(self, brain: Brain, load: Loader, publish: Callable[[Path, dict], Any] | None = None,
+                 as_written: Callable[[], bool] | None = None, live: Callable[[Path, dict], dict] | None = None,
+                 settled: Callable[[Path], list[str]] | None = None,
+                 starting: Callable[[Path], None] | None = None, finished: Callable[[Path], None] | None = None,
+                 over: Callable[[Path], None] | None = None) -> None:
         self.brain = brain
         self.as_written = as_written or (lambda: True)      # kept in status.json, so the page can say it
         self.load = load
-        self.after = after               # puts the writer's corrections and desk choices back, before each write
+        self.publish = publish           # writes the bible as read, and it with the writer's word on top
+        self.live = live or (lambda _f, b: copy.deepcopy(b))  # a copy with the writer's word on top
+        self.settled = settled or (lambda _f: [])            # her corrections, as lines for a synthesis ask
+        self.starting, self.finished = starting, finished   # told when a reading starts, and when it ends well
+        self.over = over                 # told last of all, however the reading ended
         self.lock = threading.Lock()
         self.running: dict[str, threading.Thread] = {}
 
@@ -1456,12 +1403,22 @@ class Reader:
             line = f"The reading stopped on an error ({type(exc).__name__}). Start reading again."
             status["problems"].append(line)
             put(state="failed", step=line, finished_at=now())
+        finally:
+            if self.over is not None:
+                self.over(folder)
 
     def _read(self, folder: Path, status: dict, put: Callable[..., None]) -> None:
         title, secs = self.load(folder)
         total = len(secs)
-        order = [(n, h) for n, h, _t, _s in secs]
         old = read_json(folder / BIBLE, {}) or {}
+        made_of = read_of(title, secs, status.get("as_written"), self.settled(folder))
+        if isinstance(old, dict) and old.get("read_of") == made_of and all(cached_whole(folder, s) for *_x, s in secs):
+            put(state="done", step=f"Read {total} of {total} sections. Nothing changed since the last reading.",
+                total=total, done=total, unchanged=True, finished_at=now())
+            return                          # the last whole reading stands, with no ask and nothing written over
+        if self.starting is not None:
+            self.starting(folder)
+        order = [(n, h) for n, h, _t, _s in secs]
         built_with = str(old.get("built_with") or "") if isinstance(old, dict) else ""
         found: dict[int, dict] = {}
         crafts: dict[int, dict] = {}
@@ -1473,9 +1430,10 @@ class Reader:
         def save() -> None:
             bible["built_at"] = now()
             bible["built_with"] = built_with
-            if self.after is not None:
-                self.after(folder, bible)
-            write_json(folder / BIBLE, bible)
+            if self.publish is not None:
+                self.publish(folder, bible)
+            else:
+                write_json(folder / BIBLE, bible)
 
         save()
         for i, (n, heading, text, sha) in enumerate(secs, 1):
@@ -1536,42 +1494,59 @@ class Reader:
             save()
             put(done=i)
 
-        steps: list[tuple[str, Callable[[], str]]] = []
-        for c in bible["characters"]:
+        # Each step asks from the corrected facts and is told her corrections are settled. What it wrote comes back to
+        # the bible as read (carry), so that one stays free of her corrections and an undo needs no re-read.
+        asker = Settled(self.brain, lambda: self.settled(folder))
+        now_ = self.live(folder, bible)
+        steps: list[tuple[str, Callable[[dict], str]]] = []
+
+        def person(fn: Callable[[Any, dict, dict], str], cid: str) -> Callable[[dict], str]:
+            def run(b: dict) -> str:                         # merged away by a correction: nothing to write up
+                c = next((x for x in b["characters"] if x["id"] == cid), None)
+                return fn(asker, b, c) if c is not None else ""
+            return run
+
+        for c in now_["characters"]:
             if len(c["appearances"]) >= 4:
-                steps.append((f"Putting together {c['name']}'s arc", lambda c=c: synth_arc(self.brain, bible, c)))
-        if bible["events"] or bible["threads"]:
-            steps.append(("Following the plot threads", lambda: synth_threads(self.brain, bible)))
-        if bible["themes"] or bible["summary"]["by_section"]:
-            steps.append(("Gathering the themes", lambda: synth_themes(self.brain, bible)))
-        if len(bible["events"]) >= 2:
-            steps.append(("Putting the events in story order", lambda: synth_timeline(self.brain, bible)))
-        if bible["summary"]["by_section"] or bible["scenes"]:
-            steps.append(("Finding the shape of the story", lambda: synth_structure(self.brain, bible)))
-        if any(isinstance(x, dict) and x.get("setting") for x in found.values()) or bible["history"] or \
-                bible["places"] or bible["world_rules"]:
-            steps.append(("Describing the world", lambda: synth_setting(self.brain, bible, found)))
-        for c in bible["characters"]:
+                steps.append((f"Putting together {c['name']}'s arc", person(synth_arc, c["id"])))
+        if now_["events"] or now_["threads"]:
+            steps.append(("Following the plot threads", lambda b: synth_threads(asker, b)))
+        if now_["themes"] or now_["summary"]["by_section"]:
+            steps.append(("Gathering the themes", lambda b: synth_themes(asker, b)))
+        if len(now_["events"]) >= 2:
+            steps.append(("Putting the events in story order", lambda b: synth_timeline(asker, b)))
+        if now_["summary"]["by_section"] or now_["scenes"]:
+            steps.append(("Finding the shape of the story", lambda b: synth_structure(asker, b)))
+        if any(isinstance(x, dict) and x.get("setting") for x in found.values()) or now_["history"] or \
+                now_["places"] or now_["world_rules"]:
+            steps.append(("Describing the world", lambda b: synth_setting(asker, b, found)))
+        for c in now_["characters"]:
             if c["importance"] == "main":
-                steps.append((f"Writing up {c['name']}", lambda c=c: synth_people(self.brain, bible, [c["id"]])))
-        support = [c["id"] for c in bible["characters"] if c["importance"] == "supporting"]
+                steps.append((f"Writing up {c['name']}", lambda b, cid=c["id"]: synth_people(asker, b, [cid])))
+        support = [c["id"] for c in now_["characters"] if c["importance"] == "supporting"]
         for i in range(0, len(support), 4):                  # four supporting characters to a call
             ids = support[i:i + 4]
-            steps.append(("Writing up the supporting cast", lambda ids=ids: synth_people(self.brain, bible, ids)))
-        if bible["characters"] or bible["events"] or bible["threads"] or bible["continuity"] or bible["science"]:
-            steps.append(("Filling the editor's desk", lambda: synth_desk(self.brain, bible)))
+            steps.append(("Writing up the supporting cast", lambda b, ids=ids: synth_people(asker, b, ids)))
         if found:
             for tab in BRIEF_TABS:                            # the briefs last: they sum up everything above
-                steps.append((f"Writing the {tab} brief", lambda tab=tab: synth_brief(self.brain, bible, tab)))
+                steps.append((f"Writing the {tab} brief", lambda b, tab=tab: synth_brief(asker, b, tab)))
         for line, fn in steps:
             put(step=line)
+            live = self.live(folder, bible)
+            before = copy.deepcopy(live)
             try:
-                built_with = fn() or built_with
+                built_with = fn(live) or built_with
             except BrainSlow:
                 status["problems"].append(f"{line} took longer than ten minutes, so it was skipped.")
+            carry(before, live, bible)
+            save()
+        if not status["problems"] and not asker.missed:     # whole: the next re-read may keep it (see read_of)
+            bible["read_of"] = made_of
             save()
         read = sum(1 for n, _h in order if n in found)
         put(state="done", step=f"Read {read} of {total} sections.", done=total, finished_at=now())
+        if self.finished is not None:
+            self.finished(folder)
 
 
 # -- picking facts for an ask -------------------------------------------------------------------------
@@ -1598,6 +1573,11 @@ def fact_lines(bible: dict) -> list[str]:
                    f"fears {c.get('fears')}; relationships: {rel}; arc: {arc}")
         if c.get("importance") or c.get("personality"):
             out[-1] += f"; a {c.get('importance')} character; {c.get('personality') or ''}"
+        looks = [str(x.get("detail")) for x in c.get("looks") or [] if isinstance(x, dict) and x.get("detail")]
+        if looks:
+            out[-1] += "; looks: " + ", ".join(looks)
+        if isinstance(c.get("age_words"), dict) and c["age_words"].get("words"):
+            out[-1] += f"; age: {c['age_words']['words']}"
     for p in bible.get("places") or []:
         out.append(f"Place {p.get('name')} ({p.get('kind')}" + (f", in {p.get('where')}" if p.get("where") else "")
                    + f"), sections {p.get('appearances')}: {p.get('notes')}")
@@ -1650,10 +1630,6 @@ def fact_lines(bible: dict) -> list[str]:
         out.append(f"Voice tic: \"{t.get('phrase')}\" {t.get('count')} times, sections {t.get('sections')}")
     for h in v.get("dialogue_habits") or []:
         out.append(f"Dialogue habit of {h.get('character')}: {h.get('habit')}")
-    for d in bible.get("desk") or []:
-        if isinstance(d, dict) and d.get("state") != "dismissed":
-            out.append(f"Editor's desk, {d.get('severity')} {d.get('kind')} in sections {d.get('sections')}: "
-                       f"{d.get('note')}")
     return out
 
 

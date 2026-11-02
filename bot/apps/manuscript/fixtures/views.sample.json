@@ -1,0 +1,155 @@
+{
+  "views": [
+    {
+      "id": "v-20261031-2341-dray-family",
+      "tab": "characters",
+      "title": "The Dray family and who they trust",
+      "asked": "show me the Dray family and who they trust",
+      "made_at": "2026-10-31T23:41:00Z",
+      "made_by": "chat",
+      "blocks": [
+        {
+          "type": "markdown",
+          "text": "The Drays keep secrets from each other but trust each other in the end. *Quill* is the only outsider Tamsin trusts."
+        },
+        {
+          "type": "tree",
+          "root": {
+            "label": "The Dray family",
+            "children": [
+              {
+                "label": "Oren Dray",
+                "children": [
+                  {
+                    "label": "Tamsin Dray",
+                    "children": []
+                  },
+                  {
+                    "label": "Pell Dray",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "label": "Mira Dray (another name before)",
+                "children": [
+                  {
+                    "label": "Tamsin Dray",
+                    "children": []
+                  },
+                  {
+                    "label": "Pell Dray",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "graph",
+          "nodes": [
+            {
+              "id": "tamsin",
+              "label": "Tamsin Dray",
+              "kind": "character"
+            },
+            {
+              "id": "mira",
+              "label": "Mira Dray",
+              "kind": "character"
+            },
+            {
+              "id": "pell",
+              "label": "Pell Dray",
+              "kind": "character"
+            },
+            {
+              "id": "quill",
+              "label": "Quill Asher",
+              "kind": "character"
+            },
+            {
+              "id": "halden",
+              "label": "Halden Roe",
+              "kind": "character"
+            },
+            {
+              "id": "the-lantern",
+              "label": "The Lantern",
+              "kind": "place"
+            }
+          ],
+          "edges": [
+            {
+              "from": "tamsin",
+              "to": "quill",
+              "label": "trusts"
+            },
+            {
+              "from": "mira",
+              "to": "tamsin",
+              "label": "hides her name from"
+            },
+            {
+              "from": "pell",
+              "to": "quill",
+              "label": "shows his map to"
+            },
+            {
+              "from": "halden",
+              "to": "the-lantern",
+              "label": "keeps it running"
+            },
+            {
+              "from": "mira",
+              "to": "the-lantern",
+              "label": "helped build"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v-20261031-2338-lantern",
+      "tab": "plot",
+      "title": "Where the Lantern shows up",
+      "asked": "show me where the Lantern is mentioned",
+      "made_at": "2026-10-31T23:38:00Z",
+      "made_by": "page",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            {
+              "text": "the Lantern blinked its slow green light",
+              "section": 1
+            },
+            {
+              "text": "The Lantern isn't sending what you think it's sending",
+              "section": 3
+            },
+            {
+              "text": "On the fourth night the Lantern went dark",
+              "section": 4
+            },
+            {
+              "text": "the dome where the Lantern's power came from",
+              "section": 6
+            },
+            {
+              "text": "it was white instead of green",
+              "section": 8
+            }
+          ]
+        },
+        {
+          "type": "quote",
+          "text": "The Lantern had never been a line home. It was a meter.",
+          "section": 5,
+          "note": "The turn of the book: the light everyone trusted is counting them."
+        }
+      ]
+    }
+  ]
+}

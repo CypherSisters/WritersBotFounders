@@ -102,6 +102,9 @@ FIT_CHARS = {"wikipedia": 3000, "gutenberg": 20000}
 _WIKI_LIST_MAX = 20                            # the longest search answer asked of Wikipedia
 _BIG_STEP_GUARD = 3000                         # more steps than any plan can need: the queue is broken
 NO_TOPICS_LINE = "Your bot's brain picked no knowledge topics, so no knowledge is read for this build."
+#: Where a moved bot's reading list comes from: the rest gave junk for it (a Data.gov file, rows only to look at).
+READING_SOURCES = ("wikipedia", "gutenberg")
+READING_GOAL = "Books and articles for this bot"
 
 
 def _cfg() -> dict:
@@ -411,10 +414,11 @@ def look_rows(finds: dict, topics: list[str], goal: Any) -> list[dict]:
     return out
 
 
-def plan_of(topics: list[str], finds: dict | None = None, context: Any = "", goal: Any = "") -> dict:
+def plan_of(topics: list[str], finds: dict | None = None, context: Any = "", goal: Any = "", only: Any = None) -> dict:
     """The knowledge part of a plan (what her Yes covers): topics, sources fetched, sources offered, hosts. *finds*:
     what the catalogs found while planning (:meth:`Fetcher.find`); *context*: the goal and the jobs, for a source
-    that fits only some goals (``only_when``); these words never leave this computer."""
+    that fits only some goals (``only_when``); these words never leave this computer. *only*: read just these sources,
+    and offer nothing else (:data:`READING_SOURCES`)."""
     cfg = _cfg()
     if not topics:
         return {"topics": [], "fetch": [], "offered": [], "hosts": []}
@@ -425,6 +429,8 @@ def plan_of(topics: list[str], finds: dict | None = None, context: Any = "", goa
             continue                           # only the sources this code knows how to read, at their hosts
         if s.get("only_when") and not says(said, s["only_when"]):
             continue                           # a source for some goals only: this goal's words never reach it
+        if only and sid not in only:
+            continue
         fetch.append({"source": sid, "name": s["name"], "host": s["host"], "kind": s["kind"],
                       "per_topic": per_topic(s, len(topics)), "max_items": int(s["max_items"]),
                       "max_kb": int(s["max_bytes"]) // 1000, "about_mb": _about_mb(s, len(topics)),
@@ -432,7 +438,7 @@ def plan_of(topics: list[str], finds: dict | None = None, context: Any = "", goa
     q = urllib.parse.quote(topics[0])
     finds = finds if isinstance(finds, dict) else {}
     offered = [{"source": oid, "title": o["title"], "host": o["host"], "size": o["size"], "kind": o["kind"],
-                "look": o["look"].format(q=q)} for oid, o in cfg["offered"].items() if oid not in finds]
+                "look": o["look"].format(q=q)} for oid, o in cfg["offered"].items() if oid not in finds and not only]
     offers, looks = best_offers(finds, topics, goal or context), look_rows(finds, topics, goal or context)
     hosts = {f["host"] for f in fetch} | {h for f in fetch for h in f.get("file_hosts", [])} \
         | {h for o in offers for h in o["hosts"]}
@@ -442,6 +448,75 @@ def plan_of(topics: list[str], finds: dict | None = None, context: Any = "", goa
     if looks:
         out["look"] = looks
     return out
+
+
+def find_words(raw: Any) -> str:
+    """Her words in Find books, as a topic can take them. A title has what a topic may not: "Alice's Adventures" has a
+    mark, "The Time Machine: an Invention" has two, an accent is no plain letter. Those go, and a title too long for a
+    topic loses its small words first. "Moby-Dick" and "MacDonald" read as a key's shape to the screen, so a hyphen is a
+    space and a capital inside a word goes; a search ignores both. Nothing is added. "" when no plain word is left, such as
+    "1984". The screen is unchanged, and it runs on what this gives."""
+    text = "".join(c for c in unicodedata.normalize("NFKD", str(raw or "")[:300]) if not unicodedata.combining(c))
+    words = re.sub(r"[^A-Za-z]+", " ", re.sub(r"['\u2019]s\b", "", text)).split()
+    words = [w.capitalize() if any(c.isupper() for c in w[1:]) else w for w in words]
+    if len(words) > TOPIC_MAX_WORDS:
+        words = [w for w in words if w.lower() not in _COMMON] or words
+    out = ""
+    for w in words[:TOPIC_MAX_WORDS]:
+        if len(out) + len(w) + 1 > TOPIC_MAX_CHARS:
+            break
+        out = f"{out} {w}".strip()
+    return out
+
+
+def reading_offer(topics: list[str]) -> dict:
+    """What the reading list would fetch, for her to read before she asks: the same limits as any plan, since it is
+    :func:`plan_of`'s own answer. ``{sources: [{name, kind, up_to, about_mb}], about_mb, hosts}``."""
+    kp = plan_of(list(topics), only=READING_SOURCES)
+    rows = [{"name": f["name"], "kind": f["kind"], "about_mb": f["about_mb"],
+             "up_to": min(int(f["max_items"]), int(f["per_topic"]) * len(topics))} for f in kp["fetch"]]
+    return {"sources": rows, "about_mb": round(sum(r["about_mb"] for r in rows), 1), "hosts": kp["hosts"]}
+
+
+def after_yes_names(kp: dict | None = None) -> list[str]:
+    """The places read only after her Yes (the ``fetch`` rows of ``sources.json``), by name: this plan's, or a plan's in
+    general. Never the rows for some goals only, unless this plan has them."""
+    if kp is not None:
+        return [str(f["name"]) for f in kp.get("fetch") or []]
+    return [str(s["name"]) for sid, s in _cfg()["fetch"].items()
+            if sid in fetched.SOURCES and s.get("reader") in READERS and not s.get("only_when")]
+
+
+def catalog_names(allowed: Any = None) -> list[str]:
+    """The places asked while a plan is made (the ``catalogs`` rows), by name: those on *allowed*, her search Yes's hosts."""
+    return [str(r["short"]) for r in (_cfg().get("catalogs") or {}).values()
+            if r.get("reader") in CATALOGS and (allowed is None or r.get("host") in allowed)]
+
+
+def looked(kp: dict, finds: Any, down: Any, topics: list[str]) -> dict:
+    """What was asked while this plan was made, for the one line above her card: ``{asked, found, failed, after_yes, line}``.
+    Only the catalogs are asked before her Yes; each counts what reached the card. Names and counts only."""
+    rows = _cfg().get("catalogs") or {}
+    finds, down = finds if isinstance(finds, dict) else {}, down if isinstance(down, dict) else {}
+    asked = [sid for sid in rows if sid in finds or sid in down]
+    count = {sid: sum(1 for o in (kp.get("offers") or []) + (kp.get("look") or []) if o.get("source") == sid) for sid in asked}
+    failed = [sid for sid in asked if sid in down]
+    good = [sid for sid in asked if sid not in down]
+    on = f'"{topics[0]}"' if len(topics) == 1 else "those topics"
+    after = after_yes_names(kp)
+    parts = []
+    hits = [f"{rows[sid]['short']} {count[sid]}" for sid in good if count[sid]]
+    none = [rows[sid]["short"] for sid in good if not count[sid]]
+    if hits:
+        parts.append(f"Found on {on}: {', '.join(hits)}.")
+    if none:
+        parts.append(f"{_and_list(none)} had nothing on {on}.")
+    if failed:
+        parts.append(f"{_and_list([rows[sid]['short'] for sid in failed])} did not answer.")
+    if after:
+        parts.append(f"{_and_list(after)} {'is' if len(after) == 1 else 'are'} searched only after your Yes.")
+    return {"asked": [rows[sid]["short"] for sid in asked], "found": sum(count.values()),
+            "failed": [rows[sid]["short"] for sid in failed], "after_yes": after, "line": " ".join(parts)}
 
 
 def approved(kp: dict, sid: Any) -> dict | None:
@@ -647,6 +722,10 @@ def _plural(n: int, one: str, many: str) -> str:
     return f"{n} {one if n == 1 else many}"
 
 
+def _and_list(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
 def _or_list(items: list[str]) -> str:
     quoted = list(dict.fromkeys(items))
     return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " or " + quoted[-1]
@@ -751,8 +830,10 @@ class Fetcher:
                 if unit["do"] == "search":
                     self._search(build_id, run, kp, src, unit)
                 else:
-                    need = fit_words(b.get("goal"), list(kp["topics"])).get(unit.get("topic"), frozenset())
-                    self._get(build_id, run, src, unit, need)
+                    # A reading list's goal is only its title: its topics judge one another.
+                    goal = "" if b.get("knowledge_only") else b.get("goal")
+                    need = fit_words(goal, list(kp["topics"])).get(unit.get("topic"), frozenset())
+                    self._get(build_id, run, src, unit, need, len(kp["topics"]))
             except Exception as exc:  # noqa: BLE001 - one source's problem never ends the others
                 line = str(exc) if isinstance(exc, (SourceDown, fetched.StoreAway)) else \
                     f"{src['short']} could not be read (the Core hit {type(exc).__name__})"
@@ -894,7 +975,7 @@ class Fetcher:
                 topics.append(topic)
 
     # -- one article or book ------------------------------------------------------------------------------
-    def _get(self, build_id: str, run: dict, src: dict, unit: dict, need: frozenset[str] = frozenset()) -> None:
+    def _get(self, build_id: str, run: dict, src: dict, unit: dict, need: frozenset[str] = frozenset(), topics: int = 1) -> None:
         sid = unit["source"]
         k = int(run["counts"].get(sid) or 0) + 1
         cap = int(src["max_bytes"])
@@ -903,8 +984,8 @@ class Fetcher:
         # answered "invoice" with iMac repair guides).
         fit = int(src.get("fit_chars") or FIT_CHARS.get(sid, 3000))
         if src["reader"] == "wiki":
-            run["now"] = (f"Reading the {src['short']} article {shown_title(unit['title'], 'an article')} "
-                          f"({k} of at most {src['max_items']})")
+            of = min(int(src["max_items"]), int(src["per_topic_max"]) * topics)
+            run["now"] = f"Reading the {src['short']} article {shown_title(unit['title'], 'an article')}, {k} of {max(k, of)}"
             self._now(build_id, run)
             status, body = self._fetch(build_id, src, src["text"].format(title=urllib.parse.quote(
                 str(unit["key"]), safe="")), accept="application/json", max_bytes=cap * 4)
@@ -964,8 +1045,8 @@ class Fetcher:
             head = f"{title}\n\nFrom {src['name']}, {url}.\n\n"
         else:
             book = int(unit["key"])
-            run["now"] = (f"Reading the book {shown_title(unit['title'], 'a book')} from Project Gutenberg "
-                          f"({k} of at most {src['max_items']})")
+            of = min(int(src["max_items"]), int(src["per_topic_max"]) * topics)
+            run["now"] = f"Reading the book {shown_title(unit['title'], 'a book')} from Project Gutenberg, {k} of {max(k, of)}"
             self._now(build_id, run)
             status, body = self._fetch(build_id, src, src["text"].format(id=book), accept="text/plain",
                                        max_bytes=cap + 1)
@@ -1031,8 +1112,38 @@ class Fetcher:
         finds: dict[str, list] = {}
         sent: dict[str, list[str]] = {}
         down: dict[str, str] = {}
+        rows = {sid: row for sid, row in (cfg.get("catalogs") or {}).items()
+                if row.get("host") in allowed and row.get("reader") in CATALOGS}
+        waiting = list(rows)
+        begun = settings_mod.now()
+        on = f'"{topics[0]}"' if len(topics) == 1 else "your topics"
+        said = threading.Lock()
+
+        def tell(line: str) -> None:
+            # While she watches: what is being asked, and what has answered. Never stops a search.
+            def fn(b: dict) -> None:
+                if b.get("planning"):
+                    b.update(now=line, now_at=begun)
+            try:
+                self.host.store.change(build_id, fn)
+            except Exception:  # noqa: BLE001
+                pass
+
+        def answered(sid: str) -> None:
+            with said:
+                waiting.remove(sid)
+                n = len(finds.get(sid) or [])
+                first = f"{rows[sid]['short']} " + ("did not answer" if sid in down else f"found {n}" if n else "had nothing")
+                tell(f"{first}. Still looking in {_and_list([rows[w]['short'] for w in waiting])} for {on}" if waiting
+                     else f"{first}. Writing your plan")
 
         def ask(sid: str, row: dict) -> None:
+            try:
+                ask_one(sid, row)
+            finally:
+                answered(sid)
+
+        def ask_one(sid: str, row: dict) -> None:
             got: dict[str, dict] = {}
             finds[sid] = []
             todo = list(topics[:max(1, int(row.get("per_plan") or 1))])
@@ -1064,9 +1175,8 @@ class Fetcher:
                     retries -= 1
                     todo.insert(0, max(words, key=len))
 
-        rows = {sid: row for sid, row in (cfg.get("catalogs") or {}).items()
-                if row.get("host") in allowed and row.get("reader") in CATALOGS}
         if rows:
+            tell(f"Looking in {_and_list([r['short'] for r in rows.values()])} for {on}")
             pool = ThreadPoolExecutor(max_workers=len(rows), thread_name_prefix="catalog")
             jobs = {pool.submit(ask, sid, row): sid for sid, row in rows.items()}
             _done, late = wait_all(jobs, timeout=float(cfg["budget"]["catalogs_s_per_plan"]) + 10)

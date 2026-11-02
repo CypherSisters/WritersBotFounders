@@ -46,15 +46,18 @@ goes on from there. If an app did not install, `./install-writersbot.sh update` 
 `docs/FOR_THE_ORIN.md` section 8 has the commands to clean up.
 
 Everyday commands, from the same folder: `./install-writersbot.sh start`, `stop`, `pair` (a sign-in code for a browser
-or the window), `chat`, `setup`, and `update` (brings a running bot's own apps up to this copy, each with its Yes card).
+or the window), `chat`, `setup`, and `update` (brings a running bot's Core, window and own apps up to this copy, each app with
+its Yes card).
 
 **2. Still on the Orin, once:** in Maps' Picture maker box, type this Orin's own address with port 8188 (the script
 prints it), press Test, and say Yes on the Bridge card. That is what paints the pictures.
 
-**3. On the writer's Windows computer:** `docs/FOR_YOUR_WINDOWS_COMPUTER.md`, Part 1. It is Python 3.11, one command,
-and the pair code from step 1. It leaves a **WritersBot** shortcut on the desktop.
+**3. On the writer's Windows computer:** download this repo's ZIP from GitHub, extract it, and double-click **Get the
+WritersBot window**. It asks for the Orin's address, gets what it needs, and leaves a **WritersBot** shortcut on the
+desktop. The window then asks for a sign-in code, from `./install-writersbot.sh pair` on the Orin.
+`docs/FOR_YOUR_WINDOWS_COMPUTER.md`, Part 1 has this step by step.
 
-Then open the window from the shortcut and say "start novel mode".
+Then open the window from the shortcut and say "start novel mode". Editing is in the Editor's Desk app, beside Manuscript and Maps.
 
 **Getting the newest version**, if you already have this folder:
 
@@ -64,7 +67,7 @@ cd ~/WritersBotFounders && git fetch origin && git reset --hard origin/main
 
 This replaces only this copy of the instructions and code. It does not touch the bot or the books, which live in the
 data folder and the container. (A plain `git pull` can refuse here, because the first version's scripts needed
-`chmod +x`.) A bot already set up then takes its new apps with `./install-writersbot.sh update`.
+`chmod +x`.) A bot already set up then takes what is new with `./install-writersbot.sh update`, and the window needs F5 once after it.
 
 If something does not go as written, `docs/FOR_THE_ORIN.md` has the long form and `docs/FOR_HER_CLAUDE.md` is for the AI
 helping you. Keep the exact words of anything that fails.

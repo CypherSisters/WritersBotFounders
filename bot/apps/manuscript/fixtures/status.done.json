@@ -1,0 +1,11 @@
+{
+  "state": "done",
+  "step": "Read all 8 sections",
+  "done": 8,
+  "total": 8,
+  "started_at": "2026-10-31T23:30:00Z",
+  "finished_at": "2026-10-31T23:40:00Z",
+  "problems": [
+    "Section 6 gave no usable answer the first time. The second try worked."
+  ]
+}

@@ -1,11 +1,14 @@
 # Manuscript v2: the contract between the server and the page
 
-Manuscript is a PuffPAI `app` package for WritersBot. Version 0.3.5 (0.2.1's routes, tools and files all still hold;
-what 0.3 adds is marked **0.3**, and each later version has its section at the end). The owner's rules, in order:
+Manuscript is a PuffPAI `app` package for WritersBot. Version 0.5.0 (0.2.1's routes, tools and files all still hold;
+what 0.3 adds is marked **0.3**, and each later version has its section at the end; 0.5.0 takes the editor's desk out,
+and where a line below still names the desk, 0.5.0 at the end says what stands now). It keeps track of the book; editing
+is in the Editor's Desk app. The owner's rules, in order:
 
-1. **The manuscript text is never changed by this app.** No route and no tool writes a chapter or section file. The
-   only files the app writes are its own: the story bible, views, notes, pointer, status, corrections, the desk, and
-   its own boards in `boards.json`.
+1. **This app never changes text; the writer may, through Editor's Desk.** No route and no tool here writes a chapter
+   or section file. The only files the app writes are its own: the story bible, views, notes, pointer, status,
+   corrections, and its own boards in `boards.json`. Editor's Desk writes a section only when she saves or restores
+   it on its page, by the save contract in 0.5.0 at the end.
 2. **The bot reads the whole book itself**, in sections small enough for the local model, and builds a *story bible*.
    The tabs are filled from the bible. The owner never has to ask for the basics.
 3. **The chat drives the page.** "Show me the character arc of Jennifer" makes a *view* under Characters. "Show me
@@ -16,19 +19,23 @@ what 0.3 adds is marked **0.3**, and each later version has its section at the e
 
 ## Files, per manuscript
 
-Under the owner's files, `My files/Manuscripts/<title>/`, as in 0.1.0:
+Under the owner's files, `My files/Manuscripts/<title>/`, as in 0.1.0. `My files/Manuscripts/` holds `.app-files`, so none of this is
+listed or indexed by the Core (0.4.1, at the end):
 
 ```
 original.<ext>          the upload, never touched again
 manuscript.json         title, original, added, sections[]            (0.1.0 called them chapters; both keys are written)
 sections/NN - <heading>.md
-world.md characters.md plot.md themes.md science.md editing.md        the owner's notes, as in 0.1.0
+world.md characters.md plot.md themes.md science.md editing.md        the owner's notes, as in 0.1.0; 0.4.1: made on first save or append
 timeline.md structure.md voice.md        0.3: notes for the new tabs, made on first save or append
-                        (the Editor's desk shows editing.md as its notes; desk.md only when there is no editing.md)
+                        (0.5: editing.md, and desk.md, stay as they are; Editor's Desk shows them read-only)
 bible.json              the story bible (below)
-corrections.json        0.3: {"corrections": [{id, what, correction, made_at}]}, the writer's corrections, oldest first
-desk.json               0.3: {"items": [{id, kind, severity, sections, note, fix, state, writer_note, changed_at}]},
-                        the desk items she kept, dismissed or noted
+bible.base.json         0.4: the bible as read, before her corrections; bible.json is this with them on top
+corrections.json        0.3: {"corrections": [{id, what, correction, made_at}]}, the writer's corrections, oldest first;
+                        0.4 adds what each came to (below)
+desk.json               0.3 to 0.4.1: {"items": [{id, kind, severity, sections, note, fix, state, writer_note, changed_at}]},
+                        the desk items she kept, dismissed or noted. 0.5: never written; Editor's Desk carries it over once
+editors-desk.json       0.5: Editor's Desk's one file here, {state, step, done, total, check_name}: what it is doing now
 boards.json             0.3: shared with Maps (below); Manuscript adds boards and keeps every other board and key
 views.json              named views made by the chat or the owner, newest first
 pointer.json            where the bot is pointing right now
@@ -123,9 +130,10 @@ Every `id` is a lowercase slug the server makes; every list may be empty. Nothin
   and two in five; supporting in two or more; minor otherwise. A minor character's `write_up` is one line made from
   the facts, with no model call.
 - A desk item's `id` comes from its kind and note, so a re-read that finds the same thing keeps her choice on it.
+  (0.5: a reading writes no `desk` and no `briefs.desk`; a bible that has them from an older reading still loads.)
 - `briefs` are two to four paragraphs each, with section numbers in brackets like [3]. Em dashes the model writes
   become commas.
-- `corrected: true` marks an entry (a character, a relationship, a place) a correction changed.
+- `corrected: true` marks an entry (a character, a relationship, a place; 0.4: any entry, and a look) a correction changed.
 
 ### How the bible is built (the server)
 
@@ -147,16 +155,16 @@ Every `id` is a lowercase slug the server makes; every list may be empty. Nothin
    point of view, tense, its scenes (purpose and first words), slips, tics, dialogue habits. A 0.2 cache entry has the
    facts but not this, so only this second ask is made for it.
 2. Merge also builds `sections`, `scenes`, `voice`, `history`, a first `setting` from the most common clues,
-   `importance`, the minor characters' one-line write-ups, and the desk items the facts give without asking:
+   `importance`, the minor characters' one-line write-ups, and (until 0.5) the desk items the facts give without asking:
    continuity notes, science marked not plausible, and conflicts between story order and telling order.
 3. Synthesize, after 0.2's calls, in this order: one call for the story order of the events; one for the structure;
    one for the setting and history from all sections' clues; one per main character for `personality` and
-   `write_up`, and one per four supporting characters; one for the desk (it is given the items already found, open
+   `write_up`, and one per four supporting characters; one for the desk until 0.5 (it is given the items already found, open
    threads, the characters' wants and last beats, and adds plot holes, character holes and questions); then one per
    tab for its brief (and, with the Characters brief, `cast_summary`), from that tab's merged facts, never the text.
    The briefs come last. `bible.json` is written after each call.
-4. Before every write the server puts the writer's corrections (`corrections.json`) and desk choices (`desk.json`)
-   back on top, so a re-read never undoes them. `GET /api/bible` and every tab do the same when they read.
+4. Before every write the server puts the writer's corrections (`corrections.json`) back on top (and, before 0.5,
+   her desk choices from `desk.json`), so a re-read never undoes them. `GET /api/bible` and every tab do the same when they read.
 
 `status.json`: `{"state": "idle | reading | done | failed", "step": "Reading section 3 of 12", "done": 3, "total": 12,
 "started_at", "finished_at", "problems": ["Section 7 gave no usable answer."]}`.
@@ -221,10 +229,10 @@ words name, tried in Maps' order (touchpoints, timeline, family, relationships, 
 The server answers `GET /api/tab?title=..&tab=..` with `{"blocks": [...], "views": [...]}`: the blocks it builds from
 the bible for that tab (below) and the saved views for that tab, newest first.
 
-**0.3: nine tabs**, in this order, ids then titles: `characters` Characters, `plot` Plot and subplots, `timeline`
-Timeline, `structure` Structure, `world` World, `science` Science, `themes` Themes, `voice` Voice, `desk` Editor's
-desk. `editing` (0.2.1's tab) is taken everywhere as `desk`. Every tab opens with its brief as a `markdown` block
-when the bible has one.
+**0.5: eight tabs** (0.3 had nine), in this order, ids then titles: `characters` Characters, `plot` Plot and subplots,
+`timeline` Timeline, `structure` Structure, `world` World, `science` Science, `themes` Themes, `voice` Voice. `desk`,
+`editing` and "editor's desk" are refused with a line that says editing is in the Editor's Desk app. Every tab opens with
+its brief as a `markdown` block when the bible has one.
 
 - **characters**: the brief; `cast_summary` as `markdown`; one `markdown` card per main character (name, role,
   personality, write-up, first seen); a table of the supporting and minor cast (name, importance, role, first seen,
@@ -245,9 +253,7 @@ when the bible has one.
 - **themes**: the brief; a `list` of themes, each with its strongest quote as a `quote` block.
 - **voice**: the brief; a table (section, point of view, tense, slips); a `list` of tics with their counts; a table of
   dialogue habits (character, how they talk).
-- **desk**: the brief (the editor's letter: what is strongest, then what needs work first); a table of the reading's
-  editing notes (section, kind, note), as 0.2.1's Editing tab. The answer also has `desk: [...]`, the desk items, open
-  and kept first by severity (high, medium, low) then section, dismissed last, for the page to draw with its buttons.
+- **desk** (0.3 to 0.4.1, gone in 0.5): the editor's letter, the reading's editing notes and the desk items.
 
 Every tab's answer also has `corrections: [{id, what, correction, made_at, applied}]`, the corrections whose subject
 belongs on that tab: Characters when a character is named, World when a place is, else Timeline for words of time,
@@ -277,8 +283,7 @@ paragraph that shares the most words with the quote.
 | `GET /api/notes`, `POST /api/notes` | as 0.1.0, with the stale-save refusal |
 | `GET /api/pointer?title`, `DELETE /api/pointer?title` | the pointer |
 | `POST /api/correct` | **0.3** `{title, what, correction?}`; records the correction, applies what it can, answers `{message, correction: {id, what, correction, made_at, applied, tab, line}}` |
-| `GET /api/desk?title` | **0.3** `{title, items, open}`: every desk item in the tab's order, with its state |
-| `POST /api/desk` | **0.3** `{title, action: keep \| dismiss \| note \| list, id, note?}`; `id` is an item's id or its number among the open items; answers `{message, item}` |
+| `GET /api/size?title` | **0.4.1** `{title, bytes, pictures, older, files, line}`: what the book's folder uses, Maps' share and Editor's Desk's one file too |
 
 **0.3, corrections.** `what` is a bible fact in her words ("Tom is Jennifer's cousin, not her brother");
 `correction` is the right value on its own when she gave one. Applied by matching the names in her words to the
@@ -302,12 +307,10 @@ kind (town, village, island, ...). What it cannot apply stays a note on its tab,
 | `manuscript_notes_read` / `manuscript_notes_append` (title, tab, text) | append is a change to the app's own notes | as 0.1.0 |
 | `manuscript_correct` (title, what, correction?) | no (the app's own files) | **0.3** as `POST /api/correct`; answers "Changed it: ..." or "I could not change that in the story bible by myself, so I kept it as a note on the <Tab> tab: "You said: ..."" |
 | `manuscript_add_file` (source, title?) | yes | **0.3.5** a file from My files as a new manuscript; no reading starts (below) |
-| `manuscript_desk` (title, action: list \| keep \| dismiss \| note, id?, note?) | no (the app's own files) | **0.3** `list` gives the open items in severity order, one plain line each ("1. High, character, sections 1 and 3: ... Fix: ... [d-...]"); the others act on one item, by its number in that list or its id |
 
 Tool descriptions are plain sentences; none reads like an instruction to a model. Examples in the manifest:
 "show me the character arc of Jennifer", "show me where the ferry is first mentioned", "what does the story say about
-the tide", "is the timeline in chapter four consistent", and for 0.3 "Tom is her cousin, not her brother", "what is
-on the editor's desk", "dismiss the second desk item".
+the tide", "is the timeline in chapter four consistent", and for 0.3 "Tom is her cousin, not her brother".
 
 ## The page
 
@@ -329,7 +332,7 @@ bottom in the pane, side by side when wider than 900 pixels:
 
 **0.3, the page.**
 
-- Nine tabs that fit the pane: two rows of five from 400 to 900 pixels wide, one row of nine above 900.
+- Eight tabs (0.5) that fit the pane: two rows of four from 400 to 900 pixels wide, one row of eight above 900.
 - A **See in Maps** link under the tabs, to the tab's standard Maps board: characters to `std-relationships`, plot to
   `std-threads`, timeline to `std-timeline`, structure to `std-structure`, world to `std-world`, the others to the Maps
   list. The address is Maps' page as the Desktop serves a sibling package, `/pkg/maps/?title=<title>&board=<id>` on
@@ -340,15 +343,13 @@ bottom in the pane, side by side when wider than 900 pixels:
   section link, See in Maps).
 - Characters and World: a **Correct a fact** box that sends `POST /api/correct`; every tab lists its corrections,
   "You corrected this: ..." or "You said: ...".
-- Editor's desk: the items by severity, each with its sections (clickable), note, fix, her note, and Keep, Dismiss and
-  Add a note; dismissed items fold under "Dismissed".
 - Graphs keep every node and its name inside the card (names wrapped at about 14 characters on two lines, boxes
   pushed apart, edge labels on pills, slid along the edge when two would meet), at 260 pixels high or more and in a
   scroll box past 640; trees wrap names on up to three lines; timeline labels go above and below the rail in tiers so
   none overlap. The block format is unchanged.
 - 0.2.1's making cards, polls and kept scroll stay as they were.
 
-Fixture for building the page without the server: `fixtures/desk.sample.json` (0.3, the desk), and `fixtures/bible.sample.json`, `fixtures/tab.characters.json`,
+Fixture for building the page without the server: `fixtures/bible.sample.json`, `fixtures/tab.characters.json`,
 `fixtures/views.sample.json`, `fixtures/pointer.sample.json`.
 
 ## 0.3.1: putting a manuscript away
@@ -384,7 +385,7 @@ Also in 0.3.3:
   the budget with it, else in a small ask of its own; the cache entry keeps it as `looks` (`{}` when the facts ask
   carried it). The World tab shows the distances as a `markdown` heading "Distances and directions" and a `table`
   (from, to, distance or direction, the quote); the places table gains "Details" (the first three, with sections).
-- **The desk explains itself.** A desk item is `{id, kind, severity, sections, note, why, where: [{section, quote}],
+- **The desk explains itself** (until 0.5). A desk item is `{id, kind, severity, sections, note, why, where: [{section, quote}],
   fix, state, writer_note}`: `note` one plain sentence naming the problem, `why` what a reader would feel or miss,
   `where` one to three quotes (at most 120 characters) from the facts the desk ask was given, each with the section of
   the fact line it came from, and `fix` written for the item. The desk ask writes up the items found from the facts
@@ -395,10 +396,10 @@ Also in 0.3.3:
   `{vault_free}` saves it and answers `{settings, message}`. Every brain call sends `"as_written": <vault_free>`
   (the manifest declares `needs.brain.as_written: true`). `status.json` keeps the reading's `as_written`, and
   `GET /api/status` and each manuscript's `status` in `GET /api/list` add `vault`: "out of the vault" or "vault on".
-- **Real counts.** `GET /api/list` gives each manuscript `counts: {characters, main, threads, places, events, desk,
-  desk_high}` from `bible.json` (null before any reading). `manuscript_status` adds, after its progress line, "Found:
-  N characters (M main), T plot threads, P places, E events, D items on the editor's desk (H high)."; `manuscript_list`
-  gives the same line under each manuscript.
+- **Real counts.** `GET /api/list` gives each manuscript `counts: {characters, main, threads, places, events}` from
+  `bible.json` (null before any reading; 0.5 took out `desk` and `desk_high`). `manuscript_status` adds, after its
+  progress line, "Found: N characters (M main), T plot threads, P places, E events."; `manuscript_list` gives the same
+  line under each manuscript.
 
 ## 0.3.5: PDFs
 
@@ -425,3 +426,170 @@ three blank paragraphs, which `split_scenes` reads as a scene break and which ad
   with `confirm` true starts it. The argument is not called `path` or `file`: the Core reads those as a file being
   changed and hides such a tool while changing documents is off (`owner_files.py`, D140).
 
+## 0.4: real fact-fixing
+
+A writer can change any fact on any tab, in her own words or by hand, see what changed, and undo it. No code path here writes
+a section or the original file. `fixing.py` holds all of it; `writer.py` keeps the first, instant rules.
+
+**A record in `corrections.json`.** `{id, what, correction, made_at, by: "rules" | "words" | "hand", state: "working" | "done" |
+"note", ops: [...], line, why, partial, asked_on, tab, prose, prose_state}`. `what` is her words (by hand, the plain line). `line`
+says what changed. `tab` is for a note. `asked_on` is the tab she said it on, and it is shown there too. A record with neither
+`ops` nor `state` was made before 0.4: its words are matched each time, as they always were.
+
+**An operation.** `{"target": {"kind", "id"?, "match": [normalised names]}, "action": "set" | "add" | "remove" | "move" | "merge",
+"field"?, "item"?, "value"?, "to"?, "old"?, "says"}`.
+
+- `kind` is one of: character, place, event, thread, theme, world_rule, science, continuity, history, geography, scene,
+  act, turning_point, midpoint, climax, setting, voice_section, tic, habit, summary, section_summary, brief, cast (0.5 took out
+  editing and desk: an older operation on one stays her words, as a note that no longer applies). `fixing.KINDS`
+  lists each one's place in the bible and its fields. brief, cast, setting, summary, midpoint and climax are single entries, with no
+  `id` or `match`.
+- `match` finds the entry first, `id` only after it (an event's id or a person's id may change in a re-read). In a list `item` is the
+  normalised words of one item (`fact_key`: "her green eyes" and "green eyes" are the same), `to|kind` for a relationship.
+- `set` a value, or one list item (a look keeps its section and loses its quote, which was the text saying otherwise). A person's or
+  place's name is a rename, carried to the dialogue habits and distances that keep it as a word; the id stays. An event's section
+  places it again in the telling and the story order.
+- `add` an item, or with no `field` a whole new entry from `value`.
+- `remove` an item or, with no `field`, a whole entry, and what points at it.
+- `move` an item or a single fact (`wants`, `fears`, `age_words`, a place's fields) to the person or place in `to`. A look keeps its
+  section and quote; a relationship's other side and family links follow; appearances keep `first_seen` right.
+- `merge` the target into `to`: its lists, the facts `to` lacks, its name as an alias, and everything that pointed at it.
+
+Operations replay in order on `bible.base.json`, so a re-read never undoes them, they need no brain, and they are safe to run again.
+What she removed stays removed by a normalised match when a re-read finds it again. If what an operation names is gone after a
+re-read the record stays, unapplied, and shows as a note with `why`. An undo is one record less, then a rebuild. A book read before
+0.4 gets its base from its bible.json on the first change; `baked` there names the older corrections already in it, whose undo says it
+takes effect at the next reading.
+
+**Her own words: `POST /api/correct {title, what, correction?, tab?}`**, answers `{message, correction}`.
+
+1. `writer.rule_plan`: a plain shape only, at once ("Tom is a minor character", "Port Ash is a village, not a town"). The older rules
+   look for their words anywhere ("Mara is scared of the main road" made her a main character), so new words must fit the whole shape.
+2. Else the record is saved `working` and a job goes in the brain queue, ahead of a reading's next call, through `Brain` (so
+   `as_written` follows "Keep manuscripts out of the vault"). `correct` waits for it at most `MANUSCRIPT_CORRECT_WAIT_S` (40 seconds),
+   then answers "Your bot is working that out. Nothing has changed yet...", and the page looks every 3 seconds.
+3. The ask (`CORRECT_SYSTEM`, `build_view`) sends her words and at most about 2,600 tokens of entries: all the people and places by
+   name, every fact of the people she named, and only entries sharing a real word with hers (a number or "chapter" is not one). The
+   scenes, acts, the climax, the voice and the summaries go only on their own tab or when she names them. Prose is never sent.
+   Every fact has a ref. It answers `{"ops":[{"do":"change|remove|move|add|merge|new", "ref", "to", "owner", "on", "field", "into",
+   "kind"}]}`. Bad JSON gets `ask_json`'s one repair, then a note.
+4. `read_answer` makes operations, never the model. A ref it was not shown is dropped. So is: a value with words she denied ("not green"),
+   none of hers, or more than one of its own; a fact on someone other than the person she named; an entry sharing only a section number
+   with her words; a single entry like the climax she did not speak of; a section she did not say (her "chapter 4" is the section whose
+   heading says so, else section 4); a move to someone she did not name or denied; a merge of two she did not both name, or denied; a
+   removal with no word of removing; prose. At most eight. None left: a note saying so. Some left: `partial`, and the answer says so.
+
+The answer is "Changed it: <line>, ...", each line made by the server from the operation. When a look, an age or a name changed it adds
+that a picture Maps already painted keeps the old look until Paint again: Maps reads `bible.json` when it paints, so the next Paint and its
+proof use the new looks, and an old picture keeps its own record and proof until then.
+
+**By hand: `POST /api/edit {title, ops: [{key, action, field?, item?, value?, to?}]}`**, no brain call. `key` is an entry's address from
+`GET /api/tab` (`to` is another key). Answers as `/api/correct`, and refuses with a plain line.
+
+**Undo: `POST /api/correct/undo {title, id}`**, `id` may be `last`. Undoing one still `working` drops it.
+
+**`GET /api/tab` adds**: `corrections[]` gains `line, by, state, why, prose_state, partial, looks, message`, and lists every correction that
+touched that tab or was said on it; `edits: {items: {key: {key, kind, label, word, removable, fields}}, adds, folds, people, places}`;
+`block_keys`, the Edit of a prose block; `rewriting`, the keys being rewritten; `cards[].key`. A table may carry `keys`, one per row, and a
+list item a `key`. These are additive; a block with none shows as before.
+
+**Tools.** `manuscript_correct` also takes `tab`, and its answer ends with `[id]`. `manuscript_correct_undo(title, id)` takes one back, by id or
+`last`. `manuscript_corrections(title)` lists them with ids and results, for a correction still working when the first answer came.
+
+**Wrong prose follows the fix.** After an applied correction in words, in the queue, one brain call at a time: `synth_people` for each
+main or supporting character it touched, and `synth_brief` for each touched tab whose brief still has a word of what changed. Each ask is
+told her corrections are settled (`analysis.Settled`). The new prose is kept on the record as `prose`, so an undo takes it away too.
+`prose_state` is `rewriting`, `done`, `failed` (the brain could not, or what it wrote still has the old value), or `after reading` during a
+reading. A field she set by hand is never overwritten. A hand edit itself makes no brain call. A minor character's one line is remade from
+the facts.
+
+**A reading.** It keeps the bible as read apart: each synthesis step works on a copy with her corrections on top, told they are settled, and
+what it changed is carried back a field at a time (`analysis.carry`). The reading's start clears the records' `prose`, as its own write-ups
+replace it. What she corrected during a reading waits for its end for the paragraphs.
+
+**The merge (who a fact lands on).** A name is matched first against everyone's name and real aliases; a pronoun is nobody, and facts under one
+are dropped; a description ("the doctor", "her brother", a lowercase word) never joins two people; two full names with different surnames never
+join, by alias or first name. The asks now say a new person gets their own entry and a look with no plain owner is left out. The first three work
+on a re-read from the cache; the asks reach only sections not in the cache.
+
+**The page.** "Something wrong? Say what it should be" on every tab. A quiet Edit on every card, table row, list item and prose block, and folds
+for what no row shows (a timeline's events, the setting, the summaries). The list of fixes is newest first, each with its Undo, the older ones folded.
+
+`fixtures/fix_check_book.md` is a short book for trying the corrections on a real bot.
+
+## 0.4.1: what she sees, and tidying
+
+**The mark.** `My files/Manuscripts/` holds a file named `.app-files`, written whenever the app asks where its shelf is, so a bot from before
+0.4.1 gets it at start, with no path moved. The Core reads it (`docs/02_PACKAGE_CONTRACT.md`): Your files and the knowledge index leave the
+shelf out, `Removed` too. So neither the book's text nor its bookkeeping goes through the Core's index or its privacy check any more, and what
+the index held from there goes at its next pass. The books stay reachable here and in Maps.
+
+**Notes on first write.** Nothing is made at upload. `GET /api/notes` answers `# <Tab>` and an empty `stamp` for a file not there yet. A Save of
+nothing but that heading makes no file. A Save whose file has gone since she opened it is taken: only a tidy removes a notes file, and only an
+empty one, so nothing is written over. (0.5: no tab writes `editing.md` or `desk.md` any more; they stay as they are.)
+
+**The tidy (`tidy.py`).** By code, with no brain call and no question, at most once a day per book (`tidied.json` in the app's data folder):
+when a reading ends, however it ended; after an upload or `manuscript_add_file`; at app start, as soon as the Core answers. Not on a book being
+read now. A status left at `reading` by a stop does not hold it back.
+
+| It removes | When |
+|---|---|
+| `cache/<64 hex>.json` | its sha matches no section on disk and no section in `manuscript.json`. If a section can't be read, no entry goes. The entry of the text a section has now always stays (Editor's Desk needs it); an older version's entry goes, so a version restored later is read again, that section only |
+| `pictures/p-<date>-<time>-<kind>.png` | no record in `pictures.json` has its id. No readable `pictures.json`: none go. Maps' Paint again keeps the old record and file, so an older painting is named and stays |
+| `.tmp-*`, `*.tmp`, `*.part` | in the book's folder, `cache`, `pictures` and the sections folder |
+| a notes file by its tab's name | it holds nothing, or only the heading the app itself put there (`# World`). A heading she wrote stays |
+| `views.json`, `corrections.json`, `desk.json` | exactly `{"views": []}`, `{"corrections": []}`, `{"items": []}` |
+
+The cache entries, pictures and temp files must also be an hour old: Maps and the Editor's Desk are other processes, and a new file may be theirs
+on its way in. Everything else stays: the original, sections, notes with anything in them, the bible and its base, every correction and its
+operations (one that no longer applies is still her words), `desk.json` (Editor's Desk carries it over once), `editors-desk.json`, views, boards,
+`pictures.json`, `style.json`, `illustrate.json`, `status.json`, `pointer.json`, `Removed/`, and any name it doesn't know. Editor's Desk keeps
+older versions of a section in its own data folder, not here. Each removal is one delete and the day's
+stamp is written last, so a stop leaves nothing half-done and the next tidy goes on.
+
+A current cache entry is a re-read's work, about four minutes a section on an Orin, so it is never removed.
+
+**The Settings fold** has one line from `GET /api/size`: "This book uses 4.3 MB: pictures 3.9 MB." It adds how much is older paintings Paint
+again replaced, and past 200 MB of pictures says they are taking a lot of room and that deleting them stays her choice. There is no button.
+
+## 0.5.0: the editor is Editor's Desk's (the owner: "Let's take the editor out of manuscript. That app just keeps track of everything.")
+
+**Gone:** the Editor's desk tab, `GET` and `POST /api/desk`, the `manuscript_desk` tool, the desk ask (`synth_desk`), the desk brief, the desk
+lines in the facts every ask is given, `counts.desk` and `desk_high` and their words in the status line, the stored-operation kinds `desk`
+and `editing`. The reading's per-section editing notes (`bible.editing`) are still made and still feed `manuscript_ask`; no tab shows them.
+
+**Kept, never written:** `desk.json` and `editing.md` (and `desk.md`). A bible from an older reading with `desk` and `briefs.desk` loads and
+shows on every tab; the next reading leaves them out. Editor's Desk carries `desk.json` over once, on first opening a book, and leaves it as
+it was.
+
+**The save contract Editor's Desk uses** (`editors-desk/book.py`, `save_section`). Manuscript has no route for it: a package token reaches
+only the Core's routes, so Editor's Desk writes the shared folder itself, and only from its page, on her Save, Restore or Use this.
+
+1. It finds the section by `n` in `manuscript.json` (`sections`, or 0.1.0's `chapters`), and its file in that folder by name; a link or a
+   name outside the folder is refused.
+2. It refuses when the file's sha256 is not the one her page opened (`base_sha`), so nothing written elsewhere is lost.
+3. It copies the old file to its own data folder, `books/<title> <hash>/versions/<n>/<stamp>.md`, first.
+4. It writes the new file whole, a `.tmp-` file beside it then a rename: the `# heading` line as it was, her text with LF line ends, one
+   newline at the end. The same text again writes nothing.
+5. It sets that section's `sha` (of the new file) and `words` in `manuscript.json`, under `sections` and `chapters`, and keeps every other
+   key and section as it was.
+
+It never writes `original.<ext>`, the cache, the bible or any other file here, except `editors-desk.json`.
+
+**After an edit.** The new text has no `cache/<sha>.json`, so the next reading asks about that section only and puts the book together
+again. `GET /api/section` adds `changed: true` when the reading is done, the text as it is now has no cache entry, and the file is newer
+than that reading's start (a section the reading had to skip does not count). The page shows one quiet line under the section's heading,
+"This section changed since your bot last read it.", with Read again. Editor's Desk tells a read section from an edited one the same way.
+
+**A re-read with nothing to do asks nothing.** A whole reading (no problem in `status.json`, no ask left without a usable answer) stores
+`read_of` in the bible: a sha256 of the schema, the title, the vault setting, her corrections as the asks were told them, and each section's
+number, heading and sha. A re-read that finds the same `read_of` and every section's cache entry with all three asks (facts, how it is told,
+looks) keeps the bible as it is and writes `status.json` as done, with `unchanged: true` and the step "Read N of N sections. Nothing changed
+since the last reading."; the page says "Nothing changed since then, so nothing was read again." A changed or restored section, a missed
+cache entry, a new or undone correction or the other vault setting reads as before. A new model alone does not: the book is read again with
+it after any of those.
+
+**The page.** One plain "Open Editor's Desk" link beside Upload and Remove. Framed in the window, it asks the window to open
+`editors-desk` with `title=<book>`, the same `{puffpai: 'open'}` message as See in Maps; the window opens only an installed app and
+otherwise says "That app is not installed.". Outside a frame it is the link `/pkg/editors-desk/?title=<book>`. `POST /api/analyze`, the page's
+Start reading and Read again, starts the reading as the writer's own press (0.4.1 answered with the chat's "ask the writer first" line).

@@ -1,4 +1,4 @@
-"""Manuscript 0.3.5 against a stand-in Core: the server runs as its own process, the Core here answers
+"""Manuscript 0.4.1 against a stand-in Core: the server runs as its own process, the Core here answers
 ``/v1/owner-files`` and ``/v1/brain/chat`` with canned JSON. Run from the package folder: ``python -m pytest tests -q``.
 """
 
@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -89,15 +90,6 @@ STORY_ORDER = {"story_order": ["e2", "e1", "e3"]}           # Tom came home befo
 STRUCTURE = {"acts": [{"name": "Act one", "from": 1, "to": 1}, {"name": "Act two", "from": 2, "to": 3}],
              "turning_points": [{"name": "The ferry sinks", "section": 1, "note": "Her way out is gone."}],
              "midpoint": {"section": 2, "note": "Tom comes home."}, "climax": {"section": "3", "note": "The storm."}}
-DESK = {"desk": [{"kind": "character", "severity": "high", "sections": [1, 3],
-                  "note": "Jennifer wants to leave the harbor, and the want never pays off.",
-                  "why": "A reader waits for her to leave and the book never answers that wait.",
-                  "where": [{"section": 7, "quote": "The ferry sinks."}, {"section": 1, "quote": "Not in any fact."}],
-                  "fix": "Let her try to leave once, in section 2."},
-                 {"item": 1, "note": "Tom's eye colour changes between sections.",
-                  "why": "A careful reader notices and stops trusting the details.",
-                  "where": [{"section": 9, "quote": "Tom comes home."}],
-                  "fix": "Make Tom's eyes grey in every section, starting with section 2."}]}
 LONG_QUOTE = "Ada pushed her light hair back from her face " * 5          # over 120 characters
 ECHO = {
     "characters": [{"name": "Ada Quill", "role": "protagonist", "beat": "Rides out.",
@@ -126,6 +118,44 @@ LOOKS_SMALL = {"characters": [{"name": "Ada", "looks": [{"detail": "freckles", "
                "places": [], "geography": [], "setting_look": [{"detail": "carts"}]}
 
 
+# 0.4: a small book for the corrections, every tab's data in it
+FIX_ONE = {
+    "characters": [
+        {"name": "Mara Voss", "aliases": ["Mara"], "role": "protagonist", "traits": ["stubborn", "loyal"],
+         "wants": "to leave the island", "fears": "deep water", "beat": "Mara finds the letter.",
+         "looks": [{"detail": "green eyes", "quote": "her green eyes"}], "age_words": "a girl of twelve"},
+        {"name": "Elias Ward", "role": "keeper", "traits": ["quiet"], "wants": "to keep the light", "fears": "fire",
+         "beat": "Elias climbs the lighthouse.",
+         "looks": [{"detail": "a scar on his chin", "quote": "the scar on his chin"}, {"detail": "a limp", "quote": "he limped"}]},
+        {"name": "Tom Reed", "role": "sailor", "beat": "Tom waits at the dock."},
+        {"name": "Anna", "role": "cook", "traits": ["kind"], "beat": "Anna feeds them."}],
+    "relationships": [{"a": "Mara Voss", "b": "Elias Ward", "kind": "niece", "note": "she lives with him"}],
+    "places": [{"name": "The Lighthouse", "kind": "tower", "notes": "white and tall",
+                "details": [{"detail": "white walls", "quote": "its white walls"}]},
+               {"name": "Port Ash", "kind": "town", "notes": "a fishing town"}],
+    "events": [{"what": "The storm sinks the ferry.", "who": ["Elias Ward", "Mara Voss"], "where": "Port Ash", "when": "autumn"},
+               {"what": "Elias climbs the lighthouse at night.", "who": ["Elias Ward"], "where": "The Lighthouse",
+                "when": "that night"}],
+    "threads": [{"name": "The letter", "kind": "main plot", "setup": "Mara finds it"}],
+    "themes": [{"name": "leaving home", "quote": "She wanted out."}, {"name": "duty", "quote": "The light must burn."}],
+    "world_rules": ["The tide turns every nine hours."],
+    "science": [{"claim": "A nine-hour tide", "note": "Earth's tides turn about every six hours.", "plausible": "no"}],
+    "continuity": [{"kind": "mismatch", "note": "The ferry sails on a Sunday and a Monday."}],
+    "editing": [{"kind": "pacing", "note": "The opening drags."}],
+    "history": [{"when": "twenty years ago", "what": "The old war ended."}],
+    "setting": {"world": "our world", "place": "a northern island", "era": "the 1920s", "technology": "steam"},
+    "geography": [{"from": "Port Ash", "to": "The Lighthouse", "note": "two hours on foot", "quote": "two hours on foot"}],
+    "setting_look": [{"detail": "oil lamps"}], "summary": "Mara finds a letter. The storm comes."}
+FIX_TWO = {
+    "characters": [{"name": "Mara Voss", "beat": "Mara reads the letter."},
+                   {"name": "Annie", "role": "cook", "traits": ["loud"], "beat": "Annie sings."},
+                   {"name": "Elias Ward", "beat": "Elias lights the lamp."}],
+    "events": [{"what": "Mara reads the letter.", "who": ["Mara Voss"], "where": "Port Ash", "when": "the next day"}],
+    "summary": "Mara reads the letter."}
+FIX_BOOK = "# One\n\nFIXONE. Mara Voss looked out with her green eyes.\n\n# Two\n\nFIXTWO. Mara read the letter.\n"
+FIX_ORDER = [(1, "One"), (2, "Two")]
+
+
 class Core:
     """The stand-in Core: owner files, and a brain that answers by what the system message asks."""
 
@@ -134,6 +164,8 @@ class Core:
         self.calls: list[list[dict]] = []
         self.bodies: list[dict] = []             # 0.3.3: every brain request body, to see as_written
         self.log: list[str] = []                 # what each brain call was, in the order they came
+        self.fix_answer = "{}"                   # 0.4: what the brain answers a correction's ask
+        self.prose: dict | None = None           # 0.4: when set, what it writes for a character's prose
         core = self
 
         class H(BaseHTTPRequestHandler):
@@ -185,6 +217,8 @@ class Core:
         system, user = msgs[0]["content"], msgs[1]["content"]
         if "for her story bible" in system:
             return user.split("\n\n")[1].split(":")[0]           # "Section 3"
+        if "You fix facts" in system:
+            return "fix"
         if "make one view" in system:
             return "show"
         if "think about her own manuscript" in system:
@@ -195,7 +229,13 @@ class Core:
         system = msgs[0]["content"]
         user = msgs[1]["content"]
         repair = msgs[-1]["content"] == REPAIR
+        if "You fix facts" in system:
+            return self.fix_answer
         if "for her story bible" in system:
+            if "FIXONE" in user:
+                return json.dumps(FIX_ONE)
+            if "FIXTWO" in user:
+                return json.dumps(FIX_TWO)
             if "ALPHA" in user:
                 return json.dumps(ALPHA)
             if "BRAVO" in user:
@@ -211,6 +251,8 @@ class Core:
             return json.dumps(LOOKS_SMALL if "ECHO" in user else {"characters": []})
         if "see the world of her manuscript" in system:
             return json.dumps(SETTING)
+        if "see her characters" in system and self.prose is not None:
+            return json.dumps(self.prose)
         if "see her characters" in system:
             names = [ln[len("Character: "):].split(" (also")[0] for ln in user.split("\n")
                      if ln.startswith("Character: ")]
@@ -226,8 +268,6 @@ class Core:
             return json.dumps(STORY_ORDER)
         if "shape of her manuscript" in system:
             return json.dumps(STRUCTURE)
-        if "editor's desk" in system:
-            return json.dumps(DESK)
         if "one character's arc" in system:
             return json.dumps(ARC)
         if "check the plot" in system:
@@ -441,7 +481,7 @@ def test_reading_builds_the_bible(env):
 TAB_KINDS = {"characters": ["table", "graph", "tree"], "plot": ["timeline", "table", "list"],
              "timeline": ["timeline", "table"], "structure": ["table", "list", "table"],
              "world": ["markdown", "timeline", "list", "table"], "science": ["table"], "themes": ["list", "quote"],
-             "voice": ["table", "list", "table"], "desk": ["table"], "editing": ["table"]}   # editing: the desk's 0.2 name
+             "voice": ["table", "list", "table"]}
 TAB_KINDS = {k: ["markdown"] + v for k, v in TAB_KINDS.items()}                # every tab opens with its brief
 TAB_KINDS["characters"] = ["markdown", "markdown", "markdown", "table", "graph", "tree"]   # brief, cast, Jennifer
 
@@ -481,12 +521,7 @@ def test_bible_2(env):
     assert any("present tense" in x for x in v["by_section"][1]["slips"])
     assert v["tics"] == [{"phrase": "grey", "count": 2, "sections": [1, 2]}]
     assert v["dialogue_habits"] == [{"character": "Jennifer Hale", "habit": "short answers"}]
-    kinds = {d["kind"] for d in b["desk"]}
-    assert {"timeline", "continuity", "science", "character"} <= kinds
-    for d in b["desk"]:
-        assert d["severity"] in ("high", "medium", "low") and d["state"] == "open" and d["id"].startswith("d-")
-    tl = [d for d in b["desk"] if d["kind"] == "timeline"]
-    assert len(tl) == 1 and tl[0]["sections"] == [1, 2] and "Tom comes home." in tl[0]["note"]
+    assert "desk" not in b and "desk" not in b["briefs"]                  # 0.5: editing is Editor's Desk's
     sys.path.insert(0, str(PKG))
     import analysis
     for m in env["core"].calls:                                           # the new asks stay small too
@@ -500,8 +535,7 @@ def test_briefs(env):
     assert b["setting"]["place_in_world"] == "a northern coast" and b["setting"]["era"] == "the present day"
     assert "—" not in b["setting"]["one_paragraph"]                    # no em dashes reach the writer
     assert b["history"] == [{"when": "twenty years ago", "what": "The old ferry went down.", "sections": [1]}]
-    assert set(b["briefs"]) == {"characters", "plot", "timeline", "structure", "world", "science", "themes", "voice",
-                                "desk"}
+    assert set(b["briefs"]) == {"characters", "plot", "timeline", "structure", "world", "science", "themes", "voice"}
     assert all(v.startswith(f"The {k} brief.") and "\n\n" in v for k, v in b["briefs"].items())
     assert b["cast_summary"] == "A small cast, led by Jennifer."
     chars = {c["id"]: c for c in b["characters"]}
@@ -562,60 +596,35 @@ def test_correction_survives_a_reread(env):
     assert [(r["kind"], r.get("corrected")) for r in rels] == [("cousin", True)]       # the re-read kept it
 
 
-def test_desk(env):
+def test_the_desk_is_gone(env):
+    """0.5: editing is in Editor's Desk. No desk route, tool, tab or ask; a call for one says where it went."""
     port = env["port"]
     wait_done(port, "Storm Harbor")
-    code, got = call(port, "GET", "/api/desk" + q(title="Storm Harbor"))
-    items = got["items"]
-    assert code == 200 and items and got["open"] == len(items)
-    assert [SEV[d["severity"]] for d in items] == sorted(SEV[d["severity"]] for d in items)
-    assert items[0]["kind"] == "character" and items[0]["severity"] == "high"
-    line, err = tool(port, "manuscript_desk", title="Storm Harbor", action="list")
-    lines = line.split("\n")
-    assert not err and lines[0] == f"The editor's desk for Storm Harbor: {len(items)} open, most serious first."
-    assert lines[1].startswith("1. High, character, sections 1 and 3: Jennifer wants") and items[0]["id"] in lines[1]
-    first, second = items[0], items[1]
-    line, err = tool(port, "manuscript_desk", title="Storm Harbor", action="keep", id="1")
-    assert not err and line.startswith("Kept it on the desk")
-    line, err = tool(port, "manuscript_desk", title="Storm Harbor", action="dismiss", id="1")   # now the old second
-    assert not err and line.startswith("Dismissed it")
-    code, got = call(port, "POST", "/api/desk", {"title": "Storm Harbor", "action": "note", "id": first["id"],
-                                                 "note": "I know. It pays off in book two."})
-    assert code == 200 and got["item"]["writer_note"] == "I know. It pays off in book two."
-    code, got = call(port, "POST", "/api/desk", {"title": "Storm Harbor", "action": "note", "id": first["id"]})
-    assert code == 400
-    states = {d["id"]: d for d in call(port, "GET", "/api/desk" + q(title="Storm Harbor"))[1]["items"]}
-    assert states[first["id"]]["state"] == "kept" and states[first["id"]]["writer_note"].startswith("I know")
-    assert states[second["id"]]["state"] == "dismissed"
-    assert list(states)[-1] == second["id"]                               # dismissed ones come last
-    tab = call(port, "GET", "/api/tab" + q(title="Storm Harbor", tab="desk"))[1]
-    assert [d["id"] for d in tab["desk"]] == list(states)
-    assert tool(port, "manuscript_analyze", title="Storm Harbor", confirm=True)[0]
-    assert wait_done(port, "Storm Harbor")["state"] == "done"
-    again = {d["id"]: d for d in bible_of(env, "Storm Harbor")["desk"]}
-    assert again[first["id"]]["state"] == "kept" and again[second["id"]]["state"] == "dismissed"
-    line, _err = tool(port, "manuscript_desk", title="Storm Harbor", action="list")
-    assert second["id"] not in line and first["id"] not in line
-
-
-SEV = {"high": 0, "medium": 1, "low": 2}
+    assert call(port, "GET", "/api/desk" + q(title="Storm Harbor"))[0] == 404
+    assert call(port, "POST", "/api/desk", {"title": "Storm Harbor", "action": "list"})[0] == 404
+    code, got = call(port, "GET", "/api/tab" + q(title="Storm Harbor", tab="desk"))
+    assert code == 400 and "Editor's Desk" in got["error"]
+    code, got = call(port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                            "params": {"name": "manuscript_desk", "arguments": {"action": "list"}}})
+    assert code == 200 and ("error" in got or got["result"].get("isError")), got
+    line, err = tool(port, "manuscript_status", title="Storm Harbor")
+    assert not err and "desk" not in line
+    assert not [m for m in env["core"].calls if "editor's desk" in m[0]["content"].lower()]
 
 
 def test_new_notes_files(env):
     port = env["port"]
     folder = env["shelf"] / "Four"
-    assert not (folder / "voice.md").exists() and (folder / "editing.md").exists()
+    assert not (folder / "voice.md").exists() and not (folder / "editing.md").exists()   # 0.4.1: made on first write
     code, got = call(port, "GET", "/api/notes" + q(title="Four", tab="voice"))
     assert code == 200 and got["text"] == "# Voice\n"
     text, err = tool(port, "manuscript_notes_append", title="Four", tab="voice", text="Too many adverbs.")
     assert not err and "Too many adverbs." in (folder / "voice.md").read_text(encoding="utf-8")
     text, err = tool(port, "manuscript_notes_append", title="Four", tab="desk", text="Check the ending.")
-    assert not err and "Check the ending." in (folder / "editing.md").read_text(encoding="utf-8")
-    assert not (folder / "desk.md").exists()
+    assert err and "Editor's Desk" in text and not (folder / "editing.md").exists()
     code, lst = call(port, "GET", "/api/list")
     assert [t["id"] for t in lst["tabs"]] == ["characters", "plot", "timeline", "structure", "world", "science",
-                                              "themes", "voice", "desk"]
-    assert lst["tabs"][-1]["label"] == "Editor's desk"
+                                              "themes", "voice"]
 
 
 def test_show_saves_a_view(env):
@@ -725,25 +734,25 @@ def test_old_routes_and_tools(env):
     titles = {m["title"]: m for m in lst["manuscripts"]}
     assert titles["Storm Harbor"]["sections"] == titles["Storm Harbor"]["chapters"]
     assert "status" in titles["Storm Harbor"]
-    text, err = tool(port, "manuscript_notes_append", title="Storm Harbor", tab="editing", text="Chapter 2 drags.")
+    text, err = tool(port, "manuscript_notes_append", title="Storm Harbor", tab="structure", text="Chapter 2 drags.")
     assert not err
-    code, notes = call(port, "GET", "/api/notes" + q(title="Storm Harbor", tab="editing"))
+    code, notes = call(port, "GET", "/api/notes" + q(title="Storm Harbor", tab="structure"))
     assert "Chapter 2 drags." in notes["text"]
-    code, got = call(port, "POST", "/api/notes", {"title": "Storm Harbor", "tab": "editing", "text": "x",
+    code, got = call(port, "POST", "/api/notes", {"title": "Storm Harbor", "tab": "structure", "text": "x",
                                                   "stamp": "stale"})
     assert code == 400                                                    # the stale-save refusal
     code, got = call(port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {t["name"] for t in got["result"]["tools"]}
     assert names == {"manuscript_list", "manuscript_read", "manuscript_status", "manuscript_analyze", "manuscript_ask", "manuscript_remove", "manuscript_add_file",
                      "manuscript_show", "manuscript_point", "manuscript_notes_read", "manuscript_notes_append",
-                     "manuscript_correct", "manuscript_desk"}
+                     "manuscript_correct", "manuscript_correct_undo", "manuscript_corrections"}
 
 
 ROUTES = [("GET", "/"), ("GET", "/health"), ("GET", "/api/list"), ("GET", "/api/section?title=Short&n=1"),
           ("GET", "/api/chapter?title=Short&chapter=1"), ("GET", "/api/status?title=Short"),
           ("GET", "/api/bible?title=Short"), ("GET", "/api/tab?title=Short&tab=plot"), ("GET", "/api/views?title=Short"),
           ("GET", "/api/notes?title=Short&tab=plot"), ("GET", "/api/pointer?title=Short"), ("POST", "/mcp"),
-          ("GET", "/api/desk?title=Short"), ("POST", "/api/desk"), ("POST", "/api/correct"),
+          ("POST", "/api/correct"),
           ("POST", "/api/upload"), ("POST", "/api/analyze"), ("POST", "/api/show"), ("POST", "/api/notes"),
           ("DELETE", "/api/views?title=Short&id=x"), ("DELETE", "/api/pointer?title=Short"), ("PUT", "/api/notes")]
 
@@ -843,24 +852,6 @@ def test_merge_and_the_long_section_rule():
         assert "—" not in m
 
 
-def test_desk_items_say_why(env):
-    port = env["port"]
-    wait_done(port, "Storm Harbor")
-    desk = bible_of(env, "Storm Harbor")["desk"]
-    want = next(d for d in desk if d["note"].startswith("Jennifer wants to leave"))
-    assert want["why"] == "A reader waits for her to leave and the book never answers that wait."
-    assert want["where"] == [{"section": 1, "quote": "The ferry sinks."}]   # its own section; the made-up quote dropped
-    assert want["fix"] == "Let her try to leave once, in section 2."
-    eyes = next(d for d in desk if d["note"] == "Tom's eye colour changes between sections.")
-    assert eyes["kind"] == "continuity" and eyes["where"] == [{"section": 2, "quote": "Tom comes home."}]
-    assert eyes["fix"].startswith("Make Tom's eyes grey") and eyes["why"]
-    general = [d for d in desk if d["kind"] in ("science", "timeline")]
-    assert general and all(d["fix"].startswith("A general suggestion: ") and d["why"] == "" and d["where"] == []
-                           for d in general)
-    line, err = tool(port, "manuscript_desk", title="Storm Harbor", action="list")
-    assert not err and "Why it matters: A careful reader notices" in line and "Fix: Make Tom's eyes grey" in line
-
-
 def test_a_bible_from_0_3_2_still_shows(env):
     sys.path.insert(0, str(PKG))
     import blocks
@@ -874,18 +865,19 @@ def test_a_bible_from_0_3_2_still_shows(env):
         c.pop("age_words", None)
     for p in old["places"]:
         p.pop("details", None)
-    for d in old["desk"]:
-        d.pop("why", None)
-        d.pop("where", None)
+    old["desk"] = [{"id": "d-3f2a9c01be", "kind": "continuity", "severity": "medium", "sections": [1, 2],   # as 0.3.2 read it
+                    "note": "Tom's eyes change.", "fix": "Pick one.", "state": "kept", "writer_note": ""}]
+    old["briefs"]["desk"] = "The old letter."
     assert [b["type"] for b in blocks.tab_blocks(old, "world")] == TAB_KINDS["world"]
     assert all("Looks" not in c["text"] for c in blocks.cards(old))
-    (env["shelf"] / "Pictures" / "bible.json").write_text(json.dumps(old), encoding="utf-8")
+    for name in ("bible.json", "bible.base.json"):
+        (env["shelf"] / "Pictures" / name).write_text(json.dumps(old), encoding="utf-8")
     for tab in TAB_KINDS:
         code, got = call(port, "GET", "/api/tab" + q(title="Pictures", tab=tab))
         assert code == 200 and got["blocks"], (tab, got)
     world = call(port, "GET", "/api/tab" + q(title="Pictures", tab="world"))[1]["blocks"]
     assert world[-1]["columns"][4] == "Details" and all(r[4] == "" for r in world[-1]["rows"])
-    assert tool(port, "manuscript_desk", title="Pictures", action="list")[0]
+    assert call(port, "GET", "/api/bible" + q(title="Pictures"))[1]["desk"] == old["desk"]   # an older desk loads, untouched
 
 
 def test_keep_manuscripts_out_of_the_vault(env):
@@ -916,19 +908,16 @@ def test_real_counts(env):
     wait_done(port, "Pictures")
     sample = (PKG / "fixtures" / "bible.sample.json").read_text(encoding="utf-8")
     (env["shelf"] / "Pictures" / "bible.json").write_text(sample, encoding="utf-8")
-    want = {"characters": 6, "main": 0, "threads": 3, "places": 3, "events": 12, "desk": 0, "desk_high": 0}
+    want = {"characters": 6, "main": 0, "threads": 3, "places": 3, "events": 12}
     books = {m["title"]: m for m in call(port, "GET", "/api/list")[1]["manuscripts"]}
     assert books["Pictures"]["counts"] == want
     line, err = tool(port, "manuscript_status", title="Pictures")
-    assert not err and line.split("\n")[1] == ("Found: 6 characters (0 main), 3 plot threads, 3 places, 12 events, "
-                                                "0 items on the editor's desk (0 high).")
+    assert not err and line.split("\n")[1] == "Found: 6 characters (0 main), 3 plot threads, 3 places, 12 events."
     storm = bible_of(env, "Storm Harbor")
-    desk_high = sum(1 for d in storm["desk"] if d["severity"] == "high")
     assert books["Storm Harbor"]["counts"] == {
         "characters": len(storm["characters"]),
         "main": sum(1 for c in storm["characters"] if c["importance"] == "main"),
-        "threads": len(storm["threads"]), "places": len(storm["places"]), "events": len(storm["events"]),
-        "desk": len(storm["desk"]), "desk_high": desk_high}
+        "threads": len(storm["threads"]), "places": len(storm["places"]), "events": len(storm["events"])}
     listed, _err = tool(port, "manuscript_list")
     assert "  Found: 6 characters (0 main), 3 plot threads" in listed
     assert f"  Found: {len(storm['characters'])} characters (" in listed
@@ -1456,8 +1445,1446 @@ def test_add_file_is_listed_as_a_change_with_no_argument_the_core_reads_as_her_f
     # owner_files.FILE_ARGS in the Core: with one of these, "write" and a listed change, the tool is hidden while edits are off
     assert not set(me["inputSchema"]["properties"]) & {"path", "file", "file_path", "filepath", "filename", "file_name", "document"}
     manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
-    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.3.5"
+    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.5.0"
     names = {t["name"] for t in got["result"]["tools"]}
     assert set(manifest["abilities"]["tools"]) == names and set(manifest["abilities"]["examples"]) <= names
     assert (PKG / "requirements.txt").read_text(encoding="utf-8").split() == ["python-docx==1.2.0", "pypdf==6.21.4", "cryptography==50.0.2"]
     assert call(pdfenv["port"], "GET", "/api/list")[0] == 200
+
+
+# -- 0.4: real fact-fixing ------------------------------------------------------------------------------------------
+
+def fix_merge():
+    import analysis
+    return analysis.merge("Fix", FIX_ORDER, {1: json.loads(json.dumps(FIX_ONE)), 2: json.loads(json.dumps(FIX_TWO))})
+
+
+def person(b, cid):
+    return next(c for c in b["characters"] if c["id"] == cid)
+
+
+def op_rec(*ops, **kw):
+    return {"id": "c-1", "what": "x", "correction": "", "made_at": "t", "by": "hand", "ops": list(ops), "line": "x",
+            "state": "done", **kw}
+
+
+def hand(b, *asked):
+    import fixing
+    return fixing.hand_ops(b, list(asked))
+
+
+def again(records):
+    """A re-read: the merge runs again, the same facts come back, and her records go on top."""
+    import fixing
+    b = fix_merge()
+    done = fixing.apply_corrections(b, records)
+    return b, done
+
+
+def key(kind, e):
+    from blocks import entry_key
+    return entry_key(kind, e)
+
+
+def test_fix_the_bible_has_every_kind():
+    import fixing
+    b = fix_merge()
+    b["structure"] = {"acts": [{"name": "Act one", "from": 1, "to": 2}],
+                      "turning_points": [{"name": "The letter", "section": 1, "note": "It starts."}],
+                      "midpoint": {"section": 1, "note": "m"}, "climax": {"section": 2, "note": "c"}}
+    b["voice"] = {"by_section": [{"section": 1, "pov": "third", "tense": "past", "slips": ["a slip"]}],
+                  "tics": [{"phrase": "grey", "count": 3, "sections": [1]}],
+                  "dialogue_habits": [{"character": "Mara Voss", "habit": "short answers"}]}
+    b["scenes"] = [{"section": 1, "n": 1, "purpose": "opens", "pov": "third", "tense": "past", "words": 9, "dialogue_share": 0}]
+    for kind, spec in fixing.KINDS.items():
+        if spec.get("one"):
+            assert isinstance(fixing._holder(b, spec), dict), kind
+        else:
+            assert fixing.rows_of(b, kind), kind
+
+
+def rich():
+    b = fix_merge()
+    b["structure"] = {"acts": [{"name": "Act one", "from": 1, "to": 2}],
+                      "turning_points": [{"name": "The letter", "section": 1, "note": "It starts."}],
+                      "midpoint": {"section": 1, "note": "m"}, "climax": {"section": 2, "note": "c"}}
+    b["voice"] = {"by_section": [{"section": 1, "pov": "third", "tense": "past", "slips": ["a slip"]}],
+                  "tics": [{"phrase": "grey", "count": 3, "sections": [1]}],
+                  "dialogue_habits": [{"character": "Mara Voss", "habit": "short answers"}]}
+    b["scenes"] = [{"section": 1, "n": 1, "purpose": "opens", "pov": "third", "tense": "past", "words": 9, "dialogue_share": 0}]
+    b["summary"]["one_line"], b["summary"]["paragraph"] = "line", "para"
+    b["setting"]["one_paragraph"] = "An island."
+    b["briefs"]["themes"], b["cast_summary"] = "The themes brief.", "A small cast."
+    return b
+
+
+SET_EACH = [("character", "wants", "to stay"), ("character", "name", "Maren Voss"), ("place", "kind", "beacon"),
+            ("event", "when", "winter"), ("event", "section", 2), ("thread", "name", "The note"), ("theme", "name", "exile"),
+            ("world_rule", "rule", "The tide turns every six hours."), ("science", "plausible", "yes"),
+            ("continuity", "note", "It sails on a Sunday."), ("history", "when", "ten years ago"),
+            ("geography", "note", "three hours on foot"), ("scene", "purpose", "closes"),
+            ("act", "name", "Act two"), ("turning_point", "note", "It ends."), ("midpoint", "note", "middle"),
+            ("climax", "section", 1), ("setting", "era", "the 1930s"), ("voice_section", "tense", "present"),
+            ("tic", "phrase", "gray"), ("habit", "habit", "long answers"), ("summary", "one_line", "new line"),
+            ("section_summary", "summary", "new summary"),
+            ("brief", "themes", "A new brief."), ("cast", "cast_summary", "A new cast.")]
+
+
+@pytest.mark.parametrize("kind,field,value", SET_EACH)
+def test_fix_set_on_every_kind(kind, field, value):
+    import fixing
+    b = rich()
+    spec = fixing.KINDS[kind]
+    e = fixing._holder(b, spec) if spec.get("one") else fixing.rows_of(b, kind)[0]
+    k = (f"brief:{field}" if kind == "brief" else f"{kind}:") if spec.get("one") else key(kind, e)
+    ops = hand(b, {"key": k, "action": "set", "field": field, "value": value})
+    assert ops[0]["says"]
+    done = fixing.apply_corrections(b, [op_rec(*ops)])
+    assert done[0]["applied"] and done[0]["line"]
+    got = fixing._holder(b, spec) if spec.get("one") else fixing.rows_of(b, kind)
+    if spec.get("one"):
+        assert got[field] == value
+    else:
+        assert any(x.get(field) == value for x in got)
+
+
+REMOVE_EACH = ["character", "place", "event", "thread", "theme", "world_rule", "science", "continuity", "history", "geography",
+               "scene", "act", "turning_point", "voice_section", "tic", "habit", "section_summary"]
+
+
+@pytest.mark.parametrize("kind", REMOVE_EACH)
+def test_fix_remove_on_every_list_stays_removed(kind):
+    import fixing
+    b = rich()
+    e = fixing.rows_of(b, kind)[0]
+    n = len(fixing.rows_of(b, kind))
+    ops = hand(b, {"key": key(kind, e), "action": "remove"})
+    done = fixing.apply_corrections(b, [op_rec(*ops)])
+    assert done[0]["applied"] and len(fixing.rows_of(b, kind)) == n - 1
+    again_b = rich()                                       # the same entry found again by a reading
+    fixing.apply_corrections(again_b, [op_rec(*ops)])
+    assert len(fixing.rows_of(again_b, kind)) == n - 1
+
+
+ADD_EACH = [("character", {"name": "Ida Moss", "role": "aunt"}), ("place", {"name": "The Quay", "kind": "dock"}),
+            ("event", {"what": "A bell rings.", "section": 2, "when": "dawn"}), ("thread", {"name": "The bell"}),
+            ("theme", {"name": "grief"}), ("world_rule", {"rule": "Bells ring at dawn."}),
+            ("science", {"claim": "Bells carry", "note": "They do."}), ("continuity", {"note": "A gap in the week."}),
+            ("history", {"what": "The bell was cast.", "when": "long ago"}),
+            ("geography", {"from": "Port Ash", "to": "The Quay", "note": "next door"}), ("act", {"name": "Act two", "from": 2, "to": 2}),
+            ("turning_point", {"name": "The bell", "section": 2, "note": "It rings."}),
+            ("habit", {"character": "Tom Reed", "habit": "whistles"})]
+
+
+@pytest.mark.parametrize("kind,value", ADD_EACH)
+def test_fix_add_on_every_list_once(kind, value):
+    import fixing
+    b = rich()
+    n = len(fixing.rows_of(b, kind))
+    ops = hand(b, {"key": f"{kind}:", "action": "add", "value": value})
+    rec = op_rec(*ops)
+    assert fixing.apply_corrections(b, [rec])[0]["applied"] and len(fixing.rows_of(b, kind)) == n + 1
+    fixing.apply_corrections(b, [rec])                     # safe to run again
+    assert len(fixing.rows_of(b, kind)) == n + 1
+    from blocks import tab_blocks
+    assert tab_blocks(b, fixing.KINDS[kind]["tab"])
+
+
+def test_fix_lists_on_a_character_add_set_remove():
+    import fixing
+    b = fix_merge()
+    mara = key("character", person(b, "mara"))
+    look = fixing.fact_key("green eyes")
+    ops = hand(b, {"key": mara, "action": "set", "field": "looks", "item": look, "value": "grey eyes"},
+               {"key": mara, "action": "add", "field": "traits", "value": "shy"},
+               {"key": mara, "action": "remove", "field": "traits", "item": "stubborn"},
+               {"key": mara, "action": "set", "field": "age_words", "value": "a girl of thirteen"},
+               {"key": mara, "action": "add", "field": "aliases", "value": "Red"})
+    fixing.apply_corrections(b, [op_rec(*ops)])
+    m = person(b, "mara")
+    assert m["looks"] == [{"detail": "grey eyes", "section": 1, "quote": "", "corrected": True}]   # the section stays
+    assert m["traits"] == ["loyal", "shy"] and m["age_words"] == {"words": "a girl of thirteen", "section": 1}
+    assert "Red" in m["aliases"] and m["corrected"] is True
+
+
+def test_fix_move_looks_with_section_and_quote_and_the_rest():
+    import fixing
+    b = fix_merge()
+    elias, tom = key("character", person(b, "elias")), key("character", person(b, "tom"))
+    ops = hand(b, {"key": elias, "action": "move", "field": "looks", "item": fixing.fact_key("a scar on his chin"), "to": tom},
+               {"key": elias, "action": "move", "field": "traits", "item": "quiet", "to": tom},
+               {"key": elias, "action": "move", "field": "wants", "to": tom},
+               {"key": elias, "action": "move", "field": "fears", "to": tom},
+               {"key": elias, "action": "move", "field": "appearances", "item": "2", "to": tom})
+    assert "moved looks \"a scar on his chin\" from Elias Ward to Tom Reed" in ops[0]["says"]
+    b2, done = again([op_rec(*ops)])
+    e, t2 = person(b2, "elias"), person(b2, "tom")
+    assert done[0]["applied"]
+    assert t2["looks"] == [{"detail": "a scar on his chin", "section": 1, "quote": "the scar on his chin"}]
+    assert [x["detail"] for x in e["looks"]] == ["a limp"] and t2["traits"] == ["quiet"] and e["traits"] == []
+    assert t2["wants"] == "to keep the light" and e["wants"] == "" and t2["fears"] == "fire"
+    assert 2 in t2["appearances"] and 2 not in e["appearances"]
+
+
+def test_fix_move_a_relationship_turns_the_other_side_too():
+    import fixing
+    b = fix_merge()
+    person(b, "elias")["relationships"] = [{"to": "mara", "kind": "uncle", "note": ""}]
+    person(b, "elias")["family"]["children"] = ["mara"]
+    person(b, "mara")["family"]["parents"] = ["elias"]
+    mara = person(b, "mara")
+    item = fixing.item_key("rels", mara["relationships"][0])
+    ops = hand(b, {"key": key("character", mara), "action": "move", "field": "relationships", "item": item,
+                   "to": key("character", person(b, "tom"))})
+    fixing.apply_corrections(b, [op_rec(*ops)])
+    assert person(b, "mara")["relationships"] == []
+    assert person(b, "tom")["relationships"][0]["to"] == "elias"
+    assert person(b, "elias")["relationships"][0]["to"] == "tom"
+    assert person(b, "elias")["family"]["children"] == ["tom"]
+
+
+def test_fix_merge_two_people_and_two_places_and_rename():
+    import fixing
+    b = fix_merge()
+    ops = hand(b, {"key": key("character", person(b, "annie")), "action": "merge", "to": key("character", person(b, "anna"))})
+    assert "one character now" in ops[0]["says"]
+    b["places"].append({"id": "lamp-house", "name": "Lamp House", "kind": "", "notes": "", "where": "", "appearances": [2],
+                        "details": [{"detail": "a red door", "section": 2, "quote": ""}]})
+    b["events"][1]["where"] = "lamp-house"
+    b["geography"].append({"from": "Lamp House", "to": "Port Ash", "note": "close", "section": 2, "quote": ""})
+    spot = next(p for p in b["places"] if p["id"] == "the-lighthouse")
+    ops += hand(b, {"key": key("place", b["places"][-1]), "action": "merge", "to": key("place", spot)})
+    ops += hand(b, {"key": key("character", person(b, "mara")), "action": "set", "field": "name", "value": "Maren Voss"})
+    fixing.apply_corrections(b, [op_rec(*ops)])
+    anna = person(b, "anna")
+    assert not any(c["id"] == "annie" for c in b["characters"]) and "Annie" in anna["aliases"]
+    assert anna["traits"] == ["kind", "loud"] and anna["appearances"] == [1, 2]
+    assert b["events"][1]["where"] == "the-lighthouse" and not any(p["id"] == "lamp-house" for p in b["places"])
+    assert {x["detail"] for x in next(p for p in b["places"] if p["id"] == "the-lighthouse")["details"]} >= {"a red door"}
+    assert next(g for g in b["geography"] if g["note"] == "close")["from"] == "The Lighthouse"
+    assert person(b, "mara")["name"] == "Maren Voss"
+
+
+def test_fix_survives_a_reread_by_the_same_operations():
+    import fixing
+    b = fix_merge()
+    elias = key("character", person(b, "elias"))
+    ops = hand(b, {"key": elias, "action": "move", "field": "looks", "item": fixing.fact_key("a scar on his chin"),
+                   "to": key("character", person(b, "tom"))},
+               {"key": key("character", person(b, "mara")), "action": "remove", "field": "looks",
+                "item": fixing.fact_key("green eyes")})
+    rec = op_rec(*ops)
+    b2, _ = again([rec])
+    b3, _ = again([rec])
+    assert b2 == b3                                        # the same every time, and no brain anywhere near it
+    assert person(b2, "mara")["looks"] == []
+    fixing.apply_corrections(b2, [rec])                    # and safe to run again on the same bible
+    assert person(b2, "mara")["looks"] == [] and len(person(b2, "tom")["looks"]) == 1
+
+
+def test_fix_removed_look_stays_removed_in_other_small_words():
+    import fixing
+    b = fix_merge()
+    ops = hand(b, {"key": key("character", person(b, "mara")), "action": "remove", "field": "looks",
+                   "item": fixing.fact_key("green eyes")})
+    again_b = fix_merge()
+    person(again_b, "mara")["looks"] = [{"detail": "her green eyes", "section": 3, "quote": ""}]
+    fixing.apply_corrections(again_b, [op_rec(*ops)])
+    assert person(again_b, "mara")["looks"] == []
+
+
+def test_fix_target_gone_after_a_reread_stays_as_a_note():
+    import fixing
+    b = fix_merge()
+    ops = hand(b, {"key": key("character", person(b, "tom")), "action": "set", "field": "wants", "value": "to sail"})
+    gone = fix_merge()
+    gone["characters"] = [c for c in gone["characters"] if c["id"] != "tom"]
+    done = fixing.apply_corrections(gone, [op_rec(*ops, what="Tom wants to sail")])
+    assert done[0]["what"] == "Tom wants to sail" and done[0]["applied"] is False and "no longer" in done[0]["why"]
+
+
+def test_fix_old_records_work_as_before():
+    import fixing
+    b = fix_merge()
+    old = [{"id": "c-1", "what": "Tom is a minor character", "correction": "", "made_at": "t"},
+           {"id": "c-2", "what": "The Lighthouse is a village", "correction": "", "made_at": "t"},
+           {"id": "c-3", "what": "The sky is green", "correction": "", "made_at": "t"}]
+    done = fixing.apply_corrections(b, old)
+    assert [d["applied"] for d in done] == [True, True, False]
+    assert done[0]["line"] == "Tom Reed is a minor character now" and person(b, "tom")["importance"] == "minor"
+    assert next(p for p in b["places"] if p["id"] == "the-lighthouse")["kind"] == "village"
+    assert done[2]["tab"] == "characters" and "tabs" in done[2]
+
+
+def test_fix_rules_only_take_a_plain_shape():
+    from writer import rule_plan
+    b = fix_merge()
+    assert rule_plan(b, "Tom Reed is a minor character")["line"] == "Tom Reed is a minor character now"
+    assert rule_plan(b, "Mara is Elias's cousin, not his niece")["line"] == "Mara Voss is Elias Ward's cousin now"
+    assert rule_plan(b, "Tom is also called Bear")["line"] == "Tom Reed is also called Bear now"
+    assert rule_plan(b, "Port Ash is a village, not a town")["line"] == "Port Ash is a village now"
+    for loose in ("Mara is scared of the main road", "Elias's sister Mara never met Tom", "Mara has grey eyes, not green",
+                  "Anna and Annie are the same person", "Tom's mother is Anna, not Mara"):
+        assert rule_plan(b, loose) is None, loose
+
+
+# what the brain's answer may and may not do
+
+
+def plan(answer, words):
+    import fixing
+    b = fix_merge()
+    view, refs = fixing.build_view(b, words)
+    return b, view, refs, fixing.read_answer(b, answer(refs, b) if callable(answer) else answer, refs, words)
+
+
+def ref_of(refs, text):
+    return next(k for k, v in refs.items() if text in str(v.get("text") or ""))
+
+
+def char_ref(refs, b, cid):
+    return next(k for k, v in refs.items() if v.get("e") is person(b, cid) and not v.get("field"))
+
+
+def test_fix_view_is_small_and_names_what_matters():
+    import analysis
+    import fixing
+    b = fix_merge()
+    for i in range(300):
+        b["events"].append({"id": f"z{i}", "section": 1, "order": i, "what": f"Filler event number {i} with storm in it",
+                            "who": [], "where": "", "when": "", "placement": "", "story_order": i})
+    view, refs = fixing.build_view(b, "Mara has grey eyes, not green")
+    assert "green eyes" in view and "write_up" not in view and analysis.tokens(view) < 3000
+    view, refs = fixing.build_view(b, "the storm is in chapter 2, not chapter 1")
+    assert analysis.tokens(view) <= fixing.VIEW_ROOM + 50 and "Sections, by number" in view
+
+
+def test_fix_good_answers_become_operations():
+    _b, _v, _r, (ops, dropped) = plan(lambda r, b: {"ops": [{"do": "change", "ref": ref_of(r, "green eyes"), "to": "grey eyes"}]},
+                                      "Mara has grey eyes, not green")
+    assert dropped == 0 and ops[0]["action"] == "set" and ops[0]["value"] == "grey eyes" and ops[0]["old"] == "green eyes"
+    _b, _v, _r, (ops, dropped) = plan(lambda r, b: {"ops": [{"do": "move", "ref": ref_of(r, "a scar"), "owner": char_ref(r, b, "tom")}]},
+                                      "that scar belongs to Tom, not Elias")
+    assert dropped == 0 and ops[0]["action"] == "move" and ops[0]["to"]["id"] == "tom"
+    _b, _v, _r, (ops, dropped) = plan(lambda r, b: {"ops": [{"do": "merge", "ref": char_ref(r, b, "annie"), "into": char_ref(r, b, "anna")}]},
+                                      "Anna and Annie are the same person")
+    assert dropped == 0 and ops[0]["action"] == "merge"
+
+
+def test_fix_section_means_her_chapter():
+    import fixing
+    b = fix_merge()
+    b["sections"] = [{"n": 0, "heading": "Front", "words": 1}, {"n": 1, "heading": "Chapter One", "words": 1},
+                     {"n": 2, "heading": "Chapter Two", "words": 1}]
+    words = "the storm is in chapter 2, not chapter 1"
+    _v, refs = fixing.build_view(b, words)
+    r = ref_of(refs, "section: 1")
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": r, "to": 2}]}, refs, words)
+    assert not dropped and ops[0]["value"] == 2
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": r, "to": 1}]}, refs, words)
+    assert dropped == 1 and not ops
+
+
+@pytest.mark.parametrize("words,answer", [
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "change", "ref": "C99.looks.1", "to": "grey eyes"}]}),   # not in the bible
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "change", "ref": ref_of(r, "green eyes"), "to": "green eyes"}]}),  # what she denied
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "change", "ref": ref_of(r, "green eyes"), "to": "bright blue eyes"}]}),  # the model's own
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "change", "ref": ref_of(r, "to leave the island"), "to": "grey eyes"}]}),  # the wrong field
+    ("that scar belongs to Tom, not Elias", lambda r, b: {"ops": [{"do": "move", "ref": ref_of(r, "a scar"), "owner": char_ref(r, b, "elias")}]}),  # backwards
+    ("that scar belongs to Tom, not Elias", lambda r, b: {"ops": [{"do": "move", "ref": ref_of(r, "a scar"), "owner": char_ref(r, b, "mara")}]}),  # someone she did not name
+    ("that scar belongs to Tom, not Elias", lambda r, b: {"ops": [{"do": "merge", "ref": char_ref(r, b, "tom"), "into": char_ref(r, b, "elias")}]}),  # merged the two
+    ("Anna is not Annie", lambda r, b: {"ops": [{"do": "merge", "ref": char_ref(r, b, "annie"), "into": char_ref(r, b, "anna")}]}),
+    ("Mara has grey eyes", lambda r, b: {"ops": [{"do": "remove", "ref": ref_of(r, "green eyes")}]}),  # no word of removing
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "add", "on": char_ref(r, b, "mara"), "field": "traits", "to": "cheerful"}]}),
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "new", "kind": "character", "to": {"name": "Zed"}}]}),
+    ("Mara has grey eyes, not green", lambda r, b: {"ops": [{"do": "explode", "ref": "C1"}]}),
+    ("the ferry sinks in chapter 2, not chapter 1", lambda r, b: {"ops": [{"do": "change", "ref": "E9.section", "to": 2}]}),
+])
+def test_fix_bad_answers_are_dropped(words, answer):
+    _b, _v, _r, (ops, dropped) = plan(answer, words)
+    assert ops == [] and dropped == 1
+
+
+@pytest.mark.parametrize("answer", ["not json at all", "", '{"ops": "none"}', "[1, 2, 3]", '{"ops":[{"ref": 7}]}', "null"])
+def test_fix_awkward_answers_leave_nothing_changed(answer):
+    import analysis
+    import fixing
+    b = fix_merge()
+    before = json.dumps(b, sort_keys=True)
+
+    class Brain:
+        def chat(self, messages, patient=True):
+            return answer, "m"
+
+    got = fixing.plan_words(Brain(), b, "Mara has grey eyes, not green")
+    assert got["ops"] == [] and got["why"] and json.dumps(b, sort_keys=True) == before
+    assert analysis.parse_json("") is None
+
+
+def test_fix_answer_in_a_fence_with_thinking_still_reads():
+    import fixing
+    b = fix_merge()
+
+    class Brain:
+        calls = 0
+
+        def chat(self, messages, patient=True):
+            Brain.calls += 1
+            _v, refs = fixing.build_view(b, "Mara has grey eyes, not green")
+            r = ref_of(refs, "green eyes")
+            text = json.dumps({"ops": [{"do": "change", "ref": r, "to": "grey eyes"}]})
+            return ("Sure! {broken" if Brain.calls == 1 else f"<think>hm</think>```json\n{text}\n```"), "m"
+
+    got = fixing.plan_words(Brain(), b, "Mara has grey eyes, not green")
+    assert Brain.calls == 2 and got["ops"][0]["value"] == "grey eyes" and "green eyes" in got["line"]
+
+
+# who a fact lands on (the merge)
+
+
+def test_merge_two_full_names_stay_two_people():
+    import analysis
+    b = analysis.merge("T", [(1, "a"), (2, "b")], {
+        1: {"characters": [{"name": "Tom Hale", "looks": [{"detail": "red hair"}]}]},
+        2: {"characters": [{"name": "Tom Ross", "looks": [{"detail": "a black beard"}]}]}})
+    assert [c["name"] for c in b["characters"]] == ["Tom Hale", "Tom Ross"]
+    assert [x["detail"] for x in b["characters"][1]["looks"]] == ["a black beard"]
+
+
+def test_merge_first_name_still_joins_one_person():
+    import analysis
+    b = analysis.merge("T", [(1, "a"), (2, "b")], {1: {"characters": [{"name": "Jennifer Hale"}]},
+                                                   2: {"characters": [{"name": "Jennifer", "aliases": ["Jen"]}]}})
+    assert [c["name"] for c in b["characters"]] == ["Jennifer Hale"] and "Jen" in b["characters"][0]["aliases"]
+
+
+def test_merge_a_pronoun_is_nobody():
+    import analysis
+    b = analysis.merge("T", [(1, "a"), (2, "b")], {
+        1: {"characters": [{"name": "Mara", "aliases": ["she", "her"], "looks": [{"detail": "green eyes"}]},
+                           {"name": "she", "traits": ["tall"], "looks": [{"detail": "a long scar"}]}]},
+        2: {"characters": [{"name": "He", "looks": [{"detail": "a limp"}]}]}})
+    assert [c["name"] for c in b["characters"]] == ["Mara"]
+    assert [x["detail"] for x in b["characters"][0]["looks"]] == ["green eyes"] and b["characters"][0]["traits"] == []
+    assert b["characters"][0]["aliases"] == []
+
+
+def test_merge_a_description_is_no_alias_across_people():
+    import analysis
+    b = analysis.merge("T", [(1, "a"), (2, "b")], {
+        1: {"characters": [{"name": "Elias Ward", "aliases": ["the doctor"], "looks": [{"detail": "a scar"}]}]},
+        2: {"characters": [{"name": "Thomas Reed", "aliases": ["the doctor"], "looks": [{"detail": "a limp"}]},
+                           {"name": "Elias", "aliases": ["Doc"]}, {"name": "Rose Lane", "aliases": ["Doc"]}]}})
+    assert [c["name"] for c in b["characters"]] == ["Elias Ward", "Thomas Reed", "Rose Lane"]
+    assert [x["detail"] for x in b["characters"][1]["looks"]] == ["a limp"]
+
+
+def test_merge_the_name_itself_comes_before_an_alias():
+    import analysis
+    b = analysis.merge("T", [(1, "a"), (2, "b")], {
+        1: {"characters": [{"name": "Elias", "aliases": ["Red"]}, {"name": "Tom"}]},
+        2: {"characters": [{"name": "Tom", "aliases": ["Red"], "looks": [{"detail": "a limp"}]}]}})
+    tom = next(c for c in b["characters"] if c["name"] == "Tom")
+    assert [x["detail"] for x in tom["looks"]] == ["a limp"]
+
+
+def test_extract_ask_says_whose_a_look_is():
+    import analysis
+    assert "you can't tell who, leave it out" in analysis.EXTRACT_LOOKS_SYSTEM and "never he, she or they" in analysis.EXTRACT_SYSTEM
+
+
+# the server
+
+
+@pytest.fixture(scope="module")
+def fix_env(tmp_path_factory):
+    root = tmp_path_factory.mktemp("fixdata")
+    proc, core, port = start_server(root)
+    try:
+        code, got = call(port, "POST", "/api/upload", {"file_name": "fix.md", "title": "Fix",
+                                                       "content_b64": base64.b64encode(FIX_BOOK.encode()).decode()})
+        assert code == 200, got
+        wait_done(port, "Fix")
+        folder = root / "My files" / "Manuscripts" / "Fix"
+        shas = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.glob("sections/*")}
+        shas["original.md"] = hashlib.sha256((folder / "original.md").read_bytes()).hexdigest()
+        yield {"port": port, "core": core, "folder": folder, "shas": shas}
+    finally:
+        stop_server(proc, core)
+
+
+def bible_file(fix_env):
+    return json.loads((fix_env["folder"] / "bible.json").read_text(encoding="utf-8"))
+
+
+def no_section_changed(fix_env):
+    f = fix_env["folder"]
+    now = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in f.glob("sections/*")}
+    now["original.md"] = hashlib.sha256((f / "original.md").read_bytes()).hexdigest()
+    assert now == fix_env["shas"]
+
+
+def wait_fix(port, title, rid, tab="characters", seconds=20):
+    end = time.time() + seconds
+    while time.time() < end:
+        got = call(port, "GET", "/api/tab" + q(title=title, tab=tab))[1]
+        c = next((x for x in got["corrections"] if x["id"] == rid), None)
+        if c and c["state"] != "working" and not got["rewriting"] and c.get("prose_state") != "rewriting":
+            return c, got
+        time.sleep(0.1)
+    raise AssertionError(f"{rid} was not done: {c}")
+
+
+def view_ref(fix_env, words, text, tab=""):
+    import fixing
+    _v, refs = fixing.build_view(bible_file(fix_env), words, tab)
+    return ref_of(refs, text)
+
+
+def char_view(fix_env, words, cid):
+    import fixing
+    b = bible_file(fix_env)
+    _v, refs = fixing.build_view(b, words)
+    return next(k for k, v in refs.items() if v["e"].get("id") == cid and not v.get("field"))
+
+
+def test_correct_in_her_words_then_undo_restores(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    before = (fix_env["folder"] / "bible.base.json").read_bytes()
+    bib = bible_file(fix_env)
+    words = "Mara has grey eyes, not green"
+    core.fix_answer = json.dumps({"ops": [{"do": "change", "ref": view_ref(fix_env, words, "green eyes"), "to": "grey eyes"}]})
+    core.prose = {"people": [{"name": "Mara Voss", "personality": "Steady.", "write_up": "Mara, with her grey eyes, leads [1]."}]}
+    n = len(core.calls)
+    code, got = call(port, "POST", "/api/correct", {"title": "Fix", "what": words, "tab": "characters"})
+    assert code == 200 and got["correction"]["applied"], got
+    assert "green eyes" in got["message"] and "grey eyes" in got["message"]
+    assert "Paint again" in got["message"]                   # a look changed
+    assert "the fix" not in core.log[n:]
+    c, tab = wait_fix(port, "Fix", got["correction"]["id"])
+    assert "You" not in c["line"] and "grey eyes" in c["line"] and c["applied"]
+    new = bible_file(fix_env)
+    mara = person(new, "mara")
+    assert [x["detail"] for x in mara["looks"]] == ["grey eyes"] and mara["corrected"] is True
+    assert mara["write_up"] == "Mara, with her grey eyes, leads [1]."      # the paragraph followed the fix
+    assert (fix_env["folder"] / "bible.base.json").read_bytes() == before  # the bible as read is untouched
+    no_section_changed(fix_env)
+    line, err = tool(port, "manuscript_correct_undo", title="Fix", id="last")
+    assert not err and line.startswith("Took that back") and "as it was" in line
+    back = bible_file(fix_env)
+    assert person(back, "mara") == person(bib, "mara")       # looks and write-up, as they were, with no re-read
+    corr = json.loads((fix_env["folder"] / "corrections.json").read_text(encoding="utf-8"))["corrections"]
+    assert not any(x["what"] == words for x in corr)
+    no_section_changed(fix_env)
+    core.prose = None
+
+
+def test_correct_answer_shows_on_each_tab_it_touched_and_tools(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    words = "that scar belongs to Tom, not Elias"
+    core.fix_answer = json.dumps({"ops": [{"do": "move", "ref": view_ref(fix_env, words, "a scar"),
+                                           "owner": char_view(fix_env, words, "tom")}]})
+    line, err = tool(port, "manuscript_correct", title="Fix", what=words)
+    assert not err and line.startswith("Changed it: moved looks") and "from Elias Ward to Tom Reed" in line
+    assert "Paint again" in line
+    rid = line[line.rindex("[") + 1:-1]
+    c, tab = wait_fix(port, "Fix", rid)
+    assert c["applied"]
+    listed, _err = tool(port, "manuscript_corrections", title="Fix")
+    assert rid in listed and "from Elias Ward to Tom Reed" in listed
+    b = bible_file(fix_env)
+    assert any(x["detail"] == "a scar on his chin" and x["quote"] == "the scar on his chin" and x["section"] == 1
+               for x in person(b, "tom")["looks"])
+    assert not any(x["detail"] == "a scar on his chin" for x in person(b, "elias")["looks"])
+    # Maps paints from bible.json, so the moved look is in Tom's next portrait and its proof, and out of Elias's
+    sys.path.insert(0, str(PKG.parent / "maps"))
+    try:
+        import pictures
+        tom_prompt, _about, proof = pictures.prompt_and_proof(b, "portrait", "tom", "")
+        eli_prompt, _about, _p = pictures.prompt_and_proof(b, "portrait", "elias", "")
+    finally:
+        sys.path.remove(str(PKG.parent / "maps"))
+    assert "a scar on his chin" in tom_prompt and "a scar on his chin" not in eli_prompt
+    assert any(e["detail"] == "a scar on his chin" and e["section"] == 1 for e in proof)
+    line, _err = tool(port, "manuscript_correct_undo", title="Fix", id=rid)
+    assert line.startswith("Took that back")
+    assert any(x["detail"] == "a scar on his chin" for x in person(bible_file(fix_env), "elias")["looks"])
+    assert tool(port, "manuscript_correct_undo", title="Fix", id="c-nothing")[1] is True
+
+
+def test_correct_model_naming_nothing_real_stays_a_note(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    before = person(bible_file(fix_env), "mara")
+    core.fix_answer = json.dumps({"ops": [{"do": "change", "ref": "C77.looks.9", "to": "grey eyes"}]})
+    code, got = call(port, "POST", "/api/correct", {"title": "Fix", "what": "Mara has grey eyes, not green", "tab": "science"})
+    assert code == 200 and not got["correction"]["applied"]
+    assert 'You said: Mara has grey eyes, not green' in got["message"] and "nothing changed" in got["message"]
+    assert person(bible_file(fix_env), "mara") == before
+    sci = call(port, "GET", "/api/tab" + q(title="Fix", tab="science"))[1]
+    c = next(x for x in sci["corrections"] if x["what"] == "Mara has grey eyes, not green")   # shown where she said it
+    assert c["applied"] is False and c["why"]
+    core.fix_answer = "I am sorry, I cannot do that."
+    code, got = call(port, "POST", "/api/correct", {"title": "Fix", "what": "Mara is sad"})
+    assert code == 200 and not got["correction"]["applied"] and "You said: Mara is sad" in got["message"]
+    # the note gets to the ask
+    n = len(core.calls)
+    answer, _err = tool(port, "manuscript_ask", title="Fix", question="What colour are Mara's eyes?")
+    assert answer
+    user = next(m for m in core.calls[n:] if "think about her own manuscript" in m[0]["content"])[1]["content"]
+    assert "The writer said: Mara is sad" in user and "green eyes" in user
+    for rec in list(json.loads((fix_env["folder"] / "corrections.json").read_text(encoding="utf-8"))["corrections"]):
+        tool(port, "manuscript_correct_undo", title="Fix", id=rec["id"])
+    core.fix_answer = "{}"
+
+
+def test_ask_and_views_answer_from_the_corrected_bible(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    b = bible_file(fix_env)
+    from blocks import entry_key
+    got = call(port, "POST", "/api/edit", {"title": "Fix", "ops": [
+        {"key": entry_key("character", person(b, "mara")), "action": "set", "field": "looks",
+         "item": "eyes green", "value": "violet eyes"}]})[1]
+    rid = got["correction"]["id"]
+    assert got["correction"]["applied"] and "violet eyes" in got["message"]
+    n = len(core.calls)
+    tool(port, "manuscript_ask", title="Fix", question="What colour are Mara's eyes?")
+    user = next(m for m in core.calls[n:] if "think about her own manuscript" in m[0]["content"])[1]["content"]
+    assert "looks: violet eyes" in user and "looks: green eyes" not in user
+    n = len(core.calls)
+    line, view = call(port, "POST", "/api/show", {"title": "Fix", "tab": "characters", "asked": "show me Mara's looks"})[1].values()
+    wait_view(port, "Fix", view["id"])
+    m = next(m for m in core.calls[n:] if "make one view" in m[0]["content"])
+    assert "violet eyes" in m[1]["content"] and "settled" in m[0]["content"]
+    call(port, "DELETE", "/api/views" + q(title="Fix", id=view["id"]))
+    call(port, "POST", "/api/correct/undo", {"title": "Fix", "id": rid})
+
+
+def test_hand_edit_has_no_brain_call_and_keeps_its_prose(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    b = bible_file(fix_env)
+    from blocks import entry_key
+    mara = entry_key("character", person(b, "mara"))
+    n = len(core.calls)
+    code, got = call(port, "POST", "/api/edit", {"title": "Fix", "ops": [
+        {"key": mara, "action": "set", "field": "write_up", "value": "My own words on Mara."},
+        {"key": mara, "action": "set", "field": "wants", "value": "to stay"}]})
+    assert code == 200 and got["correction"]["by"] == "hand" and got["correction"]["applied"]
+    time.sleep(0.3)
+    assert len(core.calls) == n                             # no brain call
+    hand_id = got["correction"]["id"]
+    assert person(bible_file(fix_env), "mara")["write_up"] == "My own words on Mara."
+    # a correction after it refreshes the paragraph, but never over her own
+    words = "Mara has grey eyes, not green"
+    core.fix_answer = json.dumps({"ops": [{"do": "change", "ref": view_ref(fix_env, words, "green eyes"), "to": "grey eyes"}]})
+    core.prose = {"people": [{"name": "Mara Voss", "personality": "New personality.", "write_up": "The brain's words."}]}
+    got = call(port, "POST", "/api/correct", {"title": "Fix", "what": words})[1]
+    c, _tab = wait_fix(port, "Fix", got["correction"]["id"])
+    m = person(bible_file(fix_env), "mara")
+    assert m["write_up"] == "My own words on Mara." and m["personality"] == "New personality."
+    # and a re-read keeps it too; the reading's own synthesis is told the corrections are settled
+    n = len(core.calls)
+    tool(port, "manuscript_analyze", title="Fix", confirm=True)
+    time.sleep(0.2)
+    wait_done(port, "Fix")
+    m = person(bible_file(fix_env), "mara")
+    assert m["write_up"] == "My own words on Mara." and [x["detail"] for x in m["looks"]] == ["grey eyes"]
+    assert m["wants"] == "to stay"
+    syn = [x for x in core.calls[n:] if "see her characters" in x[0]["content"]]
+    assert syn and "They are settled" in syn[0][0]["content"] and "Mara has grey eyes, not green" in syn[0][0]["content"]
+    assert "green eyes" not in syn[0][1]["content"]
+    base = json.loads((fix_env["folder"] / "bible.base.json").read_text(encoding="utf-8"))
+    assert [x["detail"] for x in person(base, "mara")["looks"]] == ["green eyes"]   # undo still has what to go back to
+    no_section_changed(fix_env)
+    for rid in (got["correction"]["id"], hand_id):
+        call(port, "POST", "/api/correct/undo", {"title": "Fix", "id": rid})
+    assert [x["detail"] for x in person(bible_file(fix_env), "mara")["looks"]] == ["green eyes"]
+    core.prose = None
+    core.fix_answer = "{}"
+
+
+def test_prose_the_brain_cant_fix_says_so(fix_env):
+    port, core = fix_env["port"], fix_env["core"]
+    was = person(bible_file(fix_env), "mara")["write_up"]
+    words = "Mara has grey eyes, not green"
+    core.fix_answer = json.dumps({"ops": [{"do": "change", "ref": view_ref(fix_env, words, "green eyes"), "to": "grey eyes"}]})
+    core.prose = {"people": [{"name": "Mara Voss", "personality": "P.", "write_up": "Mara and her green eyes lead."}]}
+    got = call(port, "POST", "/api/correct", {"title": "Fix", "what": words})[1]
+    rid = got["correction"]["id"]
+    c, tab = wait_fix(port, "Fix", rid)
+    assert c["prose_state"] == "failed" and c["applied"]
+    assert person(bible_file(fix_env), "mara")["write_up"] == was   # it still said the wrong thing, so it was not kept
+    call(port, "POST", "/api/correct/undo", {"title": "Fix", "id": rid})
+    core.prose = None
+    core.fix_answer = "{}"
+
+
+def test_tab_answer_has_what_the_edit_controls_need(fix_env):
+    port = fix_env["port"]
+    for tab in ("characters", "plot", "timeline", "structure", "world", "science", "themes", "voice"):
+        got = call(port, "GET", "/api/tab" + q(title="Fix", tab=tab))[1]
+        ed = got["edits"]
+        keyed = [k for b in got["blocks"] for k in (b.get("keys") or [it.get("key") for it in b.get("items") or [] if isinstance(it, dict)])
+                 if k]
+        assert all(k in ed["items"] for k in keyed), tab
+    chars = call(port, "GET", "/api/tab" + q(title="Fix", tab="characters"))[1]
+    card = chars["cards"][0]
+    item = chars["edits"]["items"][card["key"]]
+    assert {f["name"] for f in item["fields"]} >= {"name", "role", "importance", "aliases", "traits", "wants", "fears", "age_words",
+                                                    "looks", "personality", "write_up", "relationships"}
+    looks = next(f for f in item["fields"] if f["name"] == "looks")
+    assert looks["moves"] and looks["items"][0]["key"]
+    assert chars["block_keys"]["0"] == "brief:characters"
+    assert [a["kind"] for a in chars["edits"]["adds"]] == ["character"]
+
+
+def test_correct_before_any_reading_is_a_note_with_no_brain(tmp_path_factory):
+    root = tmp_path_factory.mktemp("noread")
+    proc, core, port = start_server(root)
+    try:
+        folder = root / "My files" / "Manuscripts" / "Plain"
+        (folder / "sections").mkdir(parents=True)
+        (folder / "sections" / "01 - One.md").write_text("# One\n\nText.\n", encoding="utf-8")
+        (folder / "manuscript.json").write_text(json.dumps({"title": "Plain", "sections": [
+            {"n": 1, "heading": "One", "file": "01 - One.md", "words": 1, "sha": "x"}]}), encoding="utf-8")
+        code, got = call(port, "POST", "/api/correct", {"title": "Plain", "what": "Mara has grey eyes"})
+        assert code == 200 and not got["correction"]["applied"] and "You said" in got["message"]
+        assert core.calls == []
+    finally:
+        stop_server(proc, core)
+
+
+def test_old_book_gets_a_base_and_old_record_undo_says_so(tmp_path_factory):
+    root = tmp_path_factory.mktemp("oldbook")
+    proc, core, port = start_server(root)
+    try:
+        folder = root / "My files" / "Manuscripts" / "Old"
+        (folder / "sections").mkdir(parents=True)
+        (folder / "sections" / "01 - One.md").write_text("# One\n\nText.\n", encoding="utf-8")
+        (folder / "manuscript.json").write_text(json.dumps({"title": "Old", "sections": [
+            {"n": 1, "heading": "One", "file": "01 - One.md", "words": 1, "sha": "x"}]}), encoding="utf-8")
+        b = fix_merge()
+        person(b, "tom")["importance"] = "minor"
+        (folder / "bible.json").write_text(json.dumps(b), encoding="utf-8")
+        (folder / "corrections.json").write_text(json.dumps({"corrections": [
+            {"id": "c-old", "what": "Tom is a minor character", "correction": "", "made_at": "2026-10-31T00:00:00Z"}]}), encoding="utf-8")
+        tab = call(port, "GET", "/api/tab" + q(title="Old", tab="characters"))[1]
+        assert [c["applied"] for c in tab["corrections"]] == [True]
+        assert not (folder / "bible.base.json").exists()    # reading a tab writes nothing
+        from blocks import entry_key
+        got = call(port, "POST", "/api/edit", {"title": "Old", "ops": [
+            {"key": entry_key("character", person(b, "mara")), "action": "set", "field": "wants", "value": "to stay"}]})[1]
+        assert got["correction"]["applied"] and (folder / "bible.base.json").exists()
+        line, _err = tool(port, "manuscript_correct_undo", title="Old", id="c-old")
+        assert "before Undo existed" in line
+        line, _err = tool(port, "manuscript_correct_undo", title="Old", id="last")
+        assert person(json.loads((folder / "bible.json").read_text(encoding="utf-8")), "mara")["wants"] == "to leave the island"
+    finally:
+        stop_server(proc, core)
+
+
+def test_correction_during_a_reading_comes_through(tmp_path_factory):
+    root = tmp_path_factory.mktemp("during")
+    proc, core, port = start_server(root, MANUSCRIPT_CORRECT_WAIT_S="0.1")
+    try:
+        slow = "# One\n\nFIXONE SLOW. Mara Voss looked out.\n\n# Two\n\nFIXTWO SLOW. Mara read the letter.\n"
+        code, got = call(port, "POST", "/api/upload", {"file_name": "slow.md", "title": "Slow",
+                                                       "content_b64": base64.b64encode(slow.encode()).decode()})
+        assert code == 200
+        folder = root / "My files" / "Manuscripts" / "Slow"
+        end = time.time() + 20
+        while time.time() < end:
+            b = json.loads((folder / "bible.json").read_text(encoding="utf-8")) if (folder / "bible.json").exists() else {}
+            if b.get("characters"):
+                break
+            time.sleep(0.1)
+        assert b.get("characters")
+        words = "Mara has grey eyes, not green"
+        import fixing
+        _v, refs = fixing.build_view(b, words)
+        core.fix_answer = json.dumps({"ops": [{"do": "change", "ref": ref_of(refs, "green eyes"), "to": "grey eyes"}]})
+        code, got = call(port, "POST", "/api/correct", {"title": "Slow", "what": words, "tab": "characters"})
+        assert code == 200 and got["correction"]["state"] == "working", got
+        assert "working that out" in got["message"] and "Nothing has changed yet" in got["message"]
+        rid = got["correction"]["id"]
+        c, _tab = wait_fix(port, "Slow", rid, seconds=30)
+        assert c["applied"]
+        st = wait_done(port, "Slow")
+        assert st["state"] == "done"
+        c, _tab = wait_fix(port, "Slow", rid, seconds=30)    # the paragraphs wait for the reading's end
+        b = json.loads((folder / "bible.json").read_text(encoding="utf-8"))
+        assert [x["detail"] for x in person(b, "mara")["looks"]] == ["grey eyes"]
+    finally:
+        stop_server(proc, core)
+
+
+def test_undo_while_the_brain_works_drops_it(tmp_path_factory):
+    root = tmp_path_factory.mktemp("undoworking")
+    proc, core, port = start_server(root, MANUSCRIPT_CORRECT_WAIT_S="0")
+    try:
+        call(port, "POST", "/api/upload", {"file_name": "fix.md", "title": "Fix2",
+                                           "content_b64": base64.b64encode(FIX_BOOK.encode()).decode()})
+        wait_done(port, "Fix2")
+        folder = root / "My files" / "Manuscripts" / "Fix2"
+        before = person(json.loads((folder / "bible.json").read_text(encoding="utf-8")), "mara")
+        got = call(port, "POST", "/api/correct", {"title": "Fix2", "what": "Mara is slowly going grey"})[1]
+        call(port, "POST", "/api/correct/undo", {"title": "Fix2", "id": got["correction"]["id"]})
+        time.sleep(0.5)
+        assert json.loads((folder / "corrections.json").read_text(encoding="utf-8"))["corrections"] == []
+        assert person(json.loads((folder / "bible.json").read_text(encoding="utf-8")), "mara") == before
+    finally:
+        stop_server(proc, core)
+
+
+def test_manifest_and_tools_agree_on_the_new_tools():
+    manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
+    sys.path.insert(0, str(PKG))
+    import server
+    assert manifest["version"] == server.VERSION == "0.5.0"
+    assert {"manuscript_correct_undo", "manuscript_corrections"} <= set(manifest["abilities"]["tools"])
+    assert set(manifest["abilities"]["tools"]) == set(server.TOOLS)
+    assert "any fact" in manifest["abilities"]["tools"]["manuscript_correct"]
+    assert "manuscript_correct_undo" in server.TOOLS and "last" in server.TOOLS["manuscript_correct_undo"][0]
+
+
+def test_skill_stays_under_the_cap_and_says_the_rules():
+    text = (PKG.parent / "novel-mode" / "SKILL.md").read_text(encoding="utf-8")
+    body = re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.DOTALL)
+    assert len(body) < 7000
+    assert "manuscript_correct_undo" in body and "never say something changed" in body.lower()
+    assert "\u2014" not in text
+
+
+def test_fix_a_section_number_alone_is_not_the_entry_she_means():
+    """The worst answer the real model gave: it moved the wrong event, because both were in the section she named."""
+    import fixing
+    b = fix_merge()
+    words = "the storm is in chapter 2, not chapter 1"
+    view, refs = fixing.build_view(b, words)
+    assert "storm" in view and "Elias climbs the lighthouse at night" not in view     # the other event is not even shown
+    wrong = {"kind": "event", "e": next(e for e in b["events"] if "climbs" in e["what"]), "field": "section",
+             "item": None, "text": "section: 1"}
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": "wrong", "to": 2}]}, {"WRONG": wrong}, words)
+    assert not ops and dropped == 1
+    right = next(k for k, v in refs.items() if v["kind"] == "event" and v.get("field") == "section")
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": right, "to": 2}]}, refs, words)
+    assert ops[0]["value"] == 2 and "storm" in ops[0]["says"] and not dropped
+
+
+def test_fix_a_fact_on_someone_she_did_not_name_is_dropped():
+    import fixing
+    b = fix_merge()
+    person(b, "tom")["looks"] = [{"detail": "green eyes", "section": 1, "quote": ""}]
+    words = "Mara has grey eyes, not green"
+    tom = {"kind": "character", "e": person(b, "tom"), "field": "looks", "item": fixing.fact_key("green eyes"), "text": "looks: green eyes"}
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": "T", "to": "grey eyes"}]}, {"T": tom}, words)
+    assert not ops and dropped == 1
+
+
+def test_fix_a_new_fear_is_added_to_the_old():
+    import fixing
+    b = fix_merge()
+    words = "Mara is afraid of fire"
+    _v, refs = fixing.build_view(b, words)
+    ops, _d = fixing.read_answer(b, {"ops": [{"do": "add", "on": char_ref(refs, b, "mara"), "field": "fears", "to": "fire"}]}, refs, words)
+    assert ops[0]["value"] == "deep water; fire"
+
+
+def test_fix_the_climax_stays_out_of_it_unless_she_says():
+    import fixing
+    b = rich()
+    b["climax"] = None
+    b["structure"]["climax"]["note"] = "the storm breaks"
+    words = "the storm is in chapter 2, not chapter 1"
+    view, refs = fixing.build_view(b, words)
+    assert "CLI" not in refs
+    view, refs = fixing.build_view(b, words, "structure")
+    assert "CLI" in refs
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": "CLI.section", "to": 2}]}, refs, words)
+    assert not ops and dropped == 1                         # she spoke of the storm, not the climax
+    words = "the climax is in chapter 2, not chapter 1"
+    view, refs = fixing.build_view(b, words)
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": "CLI.section", "to": 2}]}, refs, words)
+    assert ops[0]["value"] == 2 and not dropped
+
+
+# -- 0.4.1: her lists, fewer files, and the tidy --------------------------------------------------------------------
+
+def old(path: Path, hours: float = 3) -> Path:
+    then = time.time() - hours * 3600
+    os.utime(path, (then, then))
+    return path
+
+
+def sized(path: Path, n: int, fill: bytes = b"x") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes((fill * (n // len(fill) + 1))[:n])
+    return old(path)
+
+
+def sha_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class Shelf:
+    """The app without its server: the Core only says where the shelf is."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def shelf(self) -> Path:
+        return self.path
+
+
+def a_novel(shelf: Path, title: str = "Novel", leftovers: bool = True) -> Path:
+    """A book as a 15,000-word novel's folder is on a real test bot, with sizes to match: 12 sections, their cache entries,
+    the bible, boards, five pictures, nine empty notes files (editing.md from before 0.5 too). With ``leftovers``, what a tidy is for as well."""
+    folder = shelf / title
+    index = []
+    for n in range(1, 13):
+        text = f"# Chapter {n}\n\n" + f"Words of chapter {n}. " * 500
+        name = f"{n:02} - Chapter {n}.md"
+        (folder / "sections").mkdir(parents=True, exist_ok=True)
+        (folder / "sections" / name).write_text(text, encoding="utf-8", newline="\n")
+        old(folder / "sections" / name)
+        sha = sha_text(text)
+        index.append({"n": n, "heading": f"Chapter {n}", "file": name, "words": 2000, "sha": sha})
+        sized(folder / "cache" / f"{sha}.json", 5000)
+    sized(folder / "original.docx", 92 * 1024)
+    (folder / "manuscript.json").write_text(json.dumps({"title": title, "sections": index, "chapters": index}), encoding="utf-8")
+    (folder / "bible.json").write_text(json.dumps({"title": title, "sections_read": 12}) + " " * 48000, encoding="utf-8")
+    (folder / "bible.base.json").write_text((folder / "bible.json").read_text(encoding="utf-8"), encoding="utf-8")
+    (folder / "status.json").write_text(json.dumps({"state": "done", "step": "Read."}), encoding="utf-8")
+    (folder / "views.json").write_text(json.dumps({"views": [{"id": "v-1", "tab": "plot", "title": "Mine"}]}), encoding="utf-8")
+    (folder / "corrections.json").write_text(json.dumps({"corrections": [{"id": "c-1", "what": "Her words"}]}), encoding="utf-8")
+    (folder / "desk.json").write_text(json.dumps({"items": [{"id": "d-1", "state": "kept"}]}), encoding="utf-8")
+    sized(folder / "boards.json", 16 * 1024)
+    pics = [{"id": f"p-20261101-00000{i}-portrait", "kind": "portrait", "who": f"who{i}", "state": "ready"} for i in range(5)]
+    (folder / "pictures.json").write_text(json.dumps({"pictures": pics, "seeds": {}}), encoding="utf-8")
+    for p in pics:
+        sized(folder / "pictures" / f"{p['id']}.png", 800 * 1024)
+    for key, label in (("world", "World"), ("characters", "Characters"), ("plot", "Plot and subplots"), ("themes", "Themes"),
+                       ("science", "Science"), ("timeline", "Timeline"), ("structure", "Structure"), ("voice", "Voice"),
+                       ("editing", "Editor's desk")):
+        (folder / f"{key}.md").write_text(f"# {label}\n", encoding="utf-8")
+    if leftovers:
+        sized(folder / "cache" / f"{sha_text('a section text that is gone')}.json", 5000)
+        sized(folder / "cache" / f"{sha_text('another that is gone')}.json", 5000)
+        sized(folder / "pictures" / "p-20261001-000000-portrait.png", 800 * 1024)
+        sized(folder / ".tmp-abc.json", 2000)
+        sized(folder / "cache" / ".tmp-def.json", 2000)
+        sized(folder / "pictures" / ".tmp-maps-ghi.png", 2000)
+        sized(folder / "sections" / ".tmp-jkl.md", 2000)
+        sized(folder / "download.part", 2000)
+    return folder
+
+
+def tidy_module():
+    sys.path.insert(0, str(PKG))
+    import tidy
+    return tidy
+
+
+def tidy_app(shelf: Path, data: Path, monkeypatch):
+    sys.path.insert(0, str(PKG))
+    monkeypatch.setenv("PUFFPAI_DATA", str(data))
+    import server
+    return server.Manuscripts(Shelf(shelf))
+
+
+def count_and_size(folder: Path) -> tuple[int, int]:
+    files = [p for p in folder.rglob("*") if p.is_file()]
+    return len(files), sum(p.stat().st_size for p in files)
+
+
+def test_the_tidy_keeps_what_matters_and_clears_the_rest(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    (folder / "world.md").write_text("# World\n\nThe tide turns every nine hours.\n", encoding="utf-8")
+    (folder / "voice.md").write_text("# Too many adverbs\n", encoding="utf-8")        # one heading, but hers
+    before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.rglob("*") if p.is_file()}
+    n0, b0 = count_and_size(folder)
+    gone = tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_book(folder)
+    n1, b1 = count_and_size(folder)
+    print(f"\nA book with leftovers: {n0} files, {b0} bytes, to {n1} files, {b1} bytes")
+    assert gone == {"cache": 2, "pictures": 1, "temps": 5, "notes": 7, "records": 0}
+    left = {p for p in folder.rglob("*") if p.is_file()}
+    for p, sha in before.items():                       # what stays is byte for byte what it was
+        if p in left:
+            assert hashlib.sha256(p.read_bytes()).hexdigest() == sha
+    names = {p.relative_to(folder).as_posix() for p in left}
+    assert {"original.docx", "manuscript.json", "bible.json", "bible.base.json", "status.json", "views.json", "corrections.json",
+            "desk.json", "boards.json", "pictures.json", "world.md", "voice.md"} <= names
+    assert len([n for n in names if n.startswith("sections/")]) == 12 and len([n for n in names if n.startswith("cache/")]) == 12
+    assert len([n for n in names if n.startswith("pictures/")]) == 5
+    assert not [n for n in names if ".tmp" in n or n.endswith(".part")]
+    assert not {"characters.md", "plot.md", "editing.md", "timeline.md"} & names
+
+
+def test_a_book_as_it_is_today_loses_only_its_empty_notes(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf, leftovers=False)
+    n0, b0 = count_and_size(folder)
+    tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_book(folder)
+    n1, b1 = count_and_size(folder)
+    print(f"\nA book as it is today: {n0} files, {b0} bytes, to {n1} files, {b1} bytes")
+    assert n0 - n1 == 9 and b0 - b1 < 200
+
+
+def test_a_file_the_tidy_does_not_know_stays(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    strangers = [sized(folder / "her photo.jpg", 100), sized(folder / "scribbles.md", 0),
+                 sized(folder / "cache" / "not-a-sha.json", 100), sized(folder / "cache" / "notes.txt", 100),
+                 sized(folder / "pictures" / "my own drawing.png", 100), sized(folder / "pictures" / "p-1.png", 100),
+                 sized(folder / "editors-desk" / "desk.json", 100), sized(folder / "editors-desk" / ".tmp-x.json", 100),
+                 sized(folder / "maybe" / "deep" / "thing.bin", 100)]
+    tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_book(folder)
+    assert all(p.exists() for p in strangers)
+
+
+def test_when_it_cannot_be_sure_it_keeps(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    folder = a_novel(shelf)
+    (folder / "pictures.json").write_text("{not json", encoding="utf-8")         # no telling what is named
+    stale = folder / "cache" / f"{sha_text('a section text that is gone')}.json"
+    (folder / "sections" / "03 - Chapter 3.md").unlink()                          # no telling what is current
+    app.tidy_book(folder)
+    assert (folder / "pictures" / "p-20261001-000000-portrait.png").exists() and stale.exists()
+    second = a_novel(shelf, "Young")
+    orphan, entry = second / "pictures" / "p-20261001-000000-portrait.png", second / "cache" / f"{sha_text('another that is gone')}.json"
+    temp = second / ".tmp-abc.json"
+    for p in (orphan, entry, temp):                                               # just written: maybe Maps' or the Desk's
+        os.utime(p, None)
+    app.tidy_book(second)
+    assert orphan.exists() and entry.exists() and temp.exists()
+
+
+def test_nothing_runs_during_a_reading(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    release = threading.Event()
+    t = threading.Thread(target=release.wait, daemon=True)
+    t.start()
+    app.reader.running[str(folder)] = t
+    before = {p: p.stat().st_mtime_ns for p in folder.rglob("*") if p.is_file()}
+    assert app.tidy_book(folder) is None
+    app.tidy_due()
+    assert {p: p.stat().st_mtime_ns for p in folder.rglob("*") if p.is_file()} == before
+    assert not (tmp_path / "data" / "tidied.json").exists()
+    release.set()
+    t.join()
+    (folder / "status.json").write_text('{"state": "reading"}', encoding="utf-8")   # left by a stop: it holds nothing back
+    assert app.tidy_book(folder)["notes"] == 9
+
+
+def test_once_a_day_at_most(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    assert app.tidy_book(folder)
+    (folder / "world.md").write_text("# World\n", encoding="utf-8")
+    assert app.tidy_book(folder) is None and (folder / "world.md").exists()
+    stamps = json.loads((tmp_path / "data" / "tidied.json").read_text(encoding="utf-8"))
+    stamps[folder.name] -= 25 * 3600
+    (tmp_path / "data" / "tidied.json").write_text(json.dumps(stamps), encoding="utf-8")
+    assert app.tidy_book(folder)["notes"] == 1 and not (folder / "world.md").exists()
+
+
+def test_a_crash_leaves_nothing_half_done(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder, same = a_novel(shelf), a_novel(shelf, "Same")
+    t = tidy_module()
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    real, left = t._gone, [3]
+
+    def stops(path):
+        if not left[0]:
+            raise KeyboardInterrupt
+        left[0] -= 1
+        return real(path)
+    monkeypatch.setattr(t, "_gone", stops)
+    with pytest.raises(KeyboardInterrupt):
+        app.tidy_book(folder)
+    assert not (tmp_path / "data" / "tidied.json").exists()    # it did not finish, so it is still due
+    assert app.lock.acquire(blocking=False)                    # and it holds nothing
+    app.lock.release()
+    monkeypatch.setattr(t, "_gone", real)
+    assert app.tidy_book(folder)
+    app.tidy_book(same)
+    assert sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()) == \
+        sorted(p.relative_to(same).as_posix() for p in same.rglob("*") if p.is_file())
+
+
+def test_removed_books_stay_as_they_are(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    away = a_novel(shelf / "Removed", "Old 20261101-000000")
+    a_novel(shelf)
+    before = sorted(p for p in away.rglob("*") if p.is_file())
+    tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_due()
+    assert sorted(p for p in away.rglob("*") if p.is_file()) == before
+
+
+def test_an_older_version_s_entry_goes_and_the_current_one_stays(tmp_path, monkeypatch):
+    """Editor's Desk keeps older versions in its own data folder. The text a section has now keeps its entry; the text it
+    had goes, so a version restored later is read again, that one section."""
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf, leftovers=False)
+    was = (folder / "sections" / "02 - Chapter 2.md").read_text(encoding="utf-8")
+    now = "# Chapter 2\n\nChanged in Editor's Desk.\n"
+    (folder / "sections" / "02 - Chapter 2.md").write_text(now, encoding="utf-8", newline="\n")
+    entry = sized(folder / "cache" / f"{sha_text(now)}.json", 100)
+    idx = json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))
+    idx["sections"][1]["sha"] = sha_text(now)                      # as Editor's Desk's save leaves the index
+    (folder / "manuscript.json").write_text(json.dumps({**idx, "chapters": idx["sections"]}), encoding="utf-8")
+    tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_book(folder)
+    assert entry.exists() and not (folder / "cache" / f"{sha_text(was)}.json").exists()
+    assert (folder / "cache" / f"{sha_text((folder / 'sections' / '01 - Chapter 1.md').read_text(encoding='utf-8'))}.json").exists()
+
+
+def test_a_section_changed_on_disk_keeps_its_current_entry(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf, leftovers=False)
+    now = "# Chapter 2\n\nChanged in the Editor's Desk.\n"
+    (folder / "sections" / "02 - Chapter 2.md").write_text(now, encoding="utf-8", newline="\n")
+    entry = sized(folder / "cache" / f"{sha_text(now)}.json", 100)
+    tidy_app(shelf, tmp_path / "data", monkeypatch).tidy_book(folder)
+    assert entry.exists()
+
+
+def test_empty_records_go_and_the_app_reads_as_before(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    (folder / "views.json").write_text('{"views": []}', encoding="utf-8")
+    (folder / "corrections.json").write_text('{"corrections": []}', encoding="utf-8")
+    (folder / "desk.json").write_text('{"items": []}', encoding="utf-8")
+    assert app.tidy_book(folder)["records"] == 3
+    idx = app._index(folder)
+    assert app._views(folder) == [] and app._corrections(folder) == []
+    assert app._bible(folder, idx)["title"] == "Novel"
+
+
+def test_notes_are_made_on_first_write_and_a_tidied_file_never_refuses_her(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf)
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    opened = app.notes_view("Novel", "world")
+    assert opened["text"] == "# World\n" and opened["stamp"]
+    app.tidy_book(folder)
+    assert not (folder / "world.md").exists()
+    assert app.notes_view("Novel", "world") == {"title": "Novel", "tab": "world", "text": "# World\n", "stamp": ""}
+    got = app.notes_save("Novel", "world", "# World\n\nHer note, typed before the tidy.\n", opened["stamp"])    # the page she had open
+    assert got["stamp"] and "Her note" in (folder / "world.md").read_text(encoding="utf-8")
+    assert app.notes_save("Novel", "plot", "# Plot and subplots\n", "")["stamp"] == ""       # a Save with nothing in it makes no file
+    assert not (folder / "plot.md").exists()
+    assert app.manuscript_notes_append("Novel", "plot", "A note from the bot.") and (folder / "plot.md").is_file()
+    with pytest.raises(Exception, match="Editor's Desk"):                # 0.5: editing notes are Editor's Desk's to show
+        app.manuscript_notes_append("Novel", "desk", "One for the desk.")
+    assert not (folder / "desk.md").exists()
+
+
+def test_an_old_bible_with_a_desk_loads_and_desk_json_is_left_for_editors_desk(tmp_path, monkeypatch):
+    """A book read before 0.5: its bible has a desk and her marks are in desk.json. Manuscript reads it on every tab, never
+    writes desk.json or her editing notes, and Editor's Desk carries the marks over from it once."""
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf, leftovers=False)
+    old_desk = [{"id": "d-kept000001", "kind": "plot_hole", "severity": "high", "sections": [3], "note": "A hole.",
+                 "fix": "Fill it.", "state": "open", "writer_note": "", "why": "", "where": []}]
+    bible = {"schema": "manuscript-bible/2", "title": "Novel", "sections_read": 12, "characters": [], "desk": old_desk,
+             "briefs": {"desk": "The old letter."}}
+    for name in ("bible.json", "bible.base.json"):
+        (folder / name).write_text(json.dumps(bible), encoding="utf-8")
+    marks = {"items": [{"id": "d-kept000001", "kind": "plot_hole", "severity": "high", "sections": [3], "note": "A hole.",
+                        "fix": "Fill it.", "state": "kept", "writer_note": "Book two.", "changed_at": "2026-11-01T10:00:00Z"}]}
+    (folder / "desk.json").write_text(json.dumps(marks), encoding="utf-8")
+    (folder / "editing.md").write_text("# Editor's desk\n\nHer old editing notes.\n", encoding="utf-8")
+    keep = {n: (folder / n).read_bytes() for n in ("desk.json", "editing.md")}
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    idx = app._index(folder)
+    assert app._bible(folder, idx)["desk"] == old_desk                    # loads, as it was
+    for tab in server_tabs():
+        assert app.tab_view("Novel", tab)["tab"] == tab
+    assert app.view()["manuscripts"][0]["counts"] == {"characters": 0, "main": 0, "threads": 0, "places": 0, "events": 0}
+    app.edit("Novel", [{"key": "character:", "action": "add", "value": {"name": "Ada Quill"}}])   # a rebuild of bible.json
+    app.tidy_book(folder)
+    assert {n: (folder / n).read_bytes() for n in keep} == keep
+    desk = PKG.parent / "editors-desk"
+    got = subprocess.run([sys.executable, "-I", "-c",
+                          "import json, sys; sys.path.insert(0, sys.argv[1]); import engine; from pathlib import Path;"
+                          "f = Path(sys.argv[2]); n = engine.carry_old_desk(f);"
+                          "print(json.dumps([n, [(x['id'], x['state'], x['note'], x['carried']) for x in engine.load_findings(f)]]))",
+                          str(desk), str(folder)], capture_output=True, text=True, timeout=60,
+                         env={**os.environ, "PUFFPAI_DATA": str(tmp_path / "desk data"), "PUFFPAI_KEYRING": "stub"})
+    assert got.returncode == 0, got.stderr
+    assert json.loads(got.stdout) == [1, [["d-kept000001", "open", "Book two.", "kept"]]]
+    assert {n: (folder / n).read_bytes() for n in keep} == keep            # Editor's Desk leaves it as it was too
+
+
+def server_tabs():
+    sys.path.insert(0, str(PKG))
+    import server
+    return list(server.TABS)
+
+
+def test_the_line_on_the_settings_fold(tmp_path, monkeypatch):
+    shelf = tmp_path / "Manuscripts"
+    folder = a_novel(shelf, leftovers=False)
+    t = tidy_module()
+    app = tidy_app(shelf, tmp_path / "data", monkeypatch)
+    got = app.size_view("Novel")
+    assert re.fullmatch(r"This book uses 4\.\d MB: pictures 3\.9 MB\.", got["line"]), got["line"]
+    assert got["pictures"] == 5 * 800 * 1024 and got["files"] == count_and_size(folder)[0]
+    pics = json.loads((folder / "pictures.json").read_text(encoding="utf-8"))
+    pics["pictures"].insert(0, {**pics["pictures"][0], "id": "p-20261102-000000-portrait"})        # Paint again: the new one first
+    (folder / "pictures.json").write_text(json.dumps(pics), encoding="utf-8")
+    sized(folder / "pictures" / "p-20261102-000000-portrait.png", 800 * 1024)
+    line = app.size_view("Novel")["line"]
+    assert "pictures 4.7 MB" in line and "800 KB is older paintings that Paint again replaced" in line
+    assert t.usage_line({"bytes": 300 * 1024, "pictures": 0, "older": 0, "files": 3}) == "This book uses 300 KB."
+    big = t.usage_line({"bytes": 900 * 1024 * 1024, "pictures": 880 * 1024 * 1024, "older": 0, "files": 3})
+    assert big.startswith("This book uses 900.0 MB: pictures 880.0 MB.") and "that stays your choice" in big
+
+
+def test_an_old_bots_shelf_gets_its_mark_and_its_tidy_at_start(tmp_path):
+    shelf = tmp_path / "My files" / "Manuscripts"
+    folder = a_novel(shelf)
+    proc, core, port = start_server(tmp_path)
+    try:
+        for _ in range(100):
+            if (shelf / ".app-files").is_file() and not (folder / "world.md").exists():
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("no mark or no tidy at start")
+        assert (tmp_path / "package data" / "tidied.json").is_file() and core.calls == []      # by code: no brain call
+        got = call(port, "GET", "/api/list")[1]
+        assert [b["title"] for b in got["manuscripts"]] == ["Novel"]
+        code, size = call(port, "GET", "/api/size" + q(title="Novel"))
+        assert code == 200 and size["line"].startswith("This book uses")
+        assert call(port, "GET", "/api/size" + q(title="Novel"), token=None)[0] == 401
+    finally:
+        stop_server(proc, core)
+
+
+def test_a_reading_tidies_after_itself_and_a_reread_still_uses_the_cache_and_undo_works(tmp_path):
+    proc, core, port = start_server(tmp_path)
+    shelf = tmp_path / "My files" / "Manuscripts"
+    try:
+        code, got = call(port, "POST", "/api/upload", {"file_name": "four.md", "title": "Four",
+                                                       "content_b64": base64.b64encode(FOUR.encode()).decode()})
+        assert code == 200, got
+        folder = shelf / "Four"
+        assert (shelf / ".app-files").is_file()
+        assert [p.name for p in folder.glob("*.md")] == ["original.md"]   # no empty notes at upload
+        assert wait_done(port, "Four")["state"] == "done"
+        stamps = tmp_path / "package data" / "tidied.json"
+        for _ in range(50):                                         # told last of all, as the reading's thread ends
+            if stamps.is_file() and "Four" in stamps.read_text(encoding="utf-8"):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("the reading did not tidy after itself")
+        entries = sorted(p.name for p in (folder / "cache").glob("*.json"))
+        assert len(entries) == 4
+
+        code, fixed = call(port, "POST", "/api/correct", {"title": "Four", "what": "Jennifer Hale is a minor character"})
+        assert code == 200 and fixed["correction"]["applied"], fixed
+        bible = json.loads((folder / "bible.json").read_text(encoding="utf-8"))
+        assert next(c for c in bible["characters"] if c["name"] == "Jennifer Hale")["importance"] == "minor"
+
+        for p in folder.rglob("*"):                                 # a day on: the same tidy the app runs
+            if p.is_file():
+                old(p, 30)
+        t = tidy_module()
+        import server
+        idx = json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))
+        files = [folder / "sections" / c["file"] for c in idx["sections"]]
+        shas = [c["sha"] for c in idx["sections"]]
+        assert t.tidy(folder, "sections", files, shas, server.NOTES_HEADINGS)["cache"] == 0
+        assert sorted(p.name for p in (folder / "cache").glob("*.json")) == entries
+
+        line, err = tool(port, "manuscript_correct_undo", title="Four", id="last")
+        assert not err and line.startswith("Took that back"), line
+        bible = json.loads((folder / "bible.json").read_text(encoding="utf-8"))
+        assert next(c for c in bible["characters"] if c["name"] == "Jennifer Hale").get("importance") != "minor"
+
+        assert t.tidy(folder, "sections", files, shas, server.NOTES_HEADINGS)["records"] == 1      # nothing left in it
+        code, fixed = call(port, "POST", "/api/correct", {"title": "Four", "what": "Jennifer Hale is a minor character"})
+        assert code == 200 and fixed["correction"]["applied"], fixed           # and the next fix works
+        line, err = tool(port, "manuscript_correct_undo", title="Four", id="last")
+        assert not err and line.startswith("Took that back"), line
+
+        n = len(core.calls)
+        assert tool(port, "manuscript_analyze", title="Four", confirm=True)[0]
+        time.sleep(0.2)
+        assert wait_done(port, "Four")["state"] == "done"
+        assert core.calls[n:] == []                                  # 0.5: nothing changed, so nothing is asked
+        assert call(port, "GET", "/api/status" + q(title="Four"))[1]["unchanged"] is True
+
+        name = sorted((folder / "sections").glob("*.md"))[1]          # Editor's Desk saves her edit of one section
+        name.write_text(name.read_text(encoding="utf-8").replace("\n\n", "\n\nShe adds a line.\n\n", 1), encoding="utf-8",
+                        newline="\n")
+        n2 = int(json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))["sections"][1]["n"])
+        assert call(port, "GET", "/api/section" + q(title="Four", n=n2))[1]["changed"] is True
+        assert call(port, "GET", "/api/section" + q(title="Four", n=n2 - 1))[1]["changed"] is False
+        assert call(port, "POST", "/api/analyze", {"title": "Four"})[1]["message"].startswith("Your bot started reading")
+        time.sleep(0.2)
+        assert wait_done(port, "Four")["state"] == "done"
+        said = [m[-1]["content"] for m in core.calls[n:]]
+        assert len([u for u in said if "She adds a line." in u]) >= 1                     # that section, asked again
+        assert not [u for u in said if "DELTA" in u and "She adds a line." not in u]      # no other section
+        assert call(port, "GET", "/api/section" + q(title="Four", n=n2))[1]["changed"] is False
+        assert not call(port, "GET", "/api/status" + q(title="Four"))[1].get("unchanged")
+    finally:
+        stop_server(proc, core)
+
+
+# -- the real bot's test: the subject of her sentence must be the thing changed
+
+def fix_real():
+    """As the real bot read the fixture book: no storm event, only a passing mention of one."""
+    import analysis
+    return analysis.merge("Fix", [(n, f"Chapter {n}") for n in (1, 2, 3, 4)], {
+        1: {"characters": [{"name": "Elias Ward", "beat": "Elias climbed the lighthouse and walked to Port Ash."},
+                           {"name": "Anna", "aliases": ["Annie"]}, {"name": "Tom Reed", "beat": "Tom waits."}]},
+        2: {"events": [{"what": "Elias walked to Port Ash", "who": ["Elias Ward"], "where": "Port Ash",
+                        "when": "same night as storm"},
+                       {"what": "The letter comes.", "who": [], "where": "", "when": "autumn"}],
+            "places": [{"name": "Port Ash", "kind": "town"}]}})
+
+
+def asked(answer):
+    class Brain:
+        calls = 0
+
+        def chat(self, messages, patient=True):
+            Brain.calls += 1
+            return answer(messages[1]["content"]) if callable(answer) else answer, "m"
+    return Brain()
+
+
+def ref_in(user, text):
+    return next(ln.strip()[1:ln.strip().index("]")] for ln in user.split("\n") if text in ln and ln.strip().startswith("["))
+
+
+NO_STORM = ("There is no storm event in the story bible, so nothing changed. To add one, use Add: event on the Timeline tab.")
+
+
+def test_real_a_word_in_when_is_not_what_the_event_is():
+    """On the real bot: the event "Elias walked to Port Ash" moved, because its when said "same night as storm"."""
+    import fixing
+    b = fix_real()
+    words = "the storm is in chapter 4, not chapter 2"
+    before = json.dumps(b, sort_keys=True)
+    ask = asked(lambda u: json.dumps({"ops": [{"do": "change", "ref": ref_in(u, "section: 2").split(".")[0] + ".section", "to": 4}]}))
+    got = fixing.plan_words(ask, b, words, "", "timeline")
+    assert got["ops"] == [] and got["why"] == NO_STORM
+    assert json.dumps(b, sort_keys=True) == before
+    assert fixing.plan_words(asked('{"ops":[]}'), b, words)["why"] == NO_STORM     # the model saying nothing: the same
+
+
+def test_real_the_storm_still_moves_when_there_is_a_storm_event():
+    import fixing
+    b = fix_real()
+    b["events"].append({"id": "e9", "section": 2, "order": 9, "story_order": 9, "what": "The storm sinks the ferry.", "who": [],
+                        "where": "", "when": "", "placement": ""})
+    words = "the storm is in chapter 4, not chapter 2"
+    _v, refs = fixing.build_view(b, words)
+    right = next(k for k, v in refs.items() if v.get("field") == "section" and "storm" in v["e"]["what"])
+    wrong = next((k for k, v in refs.items() if v.get("field") == "section" and "Elias" in v["e"]["what"]), None)
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": right, "to": 4}]}, refs, words)
+    assert ops[0]["value"] == 4 and "The storm sinks the ferry." in ops[0]["says"] and not dropped
+    if wrong:
+        ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": wrong, "to": 4}]}, refs, words)
+        assert not ops and dropped == 1
+
+
+def test_real_the_letter_comes_in_the_spring():
+    import fixing
+    b = fix_real()
+    words = "the letter comes in the spring, not the autumn"
+    _v, refs = fixing.build_view(b, words)
+    r = next(k for k, v in refs.items() if v.get("field") == "when" and "letter" in v["e"]["what"])
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "change", "ref": r, "to": "spring"}]}, refs, words)
+    assert ops[0]["value"] == "spring" and "autumn" in ops[0]["says"] and not dropped
+
+
+@pytest.mark.parametrize("words,kind,text,do", [
+    ("the storm is at Port Ash, not the lighthouse", "event", "climbs", {"do": "change", "field": "where", "to": "Port Ash"}),  # what she denied is no subject
+    ("the storm never reaches the lighthouse", "event", "climbs", {"do": "remove"}),
+])
+def test_real_an_entry_that_only_shares_a_word_is_not_her_subject(words, kind, text, do):
+    import fixing
+    b = fix_merge()
+    e = next(x for x in b["events"] if text in x["what"])
+    field = do.get("field")
+    refs = {"X": {"kind": kind, "e": e, **({"field": field, "item": None, "text": f"{field}: x"} if field else {})}}
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": do["do"], "ref": "X", "to": do.get("to")}]}, refs, words)
+    assert not ops and dropped == 1
+
+
+def test_real_a_fact_changes_only_when_her_sentence_is_about_it():
+    import fixing
+    b = fix_merge()
+    words = "the storm never touched Mara's green eyes"
+    r = {"kind": "character", "e": person(b, "mara"), "field": "looks", "item": fixing.fact_key("green eyes"), "text": "looks: green eyes"}
+    ops, dropped = fixing.read_answer(b, {"ops": [{"do": "remove", "ref": "X"}]}, {"X": r}, words)
+    assert not ops and dropped == 1
+
+
+LONG_BEAT = "Elias climbed the lighthouse and walked to Port Ash."
+
+
+def test_real_a_beat_that_says_more_stays_and_she_is_told():
+    import fixing
+    b = fix_real()
+    words = "Elias never goes to the lighthouse"
+    ask = asked(lambda u: json.dumps({"ops": [{"do": "remove", "ref": ref_in(u, "beats: Elias climbed")}]}))
+    got = fixing.plan_words(ask, b, words)
+    assert got["ops"] == []
+    assert got["why"] == f'The beat "{LONG_BEAT}" says more than that, so I left it as it is. Press Edit to change it yourself.'
+    assert [x["beat"] for x in person(b, "elias")["arc"]] == [LONG_BEAT]
+
+
+def test_real_a_short_beat_goes_and_the_long_one_is_flagged_beside_it():
+    import fixing
+    b = fix_real()
+    person(b, "elias")["arc"].append({"section": 2, "beat": "Elias climbs the lighthouse."})
+    words = "Elias never goes to the lighthouse"
+    ask = asked(lambda u: json.dumps({"ops": [{"do": "remove", "ref": ref_in(u, "beats: Elias climbed")},
+                                              {"do": "remove", "ref": ref_in(u, "beats: Elias climbs")}]}))
+    got = fixing.plan_words(ask, b, words)
+    assert len(got["ops"]) == 1 and not got["partial"]
+    assert got["line"] == ('removed "Elias climbs the lighthouse." from Elias Ward\'s beats; left the beat '
+                           f'"{LONG_BEAT}" as it is because it says more than that (press Edit to change it yourself)')
+
+
+def test_real_an_event_that_says_more_stays_too():
+    import fixing
+    b = fix_merge()
+    long = "Elias climbs the lighthouse and carries the letter to Port Ash."
+    b["events"][1]["what"] = long
+    words = "Elias never goes to the lighthouse"
+    ask = asked(lambda u: json.dumps({"ops": [{"do": "remove", "ref": ref_in(u, "Event: Elias climbs").split(".")[0]}]}))
+    got = fixing.plan_words(ask, b, words)
+    assert got["ops"] == [] and got["why"].startswith(f'The event "{long}" says more than that')
+
+
+@pytest.mark.parametrize("words", ["Anna and Annie are the same person", "Annie and Anna are the same person",
+                                   "Annie is the same person as Anna", "Anna and Annie are one person."])
+def test_real_already_one_person_says_so_with_no_brain_call(words):
+    import fixing
+    ask = asked('{"ops":[]}')
+    got = fixing.plan_words(ask, fix_real(), words)
+    assert ask.calls == 0 and got["ops"] == []
+    assert got["why"] == "Anna and Annie are already one person in the story bible, shown as Anna, so nothing needed changing."
+
+
+def test_real_two_people_still_go_to_the_brain():
+    import fixing
+    b = fix_merge()                                         # Anna and Annie are two entries here
+    ask = asked(lambda u: json.dumps({"ops": [{"do": "merge", "ref": ref_in(u, "] Annie").split("]")[0], "into": ref_in(u, "] Anna").split("]")[0]}]}))
+    got = fixing.already_one(b, "Anna and Annie are the same person")
+    assert got == "" and fixing.already_one(fix_real(), "Anna is not Annie") == ""

@@ -226,6 +226,7 @@
       const s = L.addSource(text.value);
       clear(said);
       if (s.kind === "empty") return;
+      if (s.kind === "books") { P.askBooks(s.words); return; }       // Knowledge's business: nothing is planned here
       if (s.kind === "folder" || s.kind === "builtin") { addPackage(s.source, s.kind === "folder" && linkBox.checked, said); return; }
       go.disabled = true;
       said.appendChild(el("p", { class: "now", text: s.kind === "github" ? "Toolsmith is reading " + s.url + " and planning. This can take a few minutes; Building shows it live."
@@ -236,17 +237,20 @@
       if (r.status !== 201) { said.appendChild(el("p", { class: "fail", text: P.said(r) })); return; }
       planCard(said, L.buildView(r.data));
     });
-    t.body.append(el("p", { class: "small muted", text: "Toolsmith finds a ready-made app, tries it in a folder of its own, and shows you one plan before anything is installed." }), form, said);   // the plan's Yes card sits outside the form
+    t.body.append(el("p", { class: "small muted", text: "Toolsmith finds a ready-made app, tries it in a folder of its own, and shows you one plan before anything is installed." }), form,
+      el("p", { class: "small muted", "data-find-on-knowledge": "" }, ["Looking for books or reference? ", el("button", { class: "link", type: "button", text: "Find books on Knowledge", on: { click: () => P.go("knowledge") } })]),
+      said);   // the plan's Yes card sits outside the form
     box.appendChild(t.node);
     if (window.PuffGitHub) box.appendChild(window.PuffGitHub.block({ where: "apps" }));   // lane I18g: link GitHub, add code from GitHub
   }
 
   /* Toolsmith's plan card: what it would try for each job, then the ONE Yes (with its ticks). */
-  function planCard(box, v) {
-    box.appendChild(el("div", { class: "card" }, [el("h3", { text: "The plan: " + v.goal })]
+  function planCard(box, v, after) {
+    const yesCard = v.consentId && !v.yes;
+    if (!(v.booksOnly && yesCard)) box.appendChild(el("div", { class: "card" }, [el("h3", { text: "The plan: " + v.goal })]
       .concat(v.planLines.length ? v.planLines.map((l) => el("p", { text: l })) : [el("p", { class: "muted", text: v.said || "Toolsmith has no plan for this yet." })])
-      .concat([el("div", { class: "row" }, [el("a", { href: "#building", text: "Follow it on Building" })])])));
-    if (v.consentId && !v.yes) { const c = el("div"); box.appendChild(c); P.consentInline(c, v.consentId, () => P.go("building")); }
+      .concat(v.booksOnly ? [] : [el("div", { class: "row" }, [el("a", { href: "#building", text: "Follow it on Building" })])])));
+    if (yesCard) { const c = el("div"); box.appendChild(c); P.consentInline(c, v.consentId, after || (() => P.go("building"))); }
   }
 
   P.storeRow = storeRow;

@@ -1675,7 +1675,7 @@ paths:
     get:
       tags: [knowledge]
       summary: 'The newest 30 files in My files'
-      description: 'Reply {"files": [{"name", "folder", "path", "modified"}]}.'
+      description: 'Reply {"files": [{"name", "folder", "path", "modified"}]}. A folder holding a file named .app-files belongs to an app and is left out, with all below it.'
       x-access: owner
       x-lane: D136
       responses:
@@ -1696,17 +1696,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /v1/knowledge/find:
+    get:
+      tags: [knowledge]
+      summary: 'Can Find books look right now, and where?'
+      description: 'WritersBot lane. Reply {"can": "ok | no_search | bridge_closed | paused | locked", "line": a plain reason or "", "ask": the places asked while a plan is made, "after_yes": the places read only after her Yes}. no_search still makes a plan. Reads only, with no line in the outside log.'
+      x-access: owner_device
+      x-lane: writersbot
+      responses:
+        "200": { description: 'The answer.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [knowledge]
       summary: 'Find more books: a plan for books only, up to its Yes card'
-      description: 'Body {"words"}. No app is looked for and no model asked. Nothing downloads before her Yes on the plan card (D99). Reply: the build, as POST /v1/toolsmith/plan.'
+      description: 'Body {"words"}. No app is looked for and no model asked. Nothing downloads before her Yes on the plan card (D99). It answers at once with the build, planning true; follow GET /v1/toolsmith/builds/<id>: now and now_at while it looks, then its card and looked {asked, found, failed, after_yes, line}. 409 {"error", "code": "bridge_closed | paused | locked"}: the plain reason.'
       x-access: owner_device
       x-lane: D136
       responses:
-        "200": { description: 'The answer.' }
+        "201": { description: 'The build.' }
         "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: 'It cannot look now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /v1/knowledge/books/remove:
     post:
       tags: [knowledge]
@@ -1908,6 +1919,30 @@ paths:
         "400": { description: 'A plain reason. Nothing was changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/recommended:
+    get:
+      tags: [knowledge]
+      summary: 'What a moved bot came with that is not here yet, for her to pick from'
+      description: 'D148. Reply {"rows": [{"id", "name", "kind": "app | book", "get": "add | find | ask", "source"?, "line"?}], "reading": null or {"topics", "sources": [{"name", "kind", "up_to", "about_mb"}], "about_mb", "hosts", "state": "offer | asking | fetching | done", "line", "build", "consent_id"}}. Only reads. "add": POST /v1/packages with source, and its normal Yes. "find": POST /v1/knowledge/find with its name, and the plan card. "ask": a line, ask Toolsmith. "reading": what the bot came with by topic.'
+      x-access: owner_device
+      x-lane: D148
+      responses:
+        "200": { description: 'The answer.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/recommended/reading:
+    post:
+      tags: [knowledge]
+      summary: 'One plan card and one Yes for the books and articles a moved bot came with, by topic'
+      description: 'WritersBot lane. Only Wikipedia and Project Gutenberg, no catalog asked, no model asked, nothing downloaded before her Yes, and the same limits as any plan. It answers at once with the build, planning true; follow GET /v1/toolsmith/builds/<id> to its card. Pressed again, the build that waits is answered. 404: no list. 409 {"error", "code": "bridge_closed | paused | locked"}: the plain reason.'
+      x-access: owner_device
+      x-lane: writersbot
+      responses:
+        "201": { description: 'The build.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'No list.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'It cannot look now.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /v1/knowledge/place:
     get:
       tags: [knowledge]

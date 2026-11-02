@@ -371,7 +371,8 @@
     const bits = (head, list) => list && list.length ? el("p", {}, [el("b", { text: head + ": " }), list.join(", ") + "."]) : null;
     function done(d) {
       clear(said).append(el("p", { text: "Moved here: " + d.name + "." }), ...(d.said || []).map((x) => el("p", { text: x })),
-        bits("Link these folders again", d.linked) || "", bits("Pin these documents again", d.pinned) || "", bits("Find these books again on Knowledge", d.books) || "",
+        bits("Link these folders again", d.linked) || "", bits("Pin these documents again", d.pinned) || "", bits("These books can come back from Recommended for this bot, on Knowledge", d.books) || "",
+        bits("Books and articles on these can come with one Yes, from Recommended for this bot, on Knowledge", d.topics) || "",
         bits("Add these tool servers and APIs again", d.added) || "",
         bits("Set up on another kind of computer, so not added. Ask Toolsmith to try them here", d.not_here) || "");
       (d.left_out || []).forEach((x) => said.appendChild(el("p", { text: x.name + " did not come: " + x.why + "." })));

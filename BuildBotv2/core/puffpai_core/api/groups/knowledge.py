@@ -15,12 +15,13 @@
   device, or where there is no such dialog, it says so, and a file comes by upload instead (D134).
 - ``POST /v1/knowledge/upload?name=<file name>`` (D134, ``zone1.uploads``): the file's bytes as the body, from the
   browser's own file input. It lands in the data folder's ``uploads`` folder; the name is the only thing the client says.
-- Her books (D136, ``zone1.books``): ``POST /v1/knowledge/find`` ``{words}``, a plan for books only (D99's card, no apps
-  looked for, no model asked); ``POST /v1/knowledge/books/remove`` ``{source, file?}``; ``GET /v1/knowledge/books/read``
+- Her books (D136, ``zone1.books``): ``GET /v1/knowledge/find``, whether it can look now and where;
+  ``POST /v1/knowledge/find`` ``{words}``, a plan for books only (D99's card, no apps looked for, no model asked), that
+  answers at once with ``planning`` true while the build looks; ``POST /v1/knowledge/books/remove`` ``{source, file?}``; ``GET /v1/knowledge/books/read``
   ``?source&file&part``; ``GET /v1/knowledge/books/articles`` ``?source&q&page``; ``GET /v1/knowledge/books/article``
   ``?source&url``; ``POST /v1/knowledge/books/look`` looks for a dropped ``.zim`` now. ``GET /v1/knowledge/sources`` also
   looks, and says each library and where to drop one.
-- Her files (D136, ``owner_files``): ``GET /v1/knowledge/files``, the newest in My files; ``POST /v1/knowledge/files/open``
+- Her files (D136, ``owner_files``): ``GET /v1/knowledge/files``, the newest in My files, leaving out a folder an app marked as its own (WB2); ``POST /v1/knowledge/files/open``
   ``{path}`` opens one in its own app on the bot's computer. ``GET /v1/owner-files`` ``[?path=]``, for a package with
   ``needs.owner_files`` and its own token: where it makes files, or where one file is.
 """
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, g, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 
 from ... import owner_files
 from ...zone1 import books, fetched, knowledge_store
@@ -200,6 +201,46 @@ def knowledge_unpin():
     return _pinned()
 
 
+@route(bp, "GET", "/v1/knowledge/recommended", access=OWNER_DEVICE)
+def knowledge_recommended():
+    """What a moved bot came with (D148), for her to pick from. Only reads."""
+    from ... import bot_move
+    core = current_core()
+    r = jsonify(rows=bot_move.recommended(core.state, core.registry), reading=_reading(bot_move.reading_topics(core.state)))
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
+def _reading(topics: list[str]) -> dict | None:
+    """The books and articles a moved bot came with, by topic: what they would fetch, and how far they got."""
+    if not topics:
+        return None
+    from ...zone3.toolsmith_host import knowledge as fetch
+    from .toolsmith import service
+    try:
+        now = service().reading_view(topics)
+    except Exception:  # noqa: BLE001 - no Toolsmith host here: the list still shows what it would fetch
+        now = {"state": "offer", "line": "", "build": "", "consent_id": ""}
+    return {"topics": topics, **fetch.reading_offer(topics), **now}
+
+
+@route(bp, "POST", "/v1/knowledge/recommended/reading", access=OWNER_DEVICE)
+def knowledge_recommended_reading():
+    """Those books and articles: one plan card and one Yes, and nothing downloads before it."""
+    from ... import bot_move
+    from .toolsmith import Paused, service
+    topics = bot_move.reading_topics(current_core().state)
+    if not topics:
+        return jsonify(error="This bot came with no reading list."), 404
+    stop = _cant_look()
+    if stop:
+        return stop
+    try:
+        return jsonify(service().reading_plan(topics)), 201
+    except Paused as exc:
+        return jsonify(error=str(exc), code="paused"), 409
+
+
 @route(bp, "GET", "/v1/knowledge/place", access=OWNER)
 def knowledge_place():
     return jsonify(knowledge_store.view(current_core().state))
@@ -298,16 +339,46 @@ def knowledge_book_article():
     return _book(books.article, current_core().state, a.get("source"), a.get("url"))
 
 
+def _books_can() -> dict:
+    from ...zone3.service import for_app
+    from .toolsmith import service
+    return service().books_can(for_app(current_app).bridge.view({}))
+
+
+def _cant_look():
+    """The reply when nothing can be looked up right now, or None. Toolsmith's search off stops nothing: Wikipedia and
+    Gutenberg are read under her plan's own Yes."""
+    now = _books_can()
+    if now["can"] in ("bridge_closed", "paused", "locked"):
+        return jsonify(error=now["line"], code=now["can"]), 409
+    return None
+
+
+@route(bp, "GET", "/v1/knowledge/find", access=OWNER_DEVICE)
+def knowledge_find_can():
+    r = jsonify(_books_can())
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
 @route(bp, "POST", "/v1/knowledge/find", access=OWNER_DEVICE)
 def knowledge_find():
     """Find more books (v1's Find more knowledge): her words go through the same screen and the same plan card as any
-    build's topics, and nothing downloads before her Yes on that card (D99)."""
+    build's topics, and nothing downloads before her Yes on that card (D99). It answers at once; the page follows the
+    build (``planning``, ``now``) to its card."""
+    from ...zone3.toolsmith_host import knowledge as fetch
     from .toolsmith import Paused, service
     body = request.get_json(silent=True)
-    words = " ".join(str(body.get("words") or "").split())[:60] if isinstance(body, dict) else ""
-    if not words:
+    said = " ".join(str(body.get("words") or "").split()) if isinstance(body, dict) else ""
+    if not said:
         return jsonify(error="Type what it should know about."), 400
+    words = fetch.find_words(said)
+    if not words:
+        return jsonify(error="A search takes plain letters. Try the book's title in other words, or its subject."), 400
+    stop = _cant_look()
+    if stop:
+        return stop
     try:
-        return jsonify(service().plan_books(words)), 201
+        return jsonify(service().plan_books(words, wait=False)), 201
     except Paused as exc:
-        return jsonify(error=str(exc)), 409
+        return jsonify(error=str(exc), code="paused"), 409

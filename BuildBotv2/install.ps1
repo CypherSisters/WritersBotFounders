@@ -376,7 +376,7 @@ if ($WindowFor) {
     } catch { Say "  (No desktop shortcut was made; the launcher below still works.)" }
     Say ""
     Say ("  Written: " + $WindowOnly)
-    Say "  Double-click it to open the window. The first time, type the code from the bot's computer: run Sign in a browser.cmd there."
+    Say "  Double-click it to open the window. The first time, type the sign-in code from the bot's computer."
     try { Stop-Transcript | Out-Null } catch { }
     & $Puffpai app --remote $WindowFor
     exit $LASTEXITCODE

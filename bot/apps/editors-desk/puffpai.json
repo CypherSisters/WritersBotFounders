@@ -1,0 +1,64 @@
+{
+  "schema": "puffpai-package/1",
+  "id": "editors-desk",
+  "kind": "app",
+  "name": "Editor's Desk",
+  "version": "0.2.0",
+  "description": "A publishing house's stages of editing for your book, big to small: the story, the facts, the prose, the polish, and getting it out. It brings Manuscript's story bible and your text together in one place, finds plot holes and inconsistencies across the whole book, and shows each with its section and exact quote, why it matters and one way to fix it. Mark each Open, Fixed, Not a problem or Later. Edit your text right beside the findings, with every earlier version kept. Your editor works in the background with the model on this computer, and only when you say so. Your bot never writes your book.",
+  "author": "Cypher Sisters",
+  "license": "Apache-2.0",
+  "icon": "icons/editors-desk.svg",
+
+  "run": {
+    "default": { "type": "command", "python": true,
+                 "setup": [],
+                 "start": ["{python}", "server.py", "--port", "{port}"] }
+  },
+  "health": { "url": "http://127.0.0.1:{port}/health", "expect": 200, "every_s": 60 },
+
+  "abilities": {
+    "mcp": { "transport": "http", "url": "http://127.0.0.1:{port}/mcp" },
+    "changes": ["desk_run", "desk_mark", "desk_stop"],
+    "tools": {
+      "desk_checks": "The stages of editing for one manuscript and every check in them, when each last ran, what it found, and which comes next.",
+      "desk_run": "Runs one editing check in the background. It starts only after the writer said yes; asked without her yes it only tells your bot what to ask her. A check can take a long time.",
+      "desk_status": "What the writer's editor is doing now for one manuscript, how far along, and about how long is left.",
+      "desk_findings": "What the checks found in one manuscript: each with what is wrong, the section and its exact quote, why it matters and one way to fix it, biggest first.",
+      "desk_mark": "Marks one finding Open, Fixed, Not a problem or Later, and keeps a note of the writer's on it, by its number among the open ones or its id.",
+      "desk_letter": "The Editor's letter for one manuscript: what the book is, what is working, its biggest problems, what to do first, and the revision plan as it stands now.",
+      "desk_ask": "Answers a question about a change the writer is planning, from what Future plans and changes found and the story bible.",
+      "desk_documents": "The documents made for one manuscript: the style sheet, length note, synopsis, query letter, submission copy. Gives one by name, or the list.",
+      "desk_stop": "Stops the check running for one manuscript, after the call in progress. Pressed again, it goes on from where it was."
+    },
+    "examples": {
+      "desk_checks": ["what editing checks are there", "what should I do next on my book"],
+      "desk_run": ["check my plot for holes", "run the continuity check", "what if Elias survives"],
+      "desk_status": ["how far has my editor got", "is the check done yet"],
+      "desk_findings": ["what plot holes did you find", "show me the open findings"],
+      "desk_mark": ["mark the first one fixed", "that one is not a problem", "come back to that one later"],
+      "desk_letter": ["read me the editor's letter", "what should I fix first"],
+      "desk_ask": ["what would that change do to the ending", "if Elias lives, who else is affected"],
+      "desk_documents": ["show me the style sheet", "where is my synopsis"],
+      "desk_stop": ["stop the check"]
+    }
+  },
+
+  "ui": {
+    "pages": [ { "id": "main", "title": "Editor's Desk", "path": "/", "show": "in_desktop" } ],
+    "tray": [ { "label": "Editor's Desk", "icon": "icons/editors-desk.svg", "opens": "main" } ]
+  },
+
+  "needs": {
+    "packages": [],
+    "hosts": [],
+    "install_hosts": [],
+    "keys": [],
+    "hardware": { "ram_gb": 0.1, "disk_gb": 0.05 },
+    "owner_files": "write",
+    "brain": { "text": true, "images": false, "as_written": true }
+  },
+
+  "setup_steps": [],
+  "data": { "keep_on_remove": "keep" },
+  "consent": "Editor's Desk reads your manuscripts and their story bibles in the Manuscripts folder in My files, and asks the model on this computer about them when you press a check or say yes to one. It keeps its findings and earlier versions of your text in its own data folder, and puts what you ask it to make (a style sheet, a synopsis, a Word copy) in an Editor's Desk folder in My files. Your section text changes only when you save it yourself on this page or press Use this; your bot has no tool that writes it, and your original upload is never touched. It doesn't use the internet."
+}

@@ -41,13 +41,22 @@ about what has run for real and what has not.
      add while the Bridge is closed says so and names the command; a broken app is removed with its data kept and added
      again; once setup is complete, `setup --from` leaves the name, the look and the rest alone and only repairs apps;
      Ctrl+C before setup finished says how to go on. `PUFFPAI_SETUP_AGAIN` names that command for an installer around setup.
+  11. `bot_move.py`, `api/groups/knowledge.py`, `packages/desktop/web/pages/knowledge.js`: BuildBot main's D148, Recommended for
+     this bot, ported, plus `knowledge.topics` in the bundle and `GET /v1/knowledge/find` and
+     `POST /v1/knowledge/recommended/reading`. `POST /v1/knowledge/find` answers at once and the page follows the build.
+  12. `zone3/toolsmith_host/knowledge.py`, `service.py`, `store.py`, `zone3/toolsmith/agent.py`: `plan_books` takes a list of topics
+     and a list of sources; a plan of books asks no model; a newer search takes the place of an older card still waiting; each
+     catalog says what it found (`looked`, and `now` while it looks); `find_words` makes a title fit for a topic.
+  13. `packages/desktop/web`: `logic.js`, `building.js`, `window.js`, `desktop.js`: a plan of books never reads as an app build, and
+     its Yes stays on Knowledge. `apps.js`: a line to Find books, and words plainly about books go there.
 - **The bot's own apps** are in `packages/` and in `bot/apps/` (the same code, carried by the bundle):
   - **Manuscript** (`app`): upload a Word, text or Markdown file; split into sections (headings, scene breaks, parts of
     at most 2,200 words, short stories into parts of about 1,000); one brain call per section with a JSON-only ask,
     cached by the section's sha; deterministic merge; synthesis calls per character, threads, themes, structure,
-    voice, the editor's desk, and a brief per tab. Nine tabs. Tools: list, read, status (with real counts), analyze
-    (needs `confirm: true`, so the bot never starts a reading on its own), ask, show (returns at once, fills in later),
-    point, notes read and append, correct, desk, remove. The manuscript text is never written by any code path.
+    voice, and a brief per tab. Eight tabs. Tools: list, read, status (with real counts), analyze (needs
+    `confirm: true`, so the bot never starts a reading on its own), ask, show (returns at once, fills in later), point,
+    notes read and append, correct, remove. Manuscript writes no section text; a re-read with nothing changed asks
+    nothing. Its page links to Editor's Desk and says when a section changed there since the last reading.
     One brain queue per server: the owner's asks go ahead of the reading's next call. Settings: "Keep manuscripts out
     of the vault" (on by default) sets `as_written` on every brain call.
   - **Maps** (`app`): picture-first atlas from the story bible: cast portraits, a painted world map with pins and
@@ -58,10 +67,15 @@ about what has run for real and what has not.
     `bible.json`, `views.json`, `boards.json`, `corrections.json`, `pointer.json`; it writes `boards.json`,
     `pointer.json`, `pictures.json`, `pictures/`. No brain calls. Pictures go through ComfyUI at one address the
     owner types once and allows with a Yes on the Bridge page (`needs.addresses: lan`).
+  - **Editor's Desk** (`app`): all the editing, in a publishing house's five stages, big to small; each check one file in
+    `checks/`, run only on the writer's press or yes; findings with section and exact quote, marked Open, Fixed, Not a
+    problem or Later; the editor's letter. The writer edits a section on its page, every earlier version kept; no tool
+    writes text. Design and save contract: `EDITORS_DESK.md` in the WritersBot tree and `packages/manuscript/CONTRACT.md`
+    (0.5.0). It carries the old desk's marks over once.
   - **Novel mode** (`skill`): `SKILL.md`, the playbook the brain follows: ask for the book, read only on the writer's
-    yes, say what was found from the status tool's counts, walk the tabs, take corrections and notes, the editor's
-    desk last, show and draw on request, never write the book.
-- **The two apps share one folder per manuscript**: `My files/Manuscripts/<title>/` in the bot's data folder. That
+    yes, say what was found from the status tool's counts, walk the tabs, take corrections and notes, go through
+    Editor's Desk's findings one at a time, show and draw on request, never write the book.
+- **The three apps share one folder per manuscript**: `My files/Manuscripts/<title>/` in the bot's data folder. That
   folder is the whole contract between them. See `packages/manuscript/CONTRACT.md`.
 
 ## The installer, for when the first run fails
@@ -85,7 +99,24 @@ installs again. `start`, `pair` and the full install compare the current address
 `BUILDBOT_NETWORK_ADDRESSES`: they remake a container with no files inside, and only warn about one that has them
 (`docs/FOR_THE_ORIN.md` section 9).
 
-`./install-writersbot.sh update` is how a bot already set up takes new apps (`docs/FOR_THE_ORIN.md` section 4). It compares
+`./install-writersbot.sh update` is how a bot already set up takes a new Core, window and apps (`docs/FOR_THE_ORIN.md` section 4).
+
+The Core comes first (`update_core`). It compares `sha256sum` of `core`, `contracts`, `templates` and each `packages/<id>` in
+this clone's `BuildBotv2` with `/data/bot/code` in the container, leaving out caches, `.venv` and `*.egg-info`. If any differ, it
+waits for a reading to end, stops the Core with `puffpai shutdown`, writes `<DATA>/before-update.tar`, copies just those through
+the container with tar, and starts `puffpai serve` detached, in the same container. The install is editable (`pip install
+-e`), so new Python is live at that start, and `pyproject.toml` has not changed since the first public version, so there is no
+pip step. If it changes, this needs one. New page files reach her two ways. The window (`/window/`) and a browser on the home
+network read `/data/bot/code/packages/desktop/web` itself (`api/groups/ui.py`). A dashboard on the bot's own computer reads the
+bot's installed copy, and at each start `PackageManager.check_builtins` compares that copy of a system part (`desktop`, `wizard`,
+`cloud-avatar`) with `/data/bot/code/packages`, and swaps it in with no card when its `puffpai.json` differs only in name, words
+or version. The script checks that copy afterward; a bigger change raises a Yes card, and the script says where. Another
+built-in that is installed as an app raises its own Yes card at that start. If the Core does not answer in two minutes, it kills
+the process it started, by the number in `/data/bot/tmp/core-update.pid`, restores the tar, starts it again and says so. A
+restart locks the vault, and the window needs F5 once. It never reads or writes the vault, the settings or the chats. The one file
+it writes outside the code is `settings/moved_list.json`, only its `topics` key.
+
+The apps come next. It compares
 the Registry's versions with `bot/puffpai-bot.json`. An app added from `/data/bot/from/writersbot/apps/<id>` goes through
 `puffpai update <id>`; one from anywhere else, such as `store:document-convert`, goes through `puffpai remove <id> --keep-data`
 and `puffpai add` from that folder, since an update re-reads only where an app came from. It needs a running Core and a
@@ -143,8 +174,8 @@ container, and `update` does not move the files out; it says so and points to th
 ## What has run for real, and what has not
 
 Run on a real Orin, in the container, with the real model: setup, the window from a Windows PC, every app's Yes card,
-readings of a short story and a 15,000-word novel under Manuscript 0.3.x, the nine tabs with briefs, corrections,
-the editor's desk, Show, the pointer, See in Maps, Maps' painted atlas and Illustrate with the picture program on a
+readings of a short story and a 15,000-word novel under Manuscript 0.3.x, the nine tabs it had then with briefs, corrections,
+its editor's desk, Show, the pointer, See in Maps, Maps' painted atlas and Illustrate with the picture program on a
 Windows PC on the home network, Paint again, the proof lines (with a 0.3.2 bible, so the fallback wording), Remove.
 
 Run on clean Linux in a container, not on an Orin: the bundle import (`puffpai setup --from`, D141 in BuildBot's
@@ -155,7 +186,19 @@ image and the model files by hand, so it is unproven on real Jetson hardware), C
 distances and the richer desk items were tested with a stand-in brain). The first fresh install is the test of all
 four. Keep the exact words of anything that fails. The first real try on a fresh Orin found the installer's data folder,
 Ollama check and exec bits wrong; those are fixed, and the fixed installer has not yet finished on a real Orin.
-`./install-writersbot.sh update` has not run on a real Orin either.
+`./install-writersbot.sh update` has not run on a real Orin either; its Core step ran with a stand-in for docker on a Windows
+PC, from the first public version's real Core to this one. Editor's Desk 0.1.0 and Manuscript 0.5.0 (the desk taken out) have run
+only against a stand-in brain, never on an Orin.
+
+**Books and articles.** A bot that moves carries what its builds read by topic (`knowledge.topics` in
+`bot/puffpai-bot.json`), not the files. Knowledge shows them under Recommended for this bot, with what they would fetch and one
+button: one plan card and one Yes naming `en.wikipedia.org` and `www.gutenberg.org`, with a plan's own limits, no catalog
+and no model asked, and nothing downloaded before her Yes. Find books asks Kiwix, Data.gov and Hugging Face while it makes the
+plan, only under Toolsmith's search Yes, and Wikipedia, Project Gutenberg, Appropedia and iFixit only after her Yes
+(`zone3/toolsmith/data/sources.json`). The page says so, what each found, and why it can't look. A title works: marks and numbers
+go first (`knowledge.find_words`), so "1984" has no plain word left and it says so. It does not show whether a book is
+there before her Yes: Gutenberg is searched after it. Rerunning `bundle_pdf`-style bundling keeps the topics, since it loads
+the record and writes it back.
 
 ## How to build on it
 
@@ -186,7 +229,7 @@ Ollama check and exec bits wrong; those are fixed, and the fixed installer has n
   twelve scenes; cut that in `atlas.py` if time matters more than pictures.
 - **The chat**: the skill text costs about 1,800 tokens of the 8,192; it is capped in `zone2/skills.py`
   (`MAX_CHARS`). Shorter skills, or a bigger context, give the model more room for history and tools.
-- **Quality**: briefs and desk items are the local model's prose. A better local model is the biggest lever. A cloud
+- **Quality**: briefs and Editor's Desk's findings are the local model's prose. A better local model is the biggest lever. A cloud
   model for the writing step only is possible in BuildBot's design (Toolsmith's provider) but is not wired for
   Manuscript, and it would send the writer's words off the computer; it needs the writer's informed yes.
 

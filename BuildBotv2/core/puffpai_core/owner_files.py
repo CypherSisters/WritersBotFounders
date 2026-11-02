@@ -14,7 +14,8 @@ needs her Yes to :data:`LINKED_LINE`, and the package keeps the original beside 
 - :func:`where`: the one reading of a path, for the review below and for the package (``GET /v1/owner-files``).
 - :func:`question`: what ``wiring.tool_review`` asks for one tool call: a tool the package lists under
   ``abilities.changes`` with a ``path`` argument changes that file. It only ever adds a Yes or a refusal.
-- :func:`recent`, :func:`open_file`: the Knowledge page's list of the newest files in My files, and Open.
+- :func:`recent`, :func:`open_file`: the Knowledge page's list of the newest files in My files, and Open. A folder holding
+  ``.app-files`` (``folders.APP_FILES``, WB2) is an app's own bookkeeping, and the list leaves it out.
 """
 
 from __future__ import annotations
@@ -209,11 +210,15 @@ def question(state: Path | str, manifest: dict | None, tool: str, args: dict) ->
 
 def recent(state: Path | str, limit: int = RECENT_MAX) -> list[dict]:
     """The newest files in My files: ``[{name, folder, path, modified}]``. Hidden files and Office's own lock files
-    (``~$``) are left out, and at most 5,000 files are looked at."""
+    (``~$``) are left out, and so is a folder an app marked as its own (WB2). At most 5,000 files are looked at."""
+    from .zone1.folders import APP_FILES
     root = my_files(state)
     found: list[tuple[float, str, str]] = []
     seen = 0
     for here, dirs, names in os.walk(root):
+        if APP_FILES in names:
+            dirs[:] = []
+            continue
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for n in names:
             seen += 1

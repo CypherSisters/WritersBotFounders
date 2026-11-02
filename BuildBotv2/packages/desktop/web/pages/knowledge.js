@@ -118,7 +118,8 @@
     return t.node;
   }
 
-  /* The newest files in My files (D136), each with Open: what Office files made, and anything she keeps there. */
+  /* The newest files in My files (D136), each with Open: what Office files made, and anything she keeps there.
+   * A folder an app marked as its own (.app-files, WB2) never shows here. */
   async function filesTile() {
     const t = P.tile({ icon: "description", title: "Your files", wide: true, id: "my-files" });
     const r = await P.api("GET", "/v1/knowledge/files");
@@ -193,22 +194,162 @@
     page(0);
   }
 
-  /* Find more books (v1's Find more knowledge): Toolsmith's plan card, books only, nothing until her Yes. */
-  function findBooks(box) {
-    const q = el("input", { class: "grow", placeholder: "What should it know about?", "aria-label": "What to find books about", autocomplete: "off" });
+  /* The whole page again when a reading ends: its list and its count. A plain redraw leaves this page as it is. */
+  let wholeAgain = false;
+  function drawAgain() { wholeAgain = true; P.redraw("knowledge"); }
+
+  /* Why nothing can be looked up, with what opens it: the Bridge's own button, Toolsmith's search with its own Yes card, or
+   * the way to the vault. *again* looks once more. */
+  async function cantLook(box, c, again) {
+    box.appendChild(el("p", { class: c.can === "no_search" ? "muted" : "fail", "data-find-cant": c.can, text: c.line }));
+    const row = el("div", { class: "row" });
+    const said = el("p", { class: "small" });
+    const cardBox = el("div");
+    if (c.can === "bridge_closed") {
+      const b = await P.api("GET", "/v1/bridge");
+      const btn = b.status === 200 ? await P.bridgeButton(b.data, () => { P.drawChips(); P.drawPrivate(); again(); }) : null;
+      if (btn) row.appendChild(btn); else said.textContent = "To open it, use the Bridge on Settings.";
+    }
+    if (c.can === "no_search") row.appendChild(el("button", { type: "button", "data-find-allow": "", on: { click: async () => {
+      const x = await P.api("POST", "/v1/bridge/search", { on: true });
+      if (x.status !== 202 || !x.data || !x.data.consent_id) { said.textContent = P.said(x); return; }
+      said.textContent = "Its Yes card names every place it may search.";
+      P.consentInline(cardBox, x.data.consent_id, (answer) => { if (answer === "yes") { P.drawChips(); again(); } else said.textContent = "Toolsmith's search stays off."; });
+    } } }, [P.icon("travel_explore"), "Let Toolsmith search these"]));
+    if (c.can === "locked") row.appendChild(el("button", { type: "button", on: { click: () => P.go("vault") } }, [P.icon("lock_open"), "Open the Vault page"]));
+    box.append(row, said, cardBox);
+  }
+
+  /* After her Yes: what is being read now, from the build's own fetch, until it ends. *done*: the page is drawn again. */
+  async function watchRun(box, id, done) {
+    const head = el("p", { "data-library": id }, [el("b", { text: "Starting. Nothing has been read yet." })]);
+    const now = el("p", { class: "now", "data-library-now": id });
+    clear(box).append(head, now);
+    const ends = Date.now() + 8 * 3600 * 1000, starts = Date.now() + 3 * 60 * 1000;
+    while (box.isConnected && Date.now() < ends) {
+      const r = await P.api("GET", "/v1/toolsmith", undefined, L.POLL_WAIT_MS);
+      if (r.status === 200) {
+        const b = (r.data.builds || []).find((x) => x.id === id);
+        const k = b ? L.libraryLine(b.library, b.goal, b.id) : null;
+        if (k && k.state === "done") { done(); return; }
+        if (k && k.fetching) { head.firstChild.textContent = k.line + "."; now.textContent = k.now; }
+        else if (Date.now() > starts) { head.firstChild.textContent = "It did not start. Building says why."; return; }
+      } else if (L.pollCanRetry(r.status)) now.textContent = L.POLL_RETRY;
+      else { now.textContent = P.said(r); return; }
+      await P.sleep(2500);
+    }
+  }
+
+  /* Ask for a plan of books, follow it to its card, and say what happened. Nothing downloads before her Yes on it. */
+  async function plan(box, path, body, words, onYes) {
+    clear(box);
+    const look = await P.api("GET", "/v1/knowledge/find");
+    const c = look.status === 200 ? look.data : null;
+    const again = () => plan(box, path, body, words, onYes);
+    if (c && ["bridge_closed", "paused", "locked"].includes(c.can)) { await cantLook(box, c, again); return; }
+    const places = c && !body ? [] : (c ? c.ask : []);
+    const live = el("p", { class: "now", "data-find-now": "", text: places.length ? "Looking in " + L.andList(places) + " for \"" + words + "\"." : "Getting your plan ready." });
+    box.appendChild(live);
+    const started = Date.now();
+    const r = await P.api("POST", path, body || {});
+    if (r.status !== 201) {
+      clear(box);
+      if (r.data && ["bridge_closed", "paused", "locked"].includes(r.data.code)) await cantLook(box, { can: r.data.code, line: r.data.error }, again);
+      else box.appendChild(el("p", { class: "fail", text: P.said(r) }));
+      return;
+    }
+    let v = L.buildView(r.data);
+    const ends = started + 11 * 60 * 1000;             // the Core gives a plan ten minutes (timing.plan_wait_s), then says so
+    while (v.planning) {
+      if (!box.isConnected) return;
+      live.textContent = L.findLive(v.now || live.dataset.first || live.textContent, v.nowAt, started, Date.now());
+      live.dataset.first = live.dataset.first || live.textContent.replace(/, \d+ seconds? so far\.$/, "");
+      await P.sleep(1000);
+      if (Date.now() > ends) { clear(box).appendChild(el("p", { class: "fail", "data-find-late": "", text: "Toolsmith did not finish looking in time. Nothing was downloaded. Try again." })); return; }
+      const x = await P.api("GET", "/v1/toolsmith/builds/" + encodeURIComponent(v.id), undefined, L.POLL_WAIT_MS);
+      if (x.status === 200) v = L.buildView(x.data);
+      else if (!L.pollCanRetry(x.status)) { clear(box).appendChild(el("p", { class: "fail", text: P.said(x) })); return; }
+      else { live.textContent = L.POLL_RETRY; await P.sleep(1500); }
+    }
+    if (!box.isConnected) return;
+    clear(box);
+    if (v.yes) { onYes(v.id); return; }
+    if (!v.consentId) { box.appendChild(el("p", { class: "fail", "data-find-nothing": "", text: v.said || "Nothing was looked up. Try other words." })); return; }
+    if (c && body && c.can === "no_search") await cantLook(box, c, again);
+    if (v.looked && v.looked.line) box.appendChild(el("p", { "data-find-found": "", text: v.looked.line }));
+    P.planCard(box, v, (answer) => {
+      if (answer === "yes") onYes(v.id);
+      else box.appendChild(el("p", { class: "small muted", text: "Nothing was downloaded." }));
+    });
+  }
+
+  /* D148: what a moved bot came with, by topic: what it would fetch, and one button. One plan card, one Yes. */
+  function readingRow(d) {
+    const box = el("div", { "data-reading-box": "" });
+    const get = () => plan(box, "/v1/knowledge/recommended/reading", null, "", (id) => watchRun(box, id, drawAgain));
+    const what = d.sources.map((s) => s.name + ": up to " + s.up_to + " " + s.kind + ".").join(" ") + " About " + d.about_mb + " MB in all, kept on this computer.";
+    const parts = [el("b", { text: "Books and articles for this bot" }),
+      el("ul", { class: "small", "data-reading-topics": "" }, d.topics.map((x) => el("li", { text: x })))];
+    if (d.state === "done") parts.push(el("p", { class: "small", "data-reading-done": "", text: d.line + " They are in Your library, below." }));
+    else parts.push(el("p", { class: "small muted", "data-reading-what": "", text: what }));
+    if (d.state === "offer" && d.line) parts.push(el("p", { class: "small", text: "Last time: " + d.line }));
+    parts.push(box);
+    if (d.state === "offer") box.appendChild(el("button", { class: "primary", type: "button", "data-reading-get": "", on: { click: get } }, [P.icon("download"), "Get these"]));
+    if (d.state === "asking") get();
+    if (d.state === "fetching") watchRun(box, d.build, drawAgain);
+    return el("li", { "data-reading": d.state }, [el("div", { class: "grow" }, parts)]);
+  }
+
+  /* D148: what a moved bot came with. She picks: each goes by its normal path and its normal Yes, and nothing comes by itself. */
+  async function recommendedTile() {
+    const r = await P.api("GET", "/v1/knowledge/recommended");
+    const rows = r.status === 200 && Array.isArray(r.data.rows) ? r.data.rows : [];
+    const reading = r.status === 200 ? r.data.reading : null;
+    if (!rows.length && !reading) return null;
+    const t = P.tile({ icon: "menu_book", title: "Recommended for this bot", wide: true, id: "recommended" });
+    const redraw = async () => { const next = await recommendedTile(); if (next) t.node.replaceWith(next); else t.node.remove(); };
+    function row(d) {
+      const box = el("div", { "data-recommended-box": d.id });
+      async function get() {
+        if (d.get === "find") { await plan(box, "/v1/knowledge/find", { words: d.name }, d.name, (id) => watchRun(box, id, drawAgain)); return; }
+        clear(box).appendChild(el("p", { class: "now", text: "Getting it ready to ask you..." }));
+        const x = await P.api("POST", "/v1/packages", { source: d.source });
+        clear(box);
+        if (x.status !== 202 || !x.data.consent_id) box.appendChild(el("p", { class: "fail", text: P.said(x) }));
+        else P.consentInline(box, x.data.consent_id, redraw);
+      }
+      return el("li", { "data-recommended": d.id }, [
+        el("div", { class: "grow" }, [el("b", { text: d.name }), el("div", { class: "faint small", text: d.line || (d.kind === "book" ? "A book" : "An app") }), box]),
+        d.get === "ask" ? null : el("button", { class: "link", "data-recommended-get": d.id, text: d.get === "find" ? "Find it" : "Add", on: { click: get } })]);
+    }
+    t.body.append(el("p", { class: "small muted", text: "What this bot had on its last computer. Pick what you want back. Nothing downloads until you say Yes." }),
+      el("ul", { class: "lines", "data-recommended-list": "" }, (reading ? [readingRow(reading)] : []).concat(rows.map(row))));
+    return t.node;
+  }
+
+  /* Words from Apps, Add something new: what she typed there was about books, so it is looked up here (see apps.js). */
+  let asked = "", askedTimes = 0;
+  P.askBooks = (words) => { asked = String(words || ""); askedTimes += 1; P.go("knowledge", String(askedTimes)); };
+
+  /* Find more books (v1's Find more knowledge): Toolsmith's plan card, books only, nothing until her Yes. It says where it
+   * looks and what it found (sources.json): the catalogs while the plan is made, and the rest only after her Yes. */
+  function findBooks(box, onYes) {
+    const q = el("input", { class: "grow", placeholder: "A subject, or a book's title", "aria-label": "What to find books about", autocomplete: "off" });
     const out = el("div", { "data-find-books": "" });
     const go = el("button", { class: "primary", type: "submit" }, [P.icon("search"), "Find books"]);
-    box.append(el("form", { class: "row", autocomplete: "off", on: { submit: async (ev) => {
-      ev.preventDefault();
-      if (!q.value.trim()) return;
+    async function look() {
+      const words = q.value.trim();
+      if (!words) return;
       go.disabled = true;
-      clear(out).appendChild(el("p", { class: "now", text: "Looking through the libraries. This can take a minute." }));
-      const r = await P.api("POST", "/v1/knowledge/find", { words: q.value.trim() });
+      await plan(out, "/v1/knowledge/find", { words }, words, onYes);
       go.disabled = false;
-      clear(out);
-      if (r.status !== 201) { out.appendChild(el("p", { class: "fail", text: P.said(r) })); return; }
-      P.planCard(out, L.buildView(r.data));
-    } } }, [q, go]), out);
+    }
+    box.append(el("form", { class: "row", autocomplete: "off", on: { submit: (ev) => { ev.preventDefault(); look(); } } }, [q, go]),
+      el("p", { class: "small muted", "data-find-what": "", text: "These libraries hold free books in the public domain and reference articles, not new novels. Nothing downloads before your Yes." }), out);
+    if (asked) { q.value = asked; asked = ""; look(); return; }
+    P.api("GET", "/v1/knowledge/find").then((r) => {
+      if (r.status === 200 && r.data.can !== "ok" && !out.childElementCount) cantLook(out, r.data, drawAgain);
+    });
   }
 
   async function sourcesTile() {
@@ -216,11 +357,13 @@
     const redraw = async () => t.node.replaceWith(await sourcesTile());
     const said = el("p", { class: "small", "data-said": "books" });
     const reader = el("div", { "data-reader": "" });
-    findBooks(t.body);
+    const nowBox = el("div", { "data-library-box": "" });
+    findBooks(t.body, (id) => watchRun(nowBox, id, drawAgain));
+    t.body.appendChild(nowBox);
     const [r, tool] = await Promise.all([P.api("GET", "/v1/knowledge/sources"), P.api("GET", "/v1/toolsmith")]);
     const lib = tool.status === 200 ? L.libraryNow(tool.data) : null;     // lane I19b: fetching now, said plainly
-    if (lib) [el("p", { "data-library": lib.id }, [el("b", { text: lib.line + "." })]), lib.now ? el("p", { class: "now", text: lib.now }) : null]
-      .forEach((n) => n && t.body.appendChild(n));
+    if (lib && lib.fetching) watchRun(nowBox, lib.id, drawAgain);
+    else if (lib) nowBox.append(el("p", { "data-library": lib.id }, [el("b", { text: lib.line + "." })]), el("p", { class: "small", "data-library-end": lib.id, text: lib.end }));
     if (P.missing(r)) { t.body.appendChild(P.later("the list of what your builds read (GET /v1/knowledge/sources)")); return t.node; }
     if (r.status !== 200) { t.body.appendChild(el("p", { class: "fail", text: P.said(r) })); return t.node; }
     const k = L.knowledgeGroups(r.data);
@@ -258,10 +401,12 @@
   P.page("knowledge", {
     title: "Knowledge",
     async draw(sec, arg, live) {
-      if (live) return;
+      if (live && !wholeAgain) return;
+      wholeAgain = false;
       const box = el("div", { class: "tiles" }, [searchTile()]);
       clear(sec).appendChild(box);
-      const [docs, files, lib] = await Promise.all([documentsTile(), filesTile(), sourcesTile()]);
+      const [moved, docs, files, lib] = await Promise.all([recommendedTile(), documentsTile(), filesTile(), sourcesTile()]);
+      if (moved) box.appendChild(moved);
       box.append(docs, files, P.knowledgePlaceTile(), lib);
     },
   });

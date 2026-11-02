@@ -813,7 +813,8 @@
     // Lane I18e: "Check again" on a started build that stopped with jobs held, not working yet or nothing found.
     const unfinished = jobs.filter(function (j) { return AGAIN_STATES.indexOf(j.status) >= 0; }).length;
     return {
-      id: b.id, goal: String(b.goal || ""), created: String(b.created_at || ""), planning: !!b.planning,
+      id: b.id, goal: String(b.goal || ""), created: String(b.created_at || ""), planning: !!b.planning, booksOnly: !!b.books_only,
+      looked: b.looked && typeof b.looked === "object" ? { line: String(b.looked.line || ""), found: Number(b.looked.found) || 0 } : null,
       now: String(b.now || ""), nowAt: String(b.now_at || ""), said: String(b.said || (b.consent && b.consent.said) || ""),
       planLines: Array.isArray(card.lines) ? card.lines.map(String) : [],
       consentId: (b.consent && b.consent.id) || null, yes: !!b.yes,
@@ -829,6 +830,24 @@
       againAsking: again.state === "asking" && unfinished > 0 ? String(again.consent_id || "") : "",
       unlock: buildKeys(b).unlock,        // D68: a PIN here lets it go on (lane I19a)
     };
+  }
+
+  /* What a plan is doing, in the words it deserves: a books-only plan looks for no app. */
+  const BOOKS_CARD = "Get these for your library?";     // store.card's title for a plan of books only
+  function planningWords(v) {
+    return v && v.booksOnly ? "Toolsmith is looking through the libraries for books." : "Toolsmith is planning: finding apps for each job.";
+  }
+  function buildTitle(goal, booksOnly) {
+    const g = String(goal || "");
+    if (!booksOnly) return g || "A build";
+    return /^books\b/i.test(g) ? g : "Books: " + g;
+  }
+  /* Find books while it looks: what the build says now, with how long it has been. Under a minute D113's line says
+   * nothing, so the seconds are said here. */
+  function findLive(what, since, startedMs, nowMs) {
+    const line = String(what || "").trim().replace(/[. ]+$/, "");
+    const s = Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+    return stillWords(line, since || new Date(startedMs).toISOString(), nowMs) || line + ", " + s + (s === 1 ? " second" : " seconds") + " so far.";
   }
 
   /* D68 (lane I19a): a build's keys, from the Core's build view (GET /v1/toolsmith/builds/<id>, "keys").
@@ -1130,6 +1149,20 @@
     return out.join(" ");
   }
 
+  /* Words that plainly ask for books or reading, not an app: what they are about, or "". "books about lighthouses",
+   * "a book on tides", "find me novels by Jane Austen", "the book Moby Dick", "something to read about whales". A book
+   * tracker, a recipe book for my family, or an app for my books is an app. */
+  const BOOKS_ASK = new RegExp("^(?:please\\s+)?(?:(?:find|get|add|show|download|fetch)(?:\\s+me)?\\s+|i\\s+(?:want|need|would\\s+like)\\s+|look(?:ing)?\\s+for\\s+)?"
+    + "(?:(?:a|an|some|the|any|more|free|old|public\\s+domain)\\s+)*"
+    + "(?:(?:e-?)?books?|novels?|something\\s+to\\s+read|reading|reference\\s+(?:books?|articles?)|articles?)\\s+(?:about|on|by|called|titled|named)\\s+(.+)$", "i");
+  const BOOK_TITLED = /^the\s+book\s+(.+)$/i;
+  const AN_APP_WORD = /\b(apps?|programs?|software|tools?|trackers?|managers?|organi[sz]ers?|clubs?)\b/i;
+  function booksWords(text) {
+    const t = String(text || "").trim().replace(/[.?!]+$/, "");
+    const m = BOOKS_ASK.exec(t) || BOOK_TITLED.exec(t);
+    return m && !AN_APP_WORD.test(t) ? m[1].trim() : "";
+  }
+
   /* What she typed in Apps > Add: a GitHub project (Toolsmith tries only that one), a folder on this
    * computer (the Package Manager adds it), or words (Toolsmith plans from them). */
   const GITHUB = /^https?:\/\/(www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(\.git)?\/?(#.*)?$/;
@@ -1145,6 +1178,8 @@
                                 pasted: ["https://github.com/" + g[2] + "/" + repo] }] } };
     }
     if (/^([A-Za-z]:[\\/]|\\\\|\/|~[\\/])/.test(t)) return { kind: "folder", source: t };
+    const words = booksWords(t);
+    if (words) return { kind: "books", words: words };
     if (/^[a-z][a-z0-9-]{1,39}$/.test(t)) return { kind: "builtin", source: t };
     return { kind: "describe", plan: { goal: t.slice(0, 600) } };
   }
@@ -1477,7 +1512,7 @@
 
   /* Knowledge: what the builds read (GET /v1/knowledge/sources), grouped by source, with its credit. */
   const KNOWLEDGE_SOURCES = { wikipedia: "Wikipedia", gutenberg: "Project Gutenberg" };
-  const KNOWLEDGE_EMPTY = "Nothing has been read yet. The next build reads Wikipedia and Gutenberg about what you asked, " +
+  const KNOWLEDGE_EMPTY = "Nothing has been read yet. Find books above: Wikipedia and Gutenberg are read about what you ask, " +
                           "after your Yes on its plan.";
   function sizeWords(n) {
     n = Math.max(0, Number(n) || 0);
@@ -1819,6 +1854,14 @@
     const jobs = (b && b.jobs) || [];
     const has = function (s) { return jobs.some(function (j) { return String(j.status || "") === s; }); };
     if (waiting) return { words: "waiting on you", tone: "wait" };
+    if (b && b.books_only) {                     // no jobs: what it read says how it went
+      const k = b.library || {};
+      if (b.planning) return { words: "looking", tone: "live" };
+      if (k.state === "fetching") return { words: "reading", tone: "live" };
+      if (k.state === "done") return { words: "done", tone: "ok" };
+      if (b.yes) return { words: "starting", tone: "live" };
+      return { words: k.state ? "no Yes" : "nothing found", tone: "dim" };
+    }
     if (jobs.some(function (j) { return String(j.status || "").indexOf("building") === 0; })) return { words: "building", tone: "live" };
     if (has("waiting_yes") || has("waiting_you") || has("waiting_vault")) return { words: "waiting on you", tone: "wait" };
     if (has("planned") || !jobs.length && !(b && b.ended)) return { words: "starting", tone: "live" };
@@ -1902,7 +1945,7 @@
     buildStopped: buildStopped, buildReading: buildReading, againMore: againMore, DEV_EXAMPLES: DEV_EXAMPLES,
     runningSummary: runningSummary, brainView: brainView, whoOf: whoOf, ledgerLine: ledgerLine, auditLine: auditLine,
     drawbridgeChecks: drawbridgeChecks, arrangeTiles: arrangeTiles, movePosition: movePosition, seenTiles: seenTiles,
-    addSource: addSource, availableApps: availableApps, appActions: appActions, ndjson: ndjson, ChatTurn: ChatTurn,
+    addSource: addSource, booksWords: booksWords, planningWords: planningWords, BOOKS_CARD: BOOKS_CARD, buildTitle: buildTitle, findLive: findLive, availableApps: availableApps, appActions: appActions, ndjson: ndjson, ChatTurn: ChatTurn,
     stepWords: stepWords, ShellLog: ShellLog, SHELL_NOTE: SHELL_NOTE, AGENTS: AGENTS, agentRows: agentRows,
     vaultView: vaultView, personId: personId, slotRows: slotRows,
     faceFor: faceFor, FACE_SANDBOX: FACE_SANDBOX, OWN_FACE: OWN_FACE,

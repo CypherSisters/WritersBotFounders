@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:">
+<title>Editor's Desk</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <main class="desk">
+    <div class="picker">
+      <label class="sr" for="book">Your book</label>
+      <select id="book" disabled></select>
+      <span class="count" id="count"></span>
+    </div>
+    <p class="note" id="stale" hidden></p>
+    <p class="note" id="private" hidden>This book was read before your vault was set to keep manuscripts out, so some of what your bot noted is kept private and your editor leaves it out. Read the book again in Manuscript to fix it.</p>
+    <div class="work" id="work" aria-live="polite" hidden></div>
+
+    <section class="letter" id="letter" aria-label="Your editor's letter"></section>
+
+    <section class="next" id="next" aria-label="What to do next"></section>
+
+    <section aria-label="The stages of editing">
+      <h2>The stages</h2>
+      <div id="stages"></div>
+    </section>
+
+    <section id="anytime" aria-label="Any time"></section>
+
+    <section class="findings" aria-label="What your editor found">
+      <h2>What your editor found</h2>
+      <div class="filters" id="filters" role="tablist"></div>
+      <div id="list"></div>
+    </section>
+
+    <section id="docs" aria-label="Documents"></section>
+
+    <details class="settings">
+      <summary>Settings</summary>
+      <label class="switch"><input type="checkbox" id="vaultfree" checked> Keep manuscripts out of the vault</label>
+      <p class="fine">On: names, dates and places in your book count as the work, and go to your bot's brain as written. Off: they are filed in your vault like anything else you tell your bot.</p>
+    </details>
+  </main>
+
+  <aside class="pane" id="pane" aria-label="Your text" hidden>
+    <div class="pane-head">
+      <label class="sr" for="sec">Section</label>
+      <select id="sec"></select>
+      <button type="button" id="edit">Edit</button>
+      <button type="button" id="save" class="main" hidden>Save</button>
+      <button type="button" id="cancel" hidden>Cancel</button>
+      <button type="button" id="closepane" aria-label="Close the text">Close</button>
+    </div>
+    <p class="note" id="unread" hidden>This section changed since your editor last read it.</p>
+    <p class="saved" id="saved" aria-live="polite"></p>
+    <article class="reader" id="reader"></article>
+    <textarea class="editor" id="editor" hidden aria-label="The text of this section"></textarea>
+    <details class="versions" id="versions" hidden>
+      <summary id="vcount">Earlier versions</summary>
+      <ul id="vlist"></ul>
+    </details>
+    <div class="older" id="older" hidden>
+      <p class="fine" id="olderline"></p>
+      <div class="oldtext" id="oldtext"></div>
+      <div class="row"><button type="button" id="restore" class="main">Bring this version back</button><button type="button" id="closeold">Close</button></div>
+    </div>
+  </aside>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

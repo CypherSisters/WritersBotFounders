@@ -15,15 +15,20 @@ One small server, bound to 127.0.0.1 (CONTRACT.md is the agreement with the page
 - ``/api/views``              GET ``?title=&tab=``; DELETE ``?title=&id=``: saved views
 - ``/api/notes``              GET ``?title=&tab=``; POST ``{title, tab, text, stamp}``: as 0.1.0
 - ``/api/pointer``            GET and DELETE ``?title=``: where the bot is pointing
-- ``/api/correct``            POST ``{title, what, correction?}``: the writer's correction to a bible fact
-- ``/api/desk``               GET ``?title=``; POST ``{title, action, id?, note?}``: the editor's desk
+- ``/api/correct``            POST ``{title, what, correction?, tab?}``: the writer's correction to any bible fact
+- ``/api/correct/undo``       POST ``{title, id}``: takes one correction back; id may be "last"
+- ``/api/edit``               POST ``{title, ops}``: her own edits from the page, the same stored operations
+- ``/api/size``               GET ``?title=``: what the book's folder uses, in one line for the Settings fold
 - ``/mcp``                    the MCP server (JSON-RPC over HTTP)
 
 Every route refuses a request without this package's PUFFPAI_TOKEN. GET and DELETE never change manuscript text.
 
 Where the files go: ``<data folder>\\My files\\Manuscripts\\<title>\\``, found by asking the Core where My files is
-(``GET /v1/owner-files``, the same way packages/office does). The one rule: section text is never changed. The upload
-writes the sections once; after that only the app's own files change: notes, bible, views, pointer, status, cache.
+(``GET /v1/owner-files``, the same way packages/office does). The one rule: this app never changes section text. The
+upload writes the sections once; after that only the app's own files change: notes, bible, views, pointer, status, cache.
+The writer may change a section's text herself, through Editor's Desk, by the save contract in CONTRACT.md.
+``My files\\Manuscripts`` holds ``.app-files``, so the Core's lists and index leave the app's bookkeeping out, and tidy.py
+clears what no longer carries anything, by code, at most once a day per book.
 
 Every model call goes to the Core's ``POST /v1/brain/chat`` (analysis.py); nothing leaves the computer.
 
@@ -57,18 +62,21 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # its own modules, also when started with python -I
 import analysis  # noqa: E402
 import pdf_text  # noqa: E402
-from analysis import (BIBLE, BUDGET, STATUS, Brain, BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet, QueuedBrain,
-                      Reader, empty_bible, pick_facts, read_json, split_words, strip_think, tokens, words_of,
-                      write_json)  # noqa: E402
+import tidy  # noqa: E402
+from analysis import (BASE, BIBLE, BUDGET, CACHE, STATUS, Brain, BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet,
+                      QueuedBrain, Reader, Settled, empty_bible, pick_facts, read_json, split_words, strip_think, tokens,
+                      words_of, write_json)  # noqa: E402
 from analysis import write_atomic as _write  # noqa: E402
 from blocks import cards, clean_blocks, slug, tab_blocks  # noqa: E402
-from writer import apply_corrections, apply_desk  # noqa: E402
+from fixing import (Bad, apply_corrections, edit_view, find, hand_ops, line_of, plan_words, prose_steps,  # noqa: E402
+                    settled_lines, stale_words, target_of)  # noqa: E402
+from writer import guess_tab, rule_plan  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "manuscript"
-VERSION = "0.3.5"
+VERSION = "0.5.0"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 40 * 1024 * 1024                  # a long novel with pictures, as base64
@@ -81,15 +89,20 @@ CHAPTERS = "chapters"                          # 0.1.0's folder; its manuscripts
 VIEWS = "views.json"
 POINTER = "pointer.json"
 TABS = {"characters": "Characters", "plot": "Plot and subplots", "timeline": "Timeline", "structure": "Structure",
-        "world": "World", "science": "Science", "themes": "Themes", "voice": "Voice", "desk": "Editor's desk"}
-TAB_NAMES = {"editing": "desk", "editor's desk": "desk", "editors desk": "desk", "subplots": "plot",
-             "plot and subplots": "plot"}        # 0.2.1's Editing tab is the Editor's desk now
-NOTES_AT_UPLOAD = {"world": "World", "characters": "Characters", "plot": "Plot and subplots", "themes": "Themes",
-                   "science": "Science", "editing": "Editor's desk"}   # the rest are made on first use
+        "world": "World", "science": "Science", "themes": "Themes", "voice": "Voice"}
+TAB_NAMES = {"subplots": "plot", "plot and subplots": "plot"}
+# 0.4.1: a notes file is made on first write. What an older version put in one at upload, which is nothing of hers:
+# editing.md and desk.md stay as they are, shown read-only by Editor's Desk.
+NOTES_HEADINGS = {**{f"{k}.md": (v,) for k, v in TABS.items()}, "editing.md": ("Editor's desk", "Editing"),
+                  "desk.md": ("Editor's desk",)}
+APP_FILES = ".app-files"                       # the Core's lists and index leave this folder out (02_PACKAGE_CONTRACT)
+APP_FILES_SAYS = "Manuscript and Maps keep their working files here. The Your files list leaves this folder out.\n"
+TIDIED = "tidied.json"                         # when each book was last tidied, in the app's own data folder
+TIDY_EVERY = 24 * 3600
+START_TRIES = 40                               # at start the Core may not answer yet: 40 tries, 15 seconds apart
+START_WAIT = float(os.environ.get("MANUSCRIPT_START_WAIT_S") or 15)
 CORRECTIONS = "corrections.json"
-DESK = "desk.json"
 BOARDS = "boards.json"
-SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
 # an ask with a drawing twin in Maps, and which board it is (the order Maps tries them in, draw.py WORDS)
 TWINS = [(r"\btouch ?points?\b", "touchpoints"), (r"\btime ?lines?\b", "timeline"), (r"\bfamil(y|ies)\b", "family"),
          (r"\btrees?\b", "family"), (r"\brelationships?\b", "relationships"), (r"\binteract\w*", "relationships"),
@@ -106,6 +119,7 @@ WHOLE = "Whole manuscript"
 FRONT = "Before the first chapter"
 PART_WORDS = analysis.PART_WORDS
 ASK_WAIT = float(os.environ.get("MANUSCRIPT_ASK_WAIT_S") or 90)   # how long a chat question waits for the brain
+CORRECT_WAIT = float(os.environ.get("MANUSCRIPT_CORRECT_WAIT_S") or 40)  # the proxy and a tool call stop at 60 seconds
 SETTINGS = "settings.json"                     # 0.3.3: the app's own settings, in its own data folder
 DEFAULTS = {"vault_free": True}
 
@@ -362,8 +376,11 @@ class Manuscripts:
         self.data = Path(os.environ.get("PUFFPAI_DATA") or HERE / "data")
         self.brain.as_written = self.vault_free          # every brain call sends the setting as it is now
         self.queue = BrainQueue()                    # every brain call this process makes, one at a time
-        self.reader = Reader(QueuedBrain(self.brain, self.queue), self._load, self._overlay, self.vault_free)
+        self.reader = Reader(QueuedBrain(self.brain, self.queue), self._load, self._publish, self.vault_free,
+                             self._with_word, self._settled, self._read_starts, self._read_ended, self._tidy_quietly)
         self.making: set[str] = set()                # views whose job is in this process's queue
+        self.working: set[str] = set()               # corrections the brain has not answered yet
+        self.rewriting: dict[str, list[str]] = {}    # correction id -> what the brain is rewriting for it
 
     # settings (0.3.3)
 
@@ -400,24 +417,95 @@ class Manuscripts:
         if not isinstance(bible, dict):
             return None
         lst = lambda k: [x for x in bible.get(k) or [] if isinstance(x, dict)]   # noqa: E731
-        desk = lst("desk")
         return {"characters": len(lst("characters")),
                 "main": sum(1 for c in lst("characters") if c.get("importance") == "main"),
-                "threads": len(lst("threads")), "places": len(lst("places")), "events": len(lst("events")),
-                "desk": len(desk), "desk_high": sum(1 for d in desk if d.get("severity") == "high")}
+                "threads": len(lst("threads")), "places": len(lst("places")), "events": len(lst("events"))}
 
     @staticmethod
     def counts_line(c: dict | None) -> str:
         if not c:
             return ""
         return (f"Found: {c['characters']} characters ({c['main']} main), {c['threads']} plot threads, "
-                f"{c['places']} places, {c['events']} events, {c['desk']} items on the editor's desk "
-                f"({c['desk_high']} high).")
+                f"{c['places']} places, {c['events']} events.")
 
     # where things are
 
     def shelf(self) -> Path:
-        return self.files.shelf()
+        got = self.files.shelf()
+        self._mark(got)
+        return got
+
+    @staticmethod
+    def _mark(shelf: Path) -> None:
+        """The shelf belongs to the app, for a bot from before 0.4.1 too. It can't be written: the lists just stay longer."""
+        try:
+            if shelf.is_dir() and not (shelf / APP_FILES).exists():
+                (shelf / APP_FILES).write_text(APP_FILES_SAYS, encoding="utf-8")
+        except OSError:
+            pass
+
+    # tidying (0.4.1): by code, at most once a day per book, never during a reading
+
+    def _reading_now(self, folder: Path) -> bool:
+        """A reading tells us when it is over from its own thread, which is still alive then."""
+        t = self.reader.running.get(str(folder))
+        return t is not None and t.is_alive() and t is not threading.current_thread()
+
+    def tidy_book(self, folder: Path) -> dict | None:
+        """One book, when it is due and no reading is running on it. What it removed, or None when it did nothing."""
+        if self._reading_now(folder):
+            return None
+        with self.lock:
+            stamps = read_json(self.data / TIDIED, {})
+            stamps = stamps if isinstance(stamps, dict) else {}
+            last = stamps.get(folder.name)
+            if isinstance(last, (int, float)) and 0 <= time.time() - last < TIDY_EVERY:
+                return None
+            idx = self._index(folder)
+            if not idx or self._reading_now(folder):
+                return None
+            paths = []
+            for c in idx["sections"]:
+                try:
+                    paths.append(self._section_path(folder, idx, c))
+                except Refused:
+                    return None
+            gone = tidy.tidy(folder, idx["_dir"], paths, [c.get("sha") for c in idx["sections"]], NOTES_HEADINGS)
+            there = {p.name for p in folder.parent.iterdir()}
+            write_json(self.data / TIDIED, {**{k: v for k, v in stamps.items() if k in there}, folder.name: time.time()})
+        return gone
+
+    def _tidy_quietly(self, folder: Path) -> None:
+        try:
+            self.tidy_book(folder)
+        except (OSError, ValueError, Refused):
+            pass                                     # nothing was half-done: the next one goes on
+
+    def tidy_due(self) -> None:
+        """Every book that is due. After an upload and at start. It never stops what asked for it."""
+        try:
+            books = self._all()
+        except (OSError, Refused):
+            return
+        for folder, _idx in books:
+            self._tidy_quietly(folder)
+
+    def at_start(self) -> None:
+        """The shelf's mark and the first tidy, as soon as the Core says where the shelf is."""
+        for _try in range(START_TRIES):
+            try:
+                self.shelf()
+                break
+            except (OSError, Refused):
+                time.sleep(START_WAIT)
+        else:
+            return
+        self.tidy_due()
+
+    def size_view(self, title: str) -> dict:
+        folder, idx = self._find(title)
+        used = tidy.usage(folder)
+        return {"title": idx.get("title"), **used, "line": tidy.usage_line(used)}
 
     def _index(self, folder: Path) -> dict:
         got = read_json(folder / INDEX, {})
@@ -500,8 +588,8 @@ class Manuscripts:
         for key, label in TABS.items():
             if t in (key, label.lower()):
                 return key
-        raise Refused("The tabs are characters, plot, timeline, structure, world, science, themes, voice or desk "
-                      "(the editor's desk).")
+        raise Refused("The tabs are characters, plot, timeline, structure, world, science, themes or voice. Editing is "
+                      "in the Editor's Desk app.")
 
     def _load(self, folder: Path) -> tuple[str, list[tuple[int, str, str, str]]]:
         """For the reading: (title, [(n, heading, text, sha)]). The sha is of the file as it is on disk."""
@@ -527,33 +615,66 @@ class Manuscripts:
         return got
 
     def _bible(self, folder: Path, idx: dict) -> dict:
+        return self._live(folder, idx)[0]            # the writer's own word is always on top
+
+    def _base(self, folder: Path, make: bool = False) -> dict | None:
+        """The bible as read, under her corrections. A book read before 0.4 has only bible.json: with ``make``, that
+        becomes the base, and "baked" names the older corrections already in it, which an undo can't take out."""
+        got = read_json(folder / BASE)
+        if isinstance(got, dict):
+            return got
         got = read_json(folder / BIBLE)
         if not isinstance(got, dict):
-            return empty_bible(str(idx.get("title")), len(idx["sections"]))
-        self._overlay(folder, got)                   # the writer's own word is always on top
+            return None
+        if make:
+            got["baked"] = [r.get("id") for r in self._corrections(folder) if "ops" not in r and "state" not in r]
+            write_json(folder / BASE, got)
         return got
+
+    def _live(self, folder: Path, idx: dict) -> tuple[dict, list[dict]]:
+        """(the bible with her word on top, what each of her records came to). bible.json is the same, once written."""
+        got = self._base(folder)
+        if not isinstance(got, dict):
+            got = empty_bible(str(idx.get("title")), len(idx["sections"]))
+        got.pop("baked", None)
+        return got, self._overlay(folder, got)
+
+    def _publish(self, folder: Path, bible: dict) -> None:
+        """The reading's every write: the bible as read, and that with her word on top."""
+        with self.lock:
+            write_json(folder / BASE, bible)
+            write_json(folder / BIBLE, self._with_word(folder, bible))
+
+    def _with_word(self, folder: Path, bible: dict) -> dict:
+        got = copy.deepcopy(bible)
+        got.pop("baked", None)
+        self._overlay(folder, got)
+        return got
+
+    def _settled(self, folder: Path) -> list[str]:
+        return settled_lines(self._corrections(folder))
+
+    def _rebuild(self, folder: Path) -> None:
+        """bible.json again, from the bible as read and her records as they are now. Hold the lock."""
+        base = self._base(folder, make=True)
+        if isinstance(base, dict):
+            write_json(folder / BIBLE, self._with_word(folder, base))
 
     def _corrections(self, folder: Path) -> list[dict]:
         got = read_json(folder / CORRECTIONS, {})
         got = got.get("corrections") if isinstance(got, dict) else got
         return [c for c in got if isinstance(c, dict)] if isinstance(got, list) else []
 
-    def _desk_states(self, folder: Path) -> list[dict]:
-        got = read_json(folder / DESK, {})
-        got = got.get("items") if isinstance(got, dict) else None
-        return [d for d in got if isinstance(d, dict)] if isinstance(got, list) else []
-
     def _overlay(self, folder: Path, bible: dict) -> list[dict]:
-        """Her corrections and her desk choices on top of a bible, in place. The reading calls this before every
+        """Her corrections on top of a bible, in place. The reading calls this before every
         write, so a re-read never undoes them."""
         done = apply_corrections(bible, self._corrections(folder))
-        apply_desk(bible, self._desk_states(folder))
+        for d in done:                               # asked of a brain that is gone: her words stay
+            if d.get("state") == "working" and d.get("id") not in self.working:
+                d.update(state="note", why="Manuscript stopped before your bot worked this out. Say it again.")
         return done
 
     def _notes_path(self, folder: Path, key: str) -> Path:
-        """The Editor's desk keeps 0.2.1's editing.md as the writer's notes; desk.md only when there is none."""
-        if key == "desk" and (folder / "editing.md").exists():
-            return folder / "editing.md"
         return folder / f"{key}.md"
 
     def _views(self, folder: Path) -> list[dict]:
@@ -654,7 +775,8 @@ class Manuscripts:
 
     ASK_SYSTEM = ("You help a writer think about her own manuscript. Answer her question from the story bible facts "
                   "and the sections given, in plain words. Name the sections you rely on, like (section 3). When the "
-                  "facts don't say, say so. Never rewrite her text.")
+                  "facts don't say, say so. Never rewrite her text. What she has corrected is settled: it goes above "
+                  "the facts and above the sections.")
 
     def manuscript_ask(self, title: str = "", question: str = "") -> str:
         q = " ".join(str(question or "").split())[:ASK_MAX]
@@ -665,6 +787,10 @@ class Manuscripts:
         room = BUDGET - tokens(self.ASK_SYSTEM) - tokens(q) - 100
         facts = pick_facts(bible, q, min(1800, room))
         room -= tokens(facts)
+        word = self._settled(folder)
+        said = "What the writer has said about the facts, settled:\n" + "\n".join(f"The writer said: {x}" for x in word) \
+            if word else ""
+        room -= tokens(said)
         qw = words_of(q)
         _t, secs = self._load(folder)
         ranked = sorted(((len(qw & words_of(text)), i) for i, (_n, _h, text, _s) in enumerate(secs)),
@@ -676,7 +802,8 @@ class Manuscripts:
             if score > 0 and tokens(block) <= room:
                 parts.append(block)
                 room -= tokens(block)
-        user = f"Question: {q}\n\nStory bible facts:\n{facts or '(the bible is empty so far)'}"
+        user = f"Question: {q}\n\n" + (said + "\n\n" if said else "") + \
+            f"Story bible facts:\n{facts or '(the bible is empty so far)'}"
         if parts:
             user += "\n\n" + "\n\n".join(parts)
         messages = [{"role": "system", "content": self.ASK_SYSTEM}, {"role": "user", "content": user}]
@@ -767,7 +894,7 @@ class Manuscripts:
             room = BUDGET - tokens(self.SHOW_SYSTEM) - tokens(what) - 100
             facts = pick_facts(self._bible(folder, idx), what, room)
             user = f"Tab: {TABS[key]}\nAsked: {what}\n\nFacts:\n{facts}"
-            got, _model = analysis.ask_json(self.brain, self.SHOW_SYSTEM, user,
+            got, _model = analysis.ask_json(Settled(self.brain, lambda: self._settled(folder)), self.SHOW_SYSTEM, user,
                                             lambda g: bool(clean_blocks(g)), patient=True)
             blocks = clean_blocks(got)
             if blocks:
@@ -857,102 +984,285 @@ class Manuscripts:
             _write(self._notes_path(folder, key), f"{old}\n\n## {when}\n\n{body}\n")
         return f"Added a note to {TABS[key]} for {idx.get('title')}. The manuscript text is unchanged."
 
-    # the writer's corrections and the editor's desk (the app's own files: corrections.json, desk.json, bible.json)
+    # the writer's corrections (the app's own files: corrections.json, bible.json)
 
-    def correct(self, title: Any, what: Any, correction: Any = "") -> tuple[str, dict]:
+    @staticmethod
+    def _new_id(records: list[dict]) -> str:
+        have = {r.get("id") for r in records}
+        stamp, k = datetime.now().strftime("%Y%m%d-%H%M%S"), len(records) + 1
+        while f"c-{stamp}-{k}" in have:
+            k += 1
+        return f"c-{stamp}-{k}"
+
+    def correct(self, title: Any, what: Any, correction: Any = "", tab: Any = "") -> tuple[str, dict]:
+        """A correction in her own words: the plain shapes at once, anything else through the brain's queue. It waits a
+        short time for the brain, then says it is working on it; the record turns done or note when the answer comes."""
         said = " ".join(str(what or "").split())[:ASK_MAX]
         fix = " ".join(str(correction or "").split())[:ASK_MAX]
         if not said:
             raise Refused("Say which fact is wrong and what it should be.")
         folder, idx = self._find(title)
+        on = self._tab(tab) if str(tab or "").strip() else ""
+        with self.lock:
+            bible, _done = self._live(folder, idx)
+            records = self._corrections(folder)
+            rid = self._new_id(records)
+            rec = {"id": rid, "what": said, "correction": fix, "made_at": _when(), "by": "words", "ops": [],
+                   **({"asked_on": on} if on else {})}
+            plan = rule_plan(bible, said, fix)
+            read = any(bible.get(k) for k in ("characters", "places", "events", "threads", "themes", "world_rules",
+                                              "science", "history"))
+            if plan:
+                rec.update(ops=plan["ops"], line=plan["line"], by="rules", state="done")
+            elif read:
+                rec.update(state="working", tab=on or guess_tab(bible, said))
+                self.working.add(rid)
+            else:
+                rec.update(state="note", tab=on or guess_tab(bible, said))
+            write_json(folder / CORRECTIONS, {"corrections": records + [rec]})
+            self._rebuild(folder)
+        if plan:
+            self._want_prose(folder, rid)
+        elif read:
+            job = self.queue.submit(lambda: self._resolve(folder, rid))
+            try:
+                job.wait(CORRECT_WAIT)
+            except NotYet:
+                pass                                 # it stays in the queue; the page and the record show it later
+        return self._answer(folder, idx, rid)
+
+    def _resolve(self, folder: Path, rid: str) -> None:
+        """In the queue: her words to the brain, what comes back to checked operations, and the record updated."""
+        try:
+            idx = self._index(folder)
+            rec = next((r for r in self._corrections(folder) if r.get("id") == rid), None)
+            if rec is None:                          # undone while it waited
+                return
+            bible = self._live(folder, idx)[0]
+            try:
+                plan = plan_words(self.brain, bible, str(rec.get("what")), str(rec.get("correction") or ""),
+                                  str(rec.get("asked_on") or ""))
+            except BrainSlow:
+                plan = {"ops": [], "why": "Your bot's brain took too long on that, so nothing changed. Try again later."}
+            except BrainDown:
+                plan = {"ops": [], "why": "Your bot's brain could not answer, so nothing changed. Try again in a few "
+                                          "minutes."}
+            except Exception as exc:  # noqa: BLE001 - a plain line on the record instead
+                plan = {"ops": [], "why": f"Manuscript stopped on this ({type(exc).__name__}), so nothing changed."}
+            with self.lock:
+                records = self._corrections(folder)
+                now = next((r for r in records if r.get("id") == rid), None)
+                if now is None:
+                    return
+                now.update(ops=plan["ops"], line=plan.get("line") or "", why=plan.get("why") or "",
+                           partial=bool(plan.get("partial")), state="done" if plan["ops"] else "note")
+                write_json(folder / CORRECTIONS, {"corrections": records})
+                self._rebuild(folder)
+            if plan["ops"]:
+                self._want_prose(folder, rid)
+        finally:
+            with self.lock:
+                self.working.discard(rid)
+
+    # 0.4: wrong prose follows the fix
+
+    def _want_prose(self, folder: Path, rid: str, after_reading: bool = False) -> None:
+        """Rewrites what a correction touched, one brain call at a time in the queue. During a reading it waits for
+        the reading's end, as the reading's own write-ups already take the correction as settled."""
         with self.lock:
             records = self._corrections(folder)
-            rec = {"id": f"c-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{len(records) + 1}", "what": said,
-                   "correction": fix, "made_at": _when()}
-            write_json(folder / CORRECTIONS, {"corrections": records + [rec]})
-            bible = read_json(folder / BIBLE)
-            if isinstance(bible, dict):
-                done = self._overlay(folder, bible)
-                write_json(folder / BIBLE, bible)
+            rec = next((r for r in records if r.get("id") == rid), None)
+            if rec is None or not rec.get("ops"):
+                return
+            if self.reader.busy(folder) and not after_reading:
+                rec["prose_state"] = "after reading"
+                write_json(folder / CORRECTIONS, {"corrections": records})
+                return
+            steps = prose_steps(self._live(folder, self._index(folder))[0], rec["ops"], records)
+            if not steps:
+                return
+            rec["prose_state"] = "rewriting"
+            write_json(folder / CORRECTIONS, {"corrections": records})
+            self.rewriting[rid] = [f"{k}:{v}" for k, v in steps]
+        self.queue.submit(lambda: self._rewrite_next(folder, rid, steps, True))
+
+    def _rewrite_next(self, folder: Path, rid: str, steps: list, ok: bool) -> None:
+        if self.reader.busy(folder):                 # a reading started meanwhile: it comes after that
+            with self.lock:
+                self.rewriting.pop(rid, None)
+                records = self._corrections(folder)
+                for r in records:
+                    if r.get("id") == rid:
+                        r["prose_state"] = "after reading"
+                        write_json(folder / CORRECTIONS, {"corrections": records})
+            return
+        kind, which = steps[0]
+        got: list[dict] = []
+        try:
+            live = self._live(folder, self._index(folder))[0]
+            rec = next((r for r in self._corrections(folder) if r.get("id") == rid), None)
+            work = copy.deepcopy(live)
+            asker = Settled(self.brain, lambda: self._settled(folder))
+            if rec is None:
+                steps = steps[:1]
+            elif kind == "character":
+                analysis.synth_people(asker, work, [which])
+                c = next(x for x in work["characters"] if x["id"] == which)
+                was = next(x for x in live["characters"] if x["id"] == which)
+                stale = stale_words(rec["ops"], which)
+                for f in ("personality", "write_up"):
+                    if c.get(f) and c.get(f) != was.get(f):
+                        got.append({"target": target_of("character", was), "field": f, "value": c[f]})
+                    ok = ok and not any(w in str(c.get(f)).lower() for w in stale)
             else:
-                done = apply_corrections(empty_bible(str(idx.get("title")), 0), [rec])
-        got = next((d for d in done if d.get("id") == rec["id"]), {"applied": False, "tab": "characters"})
-        if got.get("applied"):
-            return (f"Changed it: {got['line']}, in the story bible for {idx.get('title')}. It stays that way when "
-                    "your bot reads the book again. The manuscript text is unchanged."), {**rec, **got}
-        return (f"I could not change that in the story bible by myself, so I kept it as a note on the "
-                f"{TABS[got['tab']]} tab: \"You said: {said}\". The manuscript text is unchanged."), {**rec, **got}
-
-    def manuscript_correct(self, title: str = "", what: str = "", correction: str = "") -> str:
-        return self.correct(title, what, correction)[0]
-
-    @staticmethod
-    def _desk_order(items: list[dict]) -> list[dict]:
-        return sorted(items, key=lambda d: (d.get("state") == "dismissed", SEVERITY_RANK.get(d.get("severity"), 3),
-                                            (d.get("sections") or [10 ** 6])[0]))
-
-    def desk_view(self, title: str) -> dict:
-        folder, idx = self._find(title)
-        items = self._desk_order([d for d in self._bible(folder, idx).get("desk") or [] if isinstance(d, dict)])
-        return {"title": idx.get("title"), "items": items,
-                "open": sum(1 for d in items if d.get("state", "open") == "open")}
-
-    def desk_action(self, title: Any, action: Any, item: Any = "", note: Any = "") -> tuple[str, dict | None]:
-        act = str(action or "list").strip().lower()
-        if act not in ("list", "keep", "dismiss", "note"):
-            raise Refused("The desk can list, keep, dismiss or note an item.")
-        folder, idx = self._find(title)
-        items = self.desk_view(str(idx.get("title")))["items"]
-        open_items = [d for d in items if d.get("state", "open") == "open"]
-        if act == "list":
-            if not items:
-                return (f"The editor's desk for {idx.get('title')} is empty"
-                        + (" so far." if self._status(folder, idx).get("state") != "done" else "."), None)
-            if not open_items:
-                return f"Nothing open on the editor's desk for {idx.get('title')}: you have been through it all.", None
-            lines = [f"The editor's desk for {idx.get('title')}: {len(open_items)} open, most serious first."]
-            for i, d in enumerate(open_items, 1):
-                secs = d.get("sections") or []
-                where = (" and ".join(", ".join(map(str, secs)).rsplit(", ", 1)) if secs else "")
-                lines.append(f"{i}. {str(d.get('severity')).capitalize()}, {str(d.get('kind')).replace('_', ' ')}"
-                             + (f", section{'s' if len(secs) > 1 else ''} {where}" if secs else "")
-                             + f": {d.get('note')}" + (f" Why it matters: {d.get('why')}" if d.get("why") else "")
-                             + (f" Fix: {d.get('fix')}" if d.get("fix") else "")
-                             + f" [{d.get('id')}]")
-            return "\n".join(lines), None
-        ref = str(item or "").strip()
-        if not ref:
-            raise Refused("Say which desk item: its number in the list of open items, or its id.")
-        if ref.isdigit():
-            k = int(ref)
-            if not 1 <= k <= len(open_items):
-                raise Refused(f"There are {len(open_items)} open items on the desk.")
-            target = open_items[k - 1]
-        else:
-            target = next((d for d in items if d.get("id") == ref), None)
-            if target is None:
-                raise Refused("That desk item is not there any more. Ask for the desk again.")
-        text = " ".join(str(note or "").split())[:NOTE_MAX]
-        if act == "note" and not text:
-            raise Refused("Say what the note on that desk item is.")
+                analysis.synth_brief(asker, work, which)
+                stale = stale_words(rec["ops"])
+                text = str(work["briefs"].get(which) or "")
+                if text and text != live["briefs"].get(which):
+                    got.append({"target": {"kind": "brief"}, "field": which, "value": text})
+                if which == "characters" and work.get("cast_summary") != live.get("cast_summary"):
+                    got.append({"target": {"kind": "cast"}, "field": "cast_summary", "value": work["cast_summary"]})
+                ok = ok and not any(w in text.lower() for w in stale)
+            if any(any(w in str(p["value"]).lower() for w in stale_words((rec or {}).get("ops") or [],
+                                                                          which if kind == "character" else None))
+                   for p in got):
+                got = []                             # it still says the wrong thing: the old one stays, and she is told
+        except Exception:  # noqa: BLE001 - the brain could not: she is told, and her hand edit still works
+            ok, got = False, []
+        rest = steps[1:]
         with self.lock:
-            states = [d for d in self._desk_states(folder) if d.get("id") != target["id"]]
-            rec = {k: target.get(k) for k in ("id", "kind", "severity", "sections", "note", "fix")}
-            rec["state"] = {"keep": "kept", "dismiss": "dismissed"}.get(act, target.get("state") or "open")
-            rec["writer_note"] = text if act == "note" else str(target.get("writer_note") or "")
-            rec["changed_at"] = _when()
-            write_json(folder / DESK, {"items": states + [rec]})
-            bible = read_json(folder / BIBLE)
-            if isinstance(bible, dict):
-                self._overlay(folder, bible)
-                write_json(folder / BIBLE, bible)
-        item_out = {**target, "state": rec["state"], "writer_note": rec["writer_note"]}
-        said = {"keep": "Kept it on the desk", "dismiss": "Dismissed it; it stays listed, folded away",
-                "note": "Added your note to it"}[act]
-        return f"{said}: {target.get('note')}", item_out
+            records = self._corrections(folder)
+            now = next((r for r in records if r.get("id") == rid), None)
+            if now is not None:
+                keep = [p for p in now.get("prose") or [] if not any(p["target"] == g["target"] and p["field"] == g["field"]
+                                                                     for g in got)]
+                now["prose"] = keep + got
+                if not rest:
+                    now["prose_state"] = "done" if ok else "failed"
+                write_json(folder / CORRECTIONS, {"corrections": records})
+                self._rebuild(folder)
+            if rest and now is not None:
+                self.rewriting[rid] = [f"{k}:{v}" for k, v in rest]
+            else:
+                self.rewriting.pop(rid, None)
+                rest = []
+        if rest:
+            self.queue.submit(lambda: self._rewrite_next(folder, rid, rest, ok))
 
-    def manuscript_desk(self, title: str = "", action: str = "list", id: Any = "", note: str = "") -> str:  # noqa: A002
-        return self.desk_action(title, action, id, note)[0]
+    def _read_starts(self, folder: Path) -> None:
+        """The reading writes fresh prose with her corrections as settled, so the rewrites made for the last one go."""
+        with self.lock:
+            records = self._corrections(folder)
+            for r in records:
+                if r.get("prose") or r.get("prose_state") in ("rewriting", "done", "failed"):
+                    r.pop("prose", None)
+                    r.pop("prose_state", None)
+                self.rewriting.pop(str(r.get("id")), None)
+            if records:
+                write_json(folder / CORRECTIONS, {"corrections": records})
+
+    def _read_ended(self, folder: Path) -> None:
+        """What was corrected during the reading, and waited for it to end, goes in the queue now."""
+        for r in self._corrections(folder):
+            if r.get("prose_state") == "after reading":
+                self._want_prose(folder, str(r.get("id")), after_reading=True)
+
+    def _answer(self, folder: Path, idx: dict, rid: str) -> tuple[str, dict]:
+        """What a correction came to, in plain words, and its record."""
+        title = idx.get("title")
+        done = self._live(folder, idx)[1]
+        got = next((d for d in done if d.get("id") == rid), {"id": rid, "applied": False, "tab": "characters", "what": ""})
+        return self._told(got, title), {**got, "message": self._told(got, title)}
+
+    def _told(self, got: dict, title: Any) -> str:
+        said = str(got.get("what") or "")
+        tab = TABS.get(str(got.get("tab")), "Characters")
+        if got.get("state") == "working":
+            return (f"Your bot is working that out. Nothing has changed yet. When it is done the change shows on the {tab} "
+                    "tab, in plain words, with an Undo. The manuscript text is unchanged.")
+        if not got.get("applied"):
+            if "so nothing needed changing" in str(got.get("why") or ""):
+                return f"{got['why']} The manuscript text is unchanged."
+            why = f" {got['why']}" if got.get("why") else ""
+            return (f"I could not change that in the story bible by myself, so I kept it as a note on the {tab} tab: "
+                    f"\"You said: {said}\".{why} The manuscript text is unchanged.")
+        line = (f"Changed it: {got['line']}, in the story bible for {title}. It stays that way when your bot reads the "
+                "book again. The manuscript text is unchanged.")
+        if got.get("partial"):
+            line += " Part of what you said could not be matched to the story bible, so that part did not change."
+        if got.get("looks"):
+            line += " A picture Maps already painted keeps the old look until you press Paint again on it."
+        if got.get("prose_state") == "rewriting":
+            line += " Your bot is rewriting the paragraphs this touched, and they say so until it is done."
+        elif got.get("prose_state") == "after reading":
+            line += " The paragraphs this touched are rewritten when the reading ends."
+        return line
+
+    def manuscript_correct(self, title: str = "", what: str = "", correction: str = "", tab: str = "") -> str:
+        line, rec = self.correct(title, what, correction, tab)
+        return f"{line} [{rec.get('id')}]"
+
+    def edit(self, title: Any, asked: Any) -> tuple[str, dict]:
+        """Her own edits from the page: the same stored operations, with no call to the brain."""
+        folder, idx = self._find(title)
+        with self.lock:
+            bible = self._live(folder, idx)[0]
+            try:
+                ops = hand_ops(bible, asked)
+            except Bad as exc:
+                raise Refused(str(exc)) from None
+            records = self._corrections(folder)
+            line = line_of(ops)
+            rid = self._new_id(records)
+            rec = {"id": rid, "what": line[:1].upper() + line[1:], "correction": "", "made_at": _when(), "by": "hand",
+                   "ops": ops, "line": line, "state": "done"}
+            write_json(folder / CORRECTIONS, {"corrections": records + [rec]})
+            self._rebuild(folder)
+        return self._answer(folder, idx, rid)
+
+    def undo(self, title: Any, which: Any = "last") -> tuple[str, dict]:
+        """Takes one correction back, by its id or "last". The bible goes back to the bible as read with the rest on
+        top, so nothing needs reading again."""
+        folder, idx = self._find(title)
+        ref = " ".join(str(which or "last").lower().split())
+        with self.lock:
+            records = self._corrections(folder)
+            if not records:
+                raise Refused("There are no corrections to undo.")
+            if ref in ("last", "the last one", "last one", "the last", "latest", "the latest"):
+                rec = records[-1]
+            else:
+                rec = next((r for r in records if str(r.get("id")).lower() == ref), None)
+                if rec is None:
+                    raise Refused("I could not find that correction. manuscript_corrections lists them with their ids.")
+            baked = rec.get("id") in ((self._base(folder) or {}).get("baked") or [])
+            write_json(folder / CORRECTIONS, {"corrections": [r for r in records if r is not rec]})
+            self._rebuild(folder)
+            self.working.discard(str(rec.get("id")))
+            self.rewriting.pop(str(rec.get("id")), None)
+        said = str(rec.get("line") or rec.get("what") or "")
+        if baked:
+            line = (f"Took that back: {said}. It was made before Undo existed, so what it changed stays in the story bible "
+                    "until your bot reads the book again.")
+        else:
+            line = f"Took that back: {said}. The story bible is as it was before. The manuscript text is unchanged."
+        return line, {"id": rec.get("id"), "what": rec.get("what"), "line": said}
+
+    def manuscript_correct_undo(self, title: str = "", id: str = "last") -> str:  # noqa: A002
+        return self.undo(title, id)[0]
+
+    def manuscript_corrections(self, title: str = "") -> str:
+        folder, idx = self._find(title)
+        done = self._live(folder, idx)[1]
+        if not done:
+            return f"No corrections on {idx.get('title')} yet."
+        out = []
+        for d in done:
+            state = (f"Changed: {d.get('line')}" if d.get("applied") else "Still being worked out; nothing changed yet."
+                     if d.get("state") == "working" else "Kept as a note; nothing changed." +
+                     (f" {d['why']}" if d.get("why") else ""))
+            out.append(f"[{d.get('id')}] She said: {d.get('what')}. {state}")
+        return "\n".join(out)
 
     # the page
 
@@ -969,7 +1279,22 @@ class Manuscripts:
         folder, idx = self._find(title)
         c = self._section(idx, section)
         return {"title": idx.get("title"), "n": c.get("n"), "heading": c.get("heading"), "words": c.get("words"),
-                "text": self._section_text(folder, idx, c)}
+                "text": self._section_text(folder, idx, c), "changed": self._changed(folder, idx, c)}
+
+    def _changed(self, folder: Path, idx: dict, c: dict) -> bool:
+        """Changed since the last reading, through Editor's Desk: no cache entry for the text as it is now, and the file
+        is newer than that reading's start, so a section the reading had to skip does not count."""
+        st = self._status(folder, idx)
+        if st.get("state") != "done":
+            return False
+        try:
+            path = self._section_path(folder, idx, c)
+            if (folder / CACHE / f"{sha_of(path.read_bytes())}.json").exists():
+                return False
+            began = datetime.strptime(str(st.get("started_at")), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            return path.stat().st_mtime >= began.timestamp()
+        except (OSError, ValueError, Refused):
+            return False
 
     def status_view(self, title: str) -> dict:
         folder, idx = self._find(title)
@@ -980,7 +1305,7 @@ class Manuscripts:
         return {**st, "vault": self.vault_words(st, self.vault_free())}
 
     def analyze_view(self, title: Any) -> dict:
-        line = self.manuscript_analyze(str(title or ""))
+        line = self.manuscript_analyze(str(title or ""), confirm=True)   # the page's button is the writer's own hand
         folder, idx = self._find(title)
         return {"message": line, "status": self._status(folder, idx)}
 
@@ -991,12 +1316,21 @@ class Manuscripts:
     def tab_view(self, title: str, tab: str) -> dict:
         folder, idx = self._find(title)
         key = self._tab(tab)
-        bible = self._bible(folder, idx)
-        done = apply_corrections(copy.deepcopy(bible), self._corrections(folder))
+        bible, done = self._live(folder, idx)
         out = {"title": idx.get("title"), "tab": key, "blocks": tab_blocks(bible, key),
                "views": [v for v in self._views(folder) if v.get("tab") == key],
-               "corrections": [{k: d.get(k) for k in ("id", "what", "correction", "made_at", "applied")}
-                               for d in done if d.get("tab") == key]}
+               "corrections": [{**{k: d.get(k) for k in ("id", "what", "correction", "made_at", "applied", "line", "by",
+                                                         "state", "why", "prose_state", "partial", "looks")},
+                                "message": self._told(d, idx.get("title"))}
+                               for d in done if key in (d.get("tabs") or [d.get("tab")])],
+               "edits": edit_view(bible, key),
+               "rewriting": sorted({k for rid, keys in self.rewriting.items() for k in keys
+                                    if any(d.get("id") == rid for d in done)})}
+        said = {str((bible.get("briefs") or {}).get(key) or ""): f"brief:{key}",     # the prose blocks' own Edit
+                str(bible.get("cast_summary") or ""): "cast:",
+                str((bible.get("setting") or {}).get("one_paragraph") or ""): "setting:"}
+        out["block_keys"] = {str(i): said[x["text"]] for i, x in enumerate(out["blocks"])
+                             if x.get("type") == "markdown" and x.get("text") and x["text"] in said}
         if key == "characters":                     # the page draws these blocks as cards, with links
             got = []
             for c in cards(bible):
@@ -1005,8 +1339,6 @@ class Manuscripts:
                 if at is not None:
                     got.append({**{k: v for k, v in c.items() if k != "text"}, "block": at})
             out["cards"] = got
-        if key == "desk":
-            out["desk"] = self._desk_order([d for d in bible.get("desk") or [] if isinstance(d, dict)])
         return out
 
     def views_view(self, title: str, tab: str = "") -> dict:
@@ -1078,9 +1410,12 @@ class Manuscripts:
         key = self._tab(tab)
         path = self._notes_path(folder, key)
         with self.lock:
-            if stamp is not None and str(stamp) != _stamp(path):
+            there = path.exists()                    # gone since she opened it: a tidy took an empty file, nothing is lost
+            if there and stamp is not None and str(stamp) != _stamp(path):
                 raise Refused("These notes changed since you opened them (your bot may have added one). "
                               "Copy what you wrote, then press Reload.")
+            if not there and body.strip() in ("", f"# {TABS[key]}"):
+                return {"message": f"Saved the {TABS[key]} notes.", "stamp": ""}      # nothing to keep: no file yet
             _write(path, body if body.endswith("\n") or not body else body + "\n")
             return {"message": f"Saved the {TABS[key]} notes.", "stamp": _stamp(path)}
 
@@ -1095,6 +1430,7 @@ class Manuscripts:
             raise Refused("That file did not arrive whole. Try the upload again.") from None
         got = self._add(name, ext, raw, title)
         self.reader.start(got["folder"])
+        self.tidy_due()
         got["message"] = f"Added {got['title']}: {got['sections']} sections, {got['words']} words. Your bot is reading it now."
         if got.get("report"):
             got["message"] += " " + pdf_text.report_line(got["report"])
@@ -1107,6 +1443,7 @@ class Manuscripts:
         if ext not in UPLOAD_TYPES:
             raise Refused("I can add a Word file (.docx), a PDF (.pdf), a text file (.txt) or a Markdown file (.md).")
         got = self._add(path.name, ext, path.read_bytes(), title)
+        self.tidy_due()
         line = f"Added {got['title']} from My files: {got['sections']} sections, {got['words']} words."
         if got.get("report"):
             line += " " + pdf_text.report_line(got["report"])
@@ -1194,6 +1531,7 @@ class Manuscripts:
         with self.lock:
             shelf = self.shelf()
             shelf.mkdir(parents=True, exist_ok=True)
+            self._mark(shelf)
             stem = _safe(shown, "Untitled", 60)
             folder, n = shelf / stem, 2
             while folder.exists():
@@ -1211,8 +1549,6 @@ class Manuscripts:
                 _write(folder / SECTIONS / fname, content)
                 index.append({"n": i, "heading": head, "file": fname, "words": words(text),
                               "sha": sha_of(content.encode("utf-8"))})
-            for key, label in NOTES_AT_UPLOAD.items():
-                _write(folder / f"{key}.md", f"# {label}\n")
             record = {"title": shown, "original": name, "original_file": "original" + ext,
                       "added": datetime.now().isoformat(timespec="seconds"),
                       "version": VERSION, "sections": index, "chapters": index}
@@ -1230,9 +1566,8 @@ class Manuscripts:
 
 CHANGES = ("manuscript_notes_append", "manuscript_remove", "manuscript_add_file")
 _TITLE = {"type": "string", "description": "The manuscript's title. May be left empty when there is only one."}
-_TAB = {"type": "string", "enum": list(TABS) + ["editing"], "description": "Which tab: characters, plot (plot and "
-        "subplots), timeline, structure, world, science, themes, voice or desk (the editor's desk; editing is the "
-        "same tab)."}
+_TAB = {"type": "string", "enum": list(TABS), "description": "Which tab: characters, plot (plot and subplots), timeline, "
+        "structure, world, science, themes or voice."}
 _SECTION = {"type": "string", "description": "The section's number, like 3, or its heading."}
 TOOLS = {
     "manuscript_list": ("The writer's manuscripts on this computer, each with its sections, their numbers and word "
@@ -1243,7 +1578,7 @@ TOOLS = {
                          "chapter": {"type": "string", "description": "The same as section, the 0.1.0 name."}},
                         []),
     "manuscript_status": ("How far her bot has read one manuscript into its story bible, in one line, then the real counts of "
-                          "what it found: characters, main characters, plot threads, places, events and desk items.",
+                          "what it found: characters, main characters, plot threads, places and events.",
                           {"title": _TITLE}, []),
     "manuscript_analyze": ("Starts her bot reading one manuscript again, section by section, to rebuild its story "
                            "bible. The manuscript text is not changed. It starts only after the writer said yes, in "
@@ -1265,29 +1600,30 @@ TOOLS = {
                           "quote": {"type": "string", "description": "Words from the passage."},
                           "note": {"type": "string", "description": "A short line shown above the passage."}},
                          ["quote"]),
-    "manuscript_correct": ("Corrects one fact in a manuscript's story bible, in the writer's words, such as who is "
-                           "whose cousin, another name a character goes by, a character's role or what kind of place "
-                           "a place is. The correction is kept and stays when the book is read again; what cannot "
-                           "be changed by itself is kept as a note on its tab. The manuscript text is not changed.",
+    "manuscript_correct": ("Corrects any fact in a manuscript's story bible, on any tab, in the writer's words: what "
+                           "a character looks like, a fact on the wrong character, two names that are one person, "
+                           "when something happens, a theme, a science claim, a wrong fact to remove, a missing one to "
+                           "add. The answer says exactly what changed, or that it was kept as a note, or that it is "
+                           "still being worked out. The change stays when the book is read again. The manuscript text "
+                           "is not changed.",
                            {"title": _TITLE,
-                            "what": {"type": "string", "description": "The fact as it should be, in her words, like "
-                                                                      "Tom is Jennifer's cousin, not her brother."},
-                            "correction": {"type": "string", "description": "The right value on its own, like "
-                                                                            "cousin, when she gave one."}},
+                            "what": {"type": "string", "description": "What she said, in her words, like That scar "
+                                                                      "belongs to Tom, not Elias."},
+                            "correction": {"type": "string", "description": "The right value on its own, when she gave "
+                                                                            "one apart from the rest."},
+                            "tab": {**_TAB, "description": "The tab she is on, when known. May be left empty."}},
                            ["what"]),
-    "manuscript_desk": ("The editor's desk for one manuscript: plot holes, timeline mismatches, science that fails, "
-                        "character holes, continuity slips and open questions, each with its sections, why it "
-                        "matters, the passages that show it and a suggested fix. list gives the open items, most serious first; keep, dismiss or note acts "
-                        "on one item, by its number in that list or its id.",
-                        {"title": _TITLE,
-                         "action": {"type": "string", "enum": ["list", "keep", "dismiss", "note"],
-                                    "description": "list, keep, dismiss or note."},
-                         "id": {"type": "string", "description": "The item's number in the list of open items, "
-                                                                "or its id."},
-                         "note": {"type": "string", "description": "Her note on the item, for note."}},
-                        []),
+    "manuscript_correct_undo": ("Takes one correction back, when the writer says it was wrong, and the story bible goes "
+                                "back as it was before it. By its id, shown in square brackets in the answer that made "
+                                "it, or last for the newest.",
+                                {"title": _TITLE,
+                                 "id": {"type": "string", "description": "The correction's id, or last."}},
+                                []),
+    "manuscript_corrections": ("Every correction on one manuscript, oldest first, each with its id, what she said and "
+                               "what it came to: what changed, a note, or still being worked out.",
+                               {"title": _TITLE}, []),
     "manuscript_notes_read": ("The writer's notes for one manuscript on one subject: characters, plot and subplots, "
-                              "timeline, structure, world building, science, themes, voice or the editor's desk.",
+                              "timeline, structure, world building, science, themes or voice.",
                               {"title": _TITLE, "tab": _TAB}, ["tab"]),
     "manuscript_notes_append": ("Adds a dated section to the end of the writer's notes for one manuscript on one "
                                 "subject. Her earlier notes and her manuscript stay as they are.",
@@ -1481,8 +1817,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, a.notes_view(q.get("title", ""), q.get("tab", "")))
         if path == "/api/pointer":
             return self._json(200, a.pointer_view(q.get("title", "")))
-        if path == "/api/desk":
-            return self._json(200, a.desk_view(q.get("title", "")))
+        if path == "/api/size":
+            return self._json(200, a.size_view(q.get("title", "")))
         name = urllib.parse.unquote(path.lstrip("/"))
         file = (WEB / name).resolve()
         if name and file.suffix.lower() in WEB_TYPES and WEB.resolve() in file.parents and file.is_file():
@@ -1515,11 +1851,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/analyze":
             return self._json(200, a.analyze_view(msg.get("title")))
         if path == "/api/correct":
-            line, rec = a.correct(msg.get("title"), msg.get("what"), msg.get("correction"))
+            line, rec = a.correct(msg.get("title"), msg.get("what"), msg.get("correction"), msg.get("tab"))
             return self._json(200, {"message": line, "correction": rec})
-        if path == "/api/desk":
-            line, item = a.desk_action(msg.get("title"), msg.get("action"), msg.get("id"), msg.get("note"))
-            return self._json(200, {"message": line, "item": item})
+        if path == "/api/correct/undo":
+            line, rec = a.undo(msg.get("title"), msg.get("id"))
+            return self._json(200, {"message": line, "correction": rec})
+        if path == "/api/edit":
+            line, rec = a.edit(msg.get("title"), msg.get("ops"))
+            return self._json(200, {"message": line, "correction": rec})
         if path == "/api/settings":
             return self._json(200, a.settings_save(msg))
         if path == "/api/show":
@@ -1567,6 +1906,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.port or not api:
         p.error("PuffPAI starts Manuscript with PUFFPAI_PORT (or --port) and PUFFPAI_API set.")
     server = make_server(args.port, CoreFiles(api, token), token, Brain(api, token))
+    threading.Thread(target=server.RequestHandlerClass.app.at_start, daemon=True, name="tidying at start").start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

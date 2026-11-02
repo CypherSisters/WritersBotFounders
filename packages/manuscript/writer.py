@@ -1,15 +1,12 @@
-"""What the writer said about the bible: her corrections, and her choices on the editor's desk (CONTRACT.md).
+"""The first, instant rules for what the writer said about the bible (CONTRACT.md).
 
-``apply_corrections(bible, records)`` puts each correction in ``corrections.json`` on top of a bible, in the order
-they were made, and says for each whether it could be applied. It is deterministic and safe to run again on the same
-bible, so the reading runs it before every write and a re-read never undoes a correction. What it can apply, matched
-by the names in her words: a relationship's kind ("Tom is Jennifer's cousin, not her brother"), an alias ("Jen is
-also called Jenny"), a character's role or importance ("Ilsa is the antagonist",
-"Tom is a minor character"), a place's kind ("Storm Harbor is a village").
-Every bible entry it touches gets ``"corrected": true``. Anything else stays a note, shown on its tab.
+``rule_plan(bible, what, correction)`` turns a correction of a plain shape into stored operations (fixing.py), with no
+call to the brain: a relationship's kind ("Tom is Jennifer's cousin, not her brother"), an alias ("Jen is also called
+Jenny"), a character's role or importance ("Ilsa is the antagonist", "Tom is a minor character"), a place's kind
+("Storm Harbor is a village"). Words that are not one of these plain shapes go to the brain instead.
 
-``apply_desk(bible, items)`` puts the writer's Keep, Dismiss and notes from ``desk.json`` back on the desk items of
-the same id.
+``apply_one(bible, what, correction)`` is the older way, kept for records made before 0.4, which have no operations: it
+matches the names in her words each time, and every bible entry it touches gets ``"corrected": true``.
 
 Copyright (c) 2026 Cypher Sisters. Apache-2.0 License.
 """
@@ -99,12 +96,13 @@ def _same(a: str, b: str) -> bool:
     return _base(a) == _base(b)
 
 
-def _relation(bible: dict, text: str, chars: list[dict], correction: str) -> tuple[bool, str, list]:
+def _relation_pick(bible: dict, text: str, chars: list[dict], correction: str) -> tuple[dict, dict, str] | None:
+    """Who is whose what, by her words: (a, b, kind), or None."""
     said, neg = _words_in(text, list(GROUP_OF))
     fix_said, _n = _words_in(correction, list(GROUP_OF)) if correction else ([], [])
     new = (fix_said or said or [None])[0]
     if not new:
-        return False, "", []
+        return None
     old = neg[0] if neg else None
     a = chars[0]
     others = [c for c in chars[1:] if c is not a]
@@ -123,8 +121,13 @@ def _relation(bible: dict, text: str, chars: list[dict], correction: str) -> tup
                     cands.add(c.get("id"))
         cands.discard(a.get("id"))
         if len(cands) != 1 or next(iter(cands)) not in by_id:
-            return False, "", []
+            return None
         b = by_id[next(iter(cands))]
+    return a, b, new
+
+
+def set_relation(bible: dict, a: dict, b: dict, new: str) -> None:
+    """a is b's <new> now: the kind on both sides, and the family links that follow from it."""
     inv = INVERSE.get(_base(new))
     touched = []
     for r in a.get("relationships") or []:
@@ -158,7 +161,100 @@ def _relation(bible: dict, text: str, chars: list[dict], correction: str) -> tup
         a["family"]["partners"].append(b.get("id"))
         b["family"]["partners"].append(a.get("id"))
     a["corrected"] = b["corrected"] = True
+
+
+def _relation(bible: dict, text: str, chars: list[dict], correction: str) -> tuple[bool, str, list]:
+    got = _relation_pick(bible, text, chars, correction)
+    if got is None:
+        return False, "", []
+    a, b, new = got
+    set_relation(bible, a, b, new)
     return True, f"{a.get('name')} is {b.get('name')}'s {new} now", [a.get("id"), b.get("id")]
+
+
+def guess_tab(bible: dict, text: str) -> str:
+    """The tab a correction's words belong on: a person, a place, words of time, words of science, else Characters."""
+    if _named(text, [c for c in bible.get("characters") or [] if isinstance(c, dict)]):
+        return "characters"
+    if _named(text, [p for p in bible.get("places") or [] if isinstance(p, dict)], extra=False):
+        return "world"
+    low = text.lower()
+    return "timeline" if TIME_WORDS.search(low) else "science" if SCIENCE_WORDS.search(low) else "characters"
+
+
+def _joined(what: str, correction: str) -> str:
+    return (" ".join(f"{what}. {correction}".split()) if correction and correction.lower() not in what.lower()
+            else " ".join(what.split()))
+
+
+def _names_marked(text: str, things: list[dict]) -> str:
+    """Her words, lowered, with each name of these things as @ ("Tom's" is "@'s"), and no end stops or commas."""
+    low = _k(text.replace("\u2019", "'"))
+    names = set()
+    for c in things:
+        parts = str(c.get("name") or "").split()
+        names |= {_k(str(c.get("name") or "")), parts[0].lower() if parts else ""}
+        names |= {_k(str(a)) for a in c.get("aliases") or [] if isinstance(a, str)}
+    for n in sorted((n for n in names if len(n) > 1), key=len, reverse=True):
+        low = re.sub(r"(?<![\w@])" + re.escape(n) + r"(?![\w-])", "@", low)
+    return low
+
+
+def _alt(vocab: Any) -> str:
+    return "|".join(re.escape(w) for w in sorted(vocab, key=len, reverse=True))
+
+
+_NOT_THAT = r"(?: (?:not|and not|but not|rather than|instead of) .*)?"
+_OWNS = r"(?:@'s|her|his|their|my|the|a|an)"
+_REL = re.compile(rf"@ (?:is|was) (?:{_OWNS} )?(?:{_alt(GROUP_OF)})(?: of @)?{_NOT_THAT}")
+_WHO = re.compile(rf"@ (?:is|was) (?:(?:a|an|the) )?(?:{_alt(IMPORTANCE + ROLES)})(?: character)?{_NOT_THAT}")
+_AKA = re.compile(r"@ (?:(?:is|was) )?(?:also )?(?:called|known as|nicknamed|goes by|named) [\w' -]+")
+_KIND = re.compile(rf"@ (?:is|was) (?:(?:a|an|the) )?(?:{_alt(PLACE_KINDS)}){_NOT_THAT}")
+
+
+def rule_plan(bible: dict, what: str, correction: str = "") -> dict | None:
+    """Stored operations for a correction of a plain shape, with the same answer the older rules give, or None for
+    words that say anything else: the older rules look for their words anywhere, and now the brain can read the rest."""
+    from fixing import target_of                    # fixing.py builds on this file
+    text = _joined(what, correction)
+    chars = [c for c in bible.get("characters") or [] if isinstance(c, dict)]
+    places = [p for p in bible.get("places") or [] if isinstance(p, dict)]
+    who = _named(text, chars)
+    shape = _names_marked(what, chars)
+    if who and _REL.fullmatch(shape):
+        got = _relation_pick(bible, text, who, correction)
+        if got:
+            a, b, new = got
+            return {"ops": [{"target": target_of("character", a), "action": "set", "field": "relationships",
+                             "to": target_of("character", b), "value": new}],
+                    "line": f"{a.get('name')} is {b.get('name')}'s {new} now", "tab": "characters"}
+    if len(who) == 1 and _WHO.fullmatch(shape):
+        c, parts, ops = who[0], [], []
+        said, _n = _words_in(text, ROLES)
+        weight, _n = _words_in(text, IMPORTANCE)
+        if weight:
+            ops.append({"target": target_of("character", c), "action": "set", "field": "importance", "value": weight[0]})
+            parts.append(f"a {weight[0]} character")
+        if said:
+            ops.append({"target": target_of("character", c), "action": "set", "field": "role", "value": said[0]})
+            parts.append(f"the {said[0]}")
+        if ops:
+            return {"ops": ops, "line": f"{c.get('name')} is {' and '.join(parts)} now", "tab": "characters"}
+    if who and _AKA.fullmatch(shape):
+        m = ALIAS.search(text)
+        if m and _k(m.group(1)) != _k(str(who[0].get("name") or "")):
+            return {"ops": [{"target": target_of("character", who[0]), "action": "add", "field": "aliases",
+                             "value": m.group(1).strip()}],
+                    "line": f"{who[0].get('name')} is also called {m.group(1).strip()} now", "tab": "characters"}
+    spots = _named(text, places, extra=False)
+    place_shape = _names_marked(what, places)
+    if spots and not who and _KIND.fullmatch(place_shape):
+        said, _n = _words_in(place_shape, PLACE_KINDS)   # not the "port" in the name Port Ash
+        if said:
+            return {"ops": [{"target": target_of("place", spots[0]), "action": "set", "field": "kind",
+                             "value": said[0]}],
+                    "line": f"{spots[0].get('name')} is a {said[0]} now", "tab": "world"}
+    return None
 
 
 def apply_one(bible: dict, what: str, correction: str = "") -> dict:
@@ -204,28 +300,3 @@ def apply_one(bible: dict, what: str, correction: str = "") -> dict:
             spots[0]["kind"], spots[0]["corrected"] = said[0], True
             return {"applied": True, "tab": "world", "line": f"{spots[0].get('name')} is a {said[0]} now"}
     return {"applied": False, "tab": tab, "line": ""}
-
-
-def apply_corrections(bible: dict, records: Any) -> list[dict]:
-    """Every correction, in the order made: ``[{id, what, correction, made_at, applied, tab, line}]``."""
-    out = []
-    for r in records if isinstance(records, list) else []:
-        if not isinstance(r, dict) or not str(r.get("what") or "").strip():
-            continue
-        try:
-            got = apply_one(bible, str(r.get("what") or ""), str(r.get("correction") or ""))
-        except (TypeError, ValueError, AttributeError, KeyError):
-            got = {"applied": False, "tab": "characters", "line": ""}   # a bible it can't read: kept as a note
-        out.append({k: r.get(k) for k in ("id", "what", "correction", "made_at")} | got)
-    return out
-
-
-def apply_desk(bible: dict, items: Any) -> None:
-    """The writer's state and note on each desk item of the same id."""
-    mine = {str(i.get("id")): i for i in items if isinstance(i, dict) and i.get("id")} if isinstance(items, list) else {}
-    for d in bible.get("desk") or []:
-        if isinstance(d, dict) and d.get("id") in mine:
-            got = mine[d["id"]]
-            if got.get("state") in ("open", "kept", "dismissed"):
-                d["state"] = got["state"]
-            d["writer_note"] = str(got.get("writer_note") or "")

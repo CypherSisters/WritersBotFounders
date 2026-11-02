@@ -3,7 +3,9 @@
 
    Blocks.render(blocks, host, {onJump(section, text, hint), maps})
    onJump is called when the owner clicks anything that carries a section number. maps, when given, is the address
-   (or a function of the block giving it) of a "See in Maps" line drawn above every graph, tree and timeline. */
+   (or a function of the block giving it) of a "See in Maps" line drawn above every graph, tree and timeline.
+   onEdit, when given, makes the quiet Edit control of a table row or list item that has a key in the block:
+   onEdit(key) answers the button, or null when that entry has none. */
 (function () {
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
@@ -109,10 +111,11 @@
     if (cols.length) {
       const tr = el('tr');
       for (const c of cols) { const th = el('th', '', str(c)); th.scope = 'col'; tr.appendChild(th); }
+      if (opts.onEdit && Array.isArray(b.keys)) tr.appendChild(el('th'));
       const thead = el('thead'); thead.appendChild(tr); t.appendChild(thead);
     }
     const tbody = el('tbody');
-    for (const row of Array.isArray(b.rows) ? b.rows : []) {
+    (Array.isArray(b.rows) ? b.rows : []).forEach((row, at) => {
       const tr = el('tr');
       const cells = Array.isArray(row) ? row : [row];
       const hint = str(cells[0]);
@@ -123,8 +126,14 @@
         else td.textContent = str(c);
         tr.appendChild(td);
       }
+      if (opts.onEdit && Array.isArray(b.keys)) {
+        const td = el('td', 'edit-cell');
+        const ed = opts.onEdit(b.keys[at]);
+        if (ed) td.appendChild(ed);
+        tr.appendChild(td);
+      }
       tbody.appendChild(tr);
-    }
+    });
     t.appendChild(tbody);
     box.appendChild(t);
     host.appendChild(box);
@@ -143,6 +152,8 @@
         btn.appendChild(el('small', '', ' section ' + n));
         li.appendChild(btn);
       } else li.textContent = text;
+      const ed = opts.onEdit && it && it.key ? opts.onEdit(it.key) : null;
+      if (ed) li.appendChild(ed);
       ul.appendChild(li);
     }
     host.appendChild(ul);

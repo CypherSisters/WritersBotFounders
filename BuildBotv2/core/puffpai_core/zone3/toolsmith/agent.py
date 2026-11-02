@@ -95,7 +95,7 @@ def _plan_books(link: Any, got: dict, js: list[dict], now: Any) -> None:
     """Find more books (D136): her own words are the topic. No app looked for, no model asked."""
     picked = [j["name"] for j in js]
     fn = getattr(link, "knowledge_find", None)
-    if callable(fn) and got.get("search_places"):
+    if callable(fn) and got.get("search_places") and not got["build"].get("no_catalogs"):
         now("looking for books and offline libraries")
         try:
             fn(picked)

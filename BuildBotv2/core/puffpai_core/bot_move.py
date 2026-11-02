@@ -8,6 +8,11 @@ refuses the whole bundle on one bad one. No network at any point, either way.
 versions, the code of what Toolsmith built or you added from a folder, and, by name only, the books, linked folders and
 pinned documents.
 
+**They come back from a list (D148):** :func:`apply` keeps what came as ``settings\moved_list.json``, and Knowledge shows it
+as "Recommended for this bot" (:func:`recommended`). She picks. Each row goes by the normal path and its normal Yes, and
+nothing downloads on its own. What the builds read from Wikipedia and Gutenberg travels as its topics, by name
+(``knowledge.topics``, :func:`reading_topics`), and comes back as one plan with one Yes.
+
 **It never travels** (:data:`STAYS`, said on the screen): the vault and everything in it, chats, paired devices, app data,
 People and You, the Bridge's Yes answers, and any setting that loosens a check. Those are entered again on the new
 computer, so each app there asks its own Yes as on any install.
@@ -39,6 +44,7 @@ SUMS = "checksums.sha256"
 APPS = "apps"
 README = "README.md"
 #: Setup asks the rest: the brain, the vault and its PIN, the Bridge, Toolsmith's model.
+LIST = "moved_list.json"
 SETUP_ALREADY = ("goal", "name", "look", "plan", "yes", "build", "prove")
 #: The most of one app carried, so a folder stays fit for a git repo. A bigger one is named, for her to find again.
 APP_MAX = 100 * 1024 * 1024
@@ -60,7 +66,7 @@ STAYS = (
     "What is inside your apps. Each app starts empty there.",
     "People and You.",
     "The documents themselves. Linked folders and pinned documents go by name only, to link and pin again.",
-    "Books and model files. Books go by name only, and the brain is picked again in setup.",
+    "Books and model files. Books come back from a list on Knowledge, and the brain is picked again in setup.",
     "Your Yes answers: the Bridge, Drawbridge's setting, and changing your documents start as a new bot does, and each app asks its own Yes.",
     "Tool servers and APIs you added, with their keys. They go by name only, to add again.",
 )
@@ -184,7 +190,10 @@ def _app_rows(state: Path, registry: Any, packages: Any) -> tuple[list[dict], li
             continue
         name, origin = str(row.get("name") or pid), str(row.get("origin") or "")
         if row.get("kind") == "knowledge":
-            books.append({"source": pid, "title": name})
+            book = {"source": pid, "title": name}
+            if origin.startswith(("store:", "adopted:")):
+                book["from"] = "store" if origin.startswith("store:") else "download"
+            books.append(book)
             continue
         out = {"id": pid, "name": name, "kind": row.get("kind"), "version": str(row.get("version") or "")}
         if packages.builtin_of(pid) is not None:
@@ -221,6 +230,21 @@ def _settings(state: Path, registry: Any) -> dict:
             "theme": jsonfile.read(Path(state) / "settings" / "theme.json", {})}
 
 
+def _plan_topics(state: Path) -> list[str]:
+    """The topics that came with this bot, then those its builds read something on, oldest first, each once. A bot that
+    never read any has none."""
+    topics = reading_topics(state)
+    rows = []
+    for path in (state / "builds").glob("*/build.json"):
+        got = jsonfile.read(path, {})
+        rows.append(got if isinstance(got, dict) else {})
+    for b in sorted(rows, key=lambda x: str(x.get("created_at") or "")):
+        run = b.get("knowledge_run") if isinstance(b.get("knowledge_run"), dict) else {}
+        if any(isinstance(n, int) and n > 0 for n in (run.get("counts") or {}).values()):
+            topics += [str(t) for t in (b.get("knowledge_plan") or {}).get("topics") or []]
+    return list({t.lower(): t for t in reversed(topics)}.values())[::-1]
+
+
 def _added_names(state: Path) -> list[str]:
     """Tool servers and APIs she added, by name only: never an address, and never a key."""
     out = []
@@ -245,7 +269,8 @@ def export(state: Path | str, registry: Any, packages: Any, folder: Path | str) 
     apps, books, carried = _app_rows(state, registry, packages)
     record = {"schema": SCHEMA, "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **settings,
               "apps": apps,
-              "knowledge": {"books": books, "linked": _names(Library(None, state).linked()), "pinned": _names(pinned_paths(state))},
+              "knowledge": {"books": books, "topics": _plan_topics(state), "linked": _names(Library(None, state).linked()),
+                            "pinned": _names(pinned_paths(state))},
               "added": _added_names(state), "stays": list(STAYS)}
     body = json.dumps(record, indent=1, ensure_ascii=False, sort_keys=True)
     found = private_in(body)
@@ -363,6 +388,7 @@ def lines_for(record: dict) -> dict:
     apps = [a for a in record.get("apps") or [] if isinstance(a, dict)]
     here = [a for a in apps if a.get("source") and _runs_here(record, a)]
     return {"name": str((record.get("bot") or {}).get("name") or ""),
+            "topics": _clean_topics(know.get("topics")),
             "apps": [{"id": a.get("id"), "name": a.get("name"), "version": a.get("version"), "source": a.get("source")} for a in here],
             "not_here": [str(a.get("name")) for a in apps if a.get("source") and a not in here],
             "left_out": [{"name": a.get("name"), "why": a.get("left_out"), "from": a.get("from")} for a in apps if a.get("left_out")],
@@ -394,7 +420,62 @@ def apply(state: Path | str, record: dict, registry: Any = None) -> list[str]:
         jsonfile.write(layout.path_for(state), record["layout"])
     if isinstance(record.get("theme"), dict) and record["theme"]:
         jsonfile.write(state / "settings" / "theme.json", record["theme"])
+    know = record.get("knowledge") if isinstance(record.get("knowledge"), dict) else {}
+    jsonfile.write(state / "settings" / LIST, {"rows": _list_rows(record), "topics": _clean_topics(know.get("topics"))})
     return said
+
+
+def _list_rows(record: dict) -> list[dict]:
+    """``[{id, name, kind, get, source?, line?}]``. ``get`` says how it comes back: ``add`` is the Package Manager's own card,
+    ``find`` is Find books' plan card by its title, and ``ask`` is a line, for what only Toolsmith can look for."""
+    here = to_add(record)
+    rows = []
+    for a in record.get("apps") or []:
+        if not isinstance(a, dict) or not isinstance(a.get("id"), str):
+            continue
+        row = {"id": a["id"], "name": str(a.get("name") or a["id"]), "kind": "app", "get": "ask"}
+        if a in here:
+            row.update(get="add", source=app_source(record, a))
+        elif a.get("source"):
+            row["line"] = "It was set up on another kind of computer. Ask Toolsmith to try it here."
+        elif a.get("left_out"):
+            row["line"] = f"It did not come: {a['left_out']}. Ask Toolsmith for it."
+        else:
+            continue
+        rows.append(row)
+    know = record.get("knowledge") if isinstance(record.get("knowledge"), dict) else {}
+    for b in know.get("books") or []:
+        if not isinstance(b, dict) or not isinstance(b.get("source"), str) or not _ID.match(b["source"]):
+            continue
+        row = {"id": b["source"], "name": str(b.get("title") or b["source"]), "kind": "book", "get": "ask"}
+        if b.get("from") == "store":
+            row.update(get="add", source=f"store:{b['source']}")
+        elif b.get("from") == "download":
+            row["get"] = "find"
+        else:
+            row["line"] = "Ask Toolsmith for it."
+        rows.append(row)
+    return rows
+
+
+def _clean_topics(raw: Any) -> list[str]:
+    return [" ".join(t.split())[:80] for t in raw[:40] if isinstance(t, str) and t.strip()] if isinstance(raw, list) else []
+
+
+def reading_topics(state: Path | str) -> list[str]:
+    """The topics this bot came with, by name, or none: an older bundle, or a bot that never moved."""
+    got = jsonfile.read(Path(state) / "settings" / LIST, {})
+    return _clean_topics(got.get("topics")) if isinstance(got, dict) else []
+
+
+def recommended(state: Path | str, registry: Any) -> list[dict]:
+    """What the moved bot came with that isn't on this one (D148). It only reads: a row leaves when that thing is here."""
+    got = jsonfile.read(Path(state) / "settings" / LIST, {})
+    rows = got.get("rows") if isinstance(got, dict) else None
+    have = [r for r in registry.list() if r.get("status") != "removed"]
+    ids, books = {r.get("id") for r in have}, {r.get("name") for r in have if r.get("kind") == "knowledge"}
+    return [r for r in rows or [] if isinstance(r, dict) and r.get("id") not in ids
+            and not (r.get("kind") == "book" and r.get("name") in books)]
 
 
 def finish_look(state: Path | str, record: dict, registry: Any = None, said: list | None = None) -> None:
@@ -426,4 +507,5 @@ def app_source(record: dict, app: dict) -> str:
     return str(Path(record["_folder"]) / src) if src.startswith(f"{APPS}/") else src
 
 
-__all__ = ["MoveRefused", "STAYS", "app_source", "apply", "export", "finish_look", "lines_for", "private_in", "read", "seed_setup"]
+__all__ = ["MoveRefused", "STAYS", "app_source", "apply", "export", "finish_look", "lines_for", "private_in", "read", "reading_topics",
+           "recommended", "seed_setup"]

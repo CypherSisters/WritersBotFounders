@@ -18,6 +18,9 @@
   cleanly (``Garbled``, see ``classify.decode_file``): not indexed, with a plain
   reason. A file with a UTF-16/32 mark is also read the Windows-1252 way, and
   both readings go through the gate (anything either finds is held).
+- A folder holding a file named :data:`APP_FILES` belongs to an app (WB2, 02): it and everything below it are not walked,
+  so not read, not gated and not listed, and what the index already held from it goes at the next ``scan()``. Bookkeeping,
+  not her documents. A document she pinned in there is still read: that was her own choice.
 - One exception (lane I18d): a file the Core's own knowledge fetch wrote, with exactly the bytes it wrote
   (``fetched.written_by_fetch``, the Core's record in ``<state>/index``), is public reference text, not her
   data: it is indexed whole and nothing of it is held or sealed into the vault inbox. Every other file,
@@ -61,6 +64,8 @@ REPORT_MAX = 20000
 REPORT_FILES = 100
 #: Windows's own small files in a folder: not documents she would miss.
 _NOT_DOCUMENTS = {"desktop.ini", "thumbs.db"}
+#: A folder holding a file of this name belongs to an app (WB2): lists and the index leave it out, with all below it.
+APP_FILES = ".app-files"
 
 
 def _reads(name: str) -> bool:
@@ -377,6 +382,9 @@ class Library:
             rows = {r[0]: (r[1], r[2]) for r in db.execute("SELECT path, status, reason FROM files")}
         seen = 0
         for dirpath, dirnames, filenames in os.walk(folder):
+            if APP_FILES in filenames:
+                dirnames[:] = []
+                continue
             dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "node_modules"]
             for name in filenames:
                 if seen >= REPORT_MAX:
@@ -463,7 +471,8 @@ class Library:
         return len(before) != len(data["linked"])
 
     # -- scanning --------------------------------------------------------------------
-    def _files(self) -> list[Path]:
+    def _files(self, app_folders: list[Path] | None = None) -> list[Path]:
+        """Every file a scan reads. *app_folders*, when given, gets each folder it left out as an app's (WB2)."""
         from .fetched import chosen, is_meta, moving, root as store_root
         from .knowledge_folder import _way_problem, is_link
         data = self.data_folder
@@ -479,6 +488,11 @@ class Library:
                 continue                               # through a link: that is somewhere else, not her store
             for dirpath, dirnames, filenames in os.walk(root):
                 here = Path(dirpath)
+                if APP_FILES in filenames:
+                    dirnames[:] = []
+                    if app_folders is not None:
+                        app_folders.append(here)
+                    continue
                 inside = here == store or store in here.parents   # os.walk goes through junctions unless told not to
                 dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "node_modules"
                                and not (hold and here / d == store)
@@ -499,7 +513,10 @@ class Library:
 
     def scan(self) -> dict:
         report = {"indexed": 0, "held": 0, "unchanged": 0, "not_indexed": []}
-        for p in self._files():
+        app_folders: list[Path] = []
+        files = self._files(app_folders)
+        self._forget_app_files(app_folders)
+        for p in files:
             r = self.scan_file(p)
             if r["status"] == "indexed":
                 report["indexed"] += 1
@@ -509,6 +526,20 @@ class Library:
             else:
                 report["not_indexed"].append({"path": str(p), "reason": r["reason"]})
         return report
+
+    def _forget_app_files(self, folders: list[Path]) -> None:
+        """What the index held from these folders from before they were marked. It looks in ``files`` first, so a pass
+        with nothing to drop never walks the words. A document she pinned there stays."""
+        if not folders:
+            return
+        pins = {str(p.resolve()) for p in self.pinned()}
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            for folder in folders:
+                inside = str(folder.resolve()) + os.sep
+                rows = db.execute("SELECT path FROM files WHERE substr(path, 1, ?) = ?", (len(inside), inside)).fetchall()
+                for key in (r[0] for r in rows if r[0] not in pins):
+                    db.execute("DELETE FROM chunks WHERE path = ?", (key,))
+                    db.execute("DELETE FROM files WHERE path = ?", (key,))
 
     def scan_file(self, p: Path) -> dict:
         try:

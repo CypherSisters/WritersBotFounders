@@ -7,33 +7,22 @@ the pictures. Here is what to download and do, in order. Nothing here touches th
 
 The window is WritersBot's own desktop app. It talks to the Orin over your home network.
 
-**You need**
-
-1. **Python 3.11 or newer.** Get it from python.org. On the first screen of its installer tick "Add python.exe to
-   PATH", then Install. If you already have Python, open a terminal and type `python --version` to check.
-2. **Microsoft Edge WebView2.** Windows 11 has it already. Windows 10 may not: get "WebView2 Runtime, Evergreen
-   Standalone Installer" from Microsoft.
-3. **The WritersBotFounders folder** on your computer: from its page on GitHub ("Code", then "Download ZIP"), or the
-   zip you were sent. Unzip it somewhere that stays, for example `C:\WritersBotFounders`. The BuildBot code the window
-   needs is inside it, in `BuildBotv2`.
+This computer has to be on the same home network as the Orin.
 
 **Install the window**
 
-1. Ask the person at the Orin for its address. It looks like `http://10.0.0.25:8423`. It is what `puffpai pair` prints
-   on the Orin.
-2. Open PowerShell (press the Windows key, type PowerShell, open it) and run, with your own folder and address:
+1. Ask the person at the Orin for its address. It looks like `http://10.0.0.25:8423`.
+2. On the WritersBotFounders page on GitHub, press "Code", then "Download ZIP". Right-click the zip file you get, choose
+   **Extract All**, and open the new folder.
+3. Double-click **Get the WritersBot window**. If Windows says it protected your PC, press "More info", then "Run anyway".
+4. Type the address when it asks. It gets Python and Microsoft's WebView2 if this computer needs them, which can take a
+   few minutes, and then opens the window.
+5. The window asks for a sign-in code. Whoever is at the Orin runs `./install-writersbot.sh pair` and reads you the code.
+   Type it once. The window remembers you after that.
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\PuffPAI\BuildBotv2\install.ps1 -WindowFor http://10.0.0.25:8423
-```
-
-3. It installs what the window needs, a minute or two, writes a launcher called **Open BuildBot window on another
-   computer.cmd** in that folder, and opens the window.
-4. The window shows a sign-in screen asking for a code. The code comes from the Orin: whoever is at it runs
-   `puffpai pair` there and reads you the code. Type it once. The window remembers you after that.
-
-**Opening it from now on:** double-click **Open BuildBot window on another computer.cmd**. Make a shortcut of it on your
-desktop and rename the shortcut "WritersBot". If the window ever opens on the sign-in screen again, ask for a new code.
+**Opening it from now on:** double-click **WritersBot** on your desktop. You can delete the zip and the folder you
+extracted. If the window ever opens on the sign-in screen again, ask for a new code. If the Orin's address changes, run
+**Get the WritersBot window** again with the new one.
 
 **Inside the window:** chat in the middle, your apps on the left (Manuscript, Maps and the rest), and the side pane on
 the right where apps open. Say "start novel mode" in the chat to begin.
