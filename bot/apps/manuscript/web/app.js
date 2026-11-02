@@ -1,4 +1,4 @@
-/* Manuscript 0.5.0, the page. See CONTRACT.md for the routes and the block format.
+/* Manuscript 0.5.1, the page. See CONTRACT.md for the routes and the block format.
 
    Every call goes to the page's own origin with no token; the PuffPAI Desktop's proxy adds the key.
 

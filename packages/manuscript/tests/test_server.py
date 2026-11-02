@@ -1445,7 +1445,7 @@ def test_add_file_is_listed_as_a_change_with_no_argument_the_core_reads_as_her_f
     # owner_files.FILE_ARGS in the Core: with one of these, "write" and a listed change, the tool is hidden while edits are off
     assert not set(me["inputSchema"]["properties"]) & {"path", "file", "file_path", "filepath", "filename", "file_name", "document"}
     manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
-    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.5.0"
+    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.5.1"
     names = {t["name"] for t in got["result"]["tools"]}
     assert set(manifest["abilities"]["tools"]) == names and set(manifest["abilities"]["examples"]) <= names
     assert (PKG / "requirements.txt").read_text(encoding="utf-8").split() == ["python-docx==1.2.0", "pypdf==6.21.4", "cryptography==50.0.2"]
@@ -2239,7 +2239,7 @@ def test_manifest_and_tools_agree_on_the_new_tools():
     manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
     sys.path.insert(0, str(PKG))
     import server
-    assert manifest["version"] == server.VERSION == "0.5.0"
+    assert manifest["version"] == server.VERSION == "0.5.1"
     assert {"manuscript_correct_undo", "manuscript_corrections"} <= set(manifest["abilities"]["tools"])
     assert set(manifest["abilities"]["tools"]) == set(server.TOOLS)
     assert "any fact" in manifest["abilities"]["tools"]["manuscript_correct"]

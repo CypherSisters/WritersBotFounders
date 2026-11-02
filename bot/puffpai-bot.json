@@ -36,7 +36,7 @@
    "kind": "app",
    "name": "Manuscript",
    "source": "apps/manuscript",
-   "version": "0.5.0"
+   "version": "0.5.1"
   },
   {
    "id": "maps",
@@ -50,7 +50,7 @@
    "kind": "skill",
    "name": "Novel mode",
    "source": "apps/novel-mode",
-   "version": "1.0.5"
+   "version": "1.0.6"
   },
   {
    "commit": "4a8e072c072df4222e7853f75d107ce3b266581e",
