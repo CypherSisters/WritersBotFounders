@@ -604,3 +604,41 @@ def test_a_stop_with_answers_from_a_pipe_ends_without_a_crash(state, tmp_path):
     finally:
         if proc.poll() is None:
             proc.kill()                                # this process only, the one this test started
+
+
+def test_the_stopped_lines_name_the_installer_around_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(term, "launcher", lambda: tmp_path / "start-buildbot.sh")
+    (tmp_path / "start-buildbot.sh").write_text("x", encoding="ascii")
+    monkeypatch.delenv("PUFFPAI_SETUP_AGAIN", raising=False)
+    assert "setup --from" in term.setup_stopped_lines("/data/bot/from/writersbot")[1], "never the plain questions"
+    monkeypatch.setenv("PUFFPAI_SETUP_AGAIN", "./install-writersbot.sh setup")
+    assert term.setup_stopped_lines("/data/bot/from/writersbot")[1] == "To go on, run this in a terminal: ./install-writersbot.sh setup"
+
+
+@pytest.mark.parametrize("when, says", [("in the steps", True), ("after it finished", False)])
+def test_ctrl_c_in_setup_says_how_to_go_on_only_if_setup_is_not_finished(state, monkeypatch, capsys, when, says):
+    import argparse
+    monkeypatch.setenv("PUFFPAI_SETUP_AGAIN", "./install-writersbot.sh setup")
+    monkeypatch.setattr(term, "builtins", lambda *_a: [])
+
+    class Steps:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def run(self):
+            if when == "in the steps":
+                raise KeyboardInterrupt
+            return 0
+
+    def ctrl_c(*_a, **_k):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(term, "Terminal", Steps)
+    monkeypatch.setattr(term, "setup_done", lambda *_a, **_k: None)
+    monkeypatch.setattr(term, "running_lines", ctrl_c)
+    p = _ports()
+    args = argparse.Namespace(port=p[0], pages_port=p[1], proxy_port=p[2], exit=False, from_folder=None)
+    term._setup_core(args, term.Answers(lambda: False))
+    out = capsys.readouterr().out
+    assert STOPPED_LINE in out
+    assert (L.SETUP_INTERRUPTED in out) is says, out
+    assert ("./install-writersbot.sh setup" in out) is says, out

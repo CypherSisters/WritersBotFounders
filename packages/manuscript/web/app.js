@@ -1,4 +1,4 @@
-/* Manuscript 0.3.4, the page. See CONTRACT.md for the routes and the block format.
+/* Manuscript 0.3.5, the page. See CONTRACT.md for the routes and the block format.
 
    Every call goes to the page's own origin with no token; the PuffPAI Desktop's proxy adds the key.
 
@@ -220,7 +220,7 @@
     drawBooks();
     drawTabs();
     if (!S.books.length) {
-      emptyReader('Upload a Word, text or Markdown file to start. Your bot reads it and fills the tabs. The text is never changed here.');
+      emptyReader('Upload a Word, PDF, text or Markdown file to start. Your bot reads it and fills the tabs. The text is never changed here.');
       return;
     }
     if (!S.book || !S.books.find(b => b.title === S.book)) pickBook(S.books[0].title);
@@ -788,6 +788,11 @@
     const f = $('file').files[0];
     $('file').value = '';
     if (!f) return;
+    // The Core's page route takes 25 MB of base64, about 18.7 MB of file, and its refusal would only confuse.
+    if (f.size > 18 * 1024 * 1024) {
+      say($('upsay'), 'This file is too big for the Upload button. Send it to Document convert, in chat or on Your documents, then ask your bot to add it.', true);
+      return;
+    }
     say($('upsay'), 'Reading ' + f.name + '...');
     const rd = new FileReader();
     rd.onload = async () => {
@@ -799,6 +804,7 @@
         await loadList();
         if (got.title && got.title !== keep && S.books.find(b => b.title === got.title) && leaveOk()) {
           S.dirty = false; S.tabData = null; pickBook(got.title);
+          say($('upsay'), got.message || '');       // 0.3.5: picking clears the line, and this one is about the new book
         } else if (got.title === keep) loadStatus();
       } catch (e) { say($('upsay'), e.message, true); }
     };

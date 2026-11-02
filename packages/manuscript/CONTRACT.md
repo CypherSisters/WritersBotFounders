@@ -1,7 +1,7 @@
 # Manuscript v2: the contract between the server and the page
 
-Manuscript is a PuffPAI `app` package for WritersBot. Version 0.3.0 (0.2.1's routes, tools and files all still hold;
-what 0.3 adds is marked **0.3**). The owner's rules, in order:
+Manuscript is a PuffPAI `app` package for WritersBot. Version 0.3.5 (0.2.1's routes, tools and files all still hold;
+what 0.3 adds is marked **0.3**, and each later version has its section at the end). The owner's rules, in order:
 
 1. **The manuscript text is never changed by this app.** No route and no tool writes a chapter or section file. The
    only files the app writes are its own: the story bible, views, notes, pointer, status, corrections, the desk, and
@@ -267,7 +267,7 @@ paragraph that shares the most words with the quote.
 |---|---|
 | `GET /api/list` | manuscripts with sections and each one's `status` |
 | `GET /api/section?title&n` | one section's text |
-| `POST /api/upload` | as 0.1.0 (`file_name`, `content_b64`, `title?`); starts the reading |
+| `POST /api/upload` | as 0.1.0 (`file_name`, `content_b64`, `title?`), and `.pdf` since 0.3.5; starts the reading |
 | `GET /api/status?title` | `status.json` |
 | `POST /api/analyze` | `{title}`; starts the reading again |
 | `GET /api/bible?title` | the whole bible |
@@ -301,6 +301,7 @@ kind (town, village, island, ...). What it cannot apply stays a note on its tab,
 | `manuscript_point` (title, section, quote, note) | no | sets the pointer; returns where it landed |
 | `manuscript_notes_read` / `manuscript_notes_append` (title, tab, text) | append is a change to the app's own notes | as 0.1.0 |
 | `manuscript_correct` (title, what, correction?) | no (the app's own files) | **0.3** as `POST /api/correct`; answers "Changed it: ..." or "I could not change that in the story bible by myself, so I kept it as a note on the <Tab> tab: "You said: ..."" |
+| `manuscript_add_file` (source, title?) | yes | **0.3.5** a file from My files as a new manuscript; no reading starts (below) |
 | `manuscript_desk` (title, action: list \| keep \| dismiss \| note, id?, note?) | no (the app's own files) | **0.3** `list` gives the open items in severity order, one plain line each ("1. High, character, sections 1 and 3: ... Fix: ... [d-...]"); the others act on one item, by its number in that list or its id |
 
 Tool descriptions are plain sentences; none reads like an instruction to a model. Examples in the manifest:
@@ -398,3 +399,29 @@ Also in 0.3.3:
   desk_high}` from `bible.json` (null before any reading). `manuscript_status` adds, after its progress line, "Found:
   N characters (M main), T plot threads, P places, E events, D items on the editor's desk (H high)."; `manuscript_list`
   gives the same line under each manuscript.
+
+## 0.3.5: PDFs
+
+`pdf_text.py`, the same file in Manuscript and in Document convert, turns PDF bytes into paragraphs with heading marks and
+a report, with pypdf. `read_pdf(raw)` answers `Book(paragraphs, report)` or raises `Refused` with one plain line. It never
+invents or rewords: its only changes are joining wrapped lines, taking out a hyphen when a word really was split, taking out
+running heads, feet and page numbers (found by what repeats at one height), ligatures to letters, odd spaces to spaces,
+stray spaces pypdf guessed inside a word, and a line of scene ornaments written `* * *`. A large gap between lines becomes
+three blank paragraphs, which `split_scenes` reads as a scene break and which add no words; inside a chapter,
+`chapter_text` drops them as it does for a Word file.
+
+- **Upload.** `.pdf` is in `UPLOAD_TYPES`. A PDF's paragraphs go down the same path as a Word file's, keep `original.pdf`,
+  and split by pdf_text's marks only: `split_sections(paras, by_words=False)`, so a contents line that reads like a
+  chapter makes no section. The answer gains `report`, and `message` ends with its line. `manuscript.json` keeps it as
+  `pdf_report`, and `manuscript_list` gives its line under the manuscript. The page shows `message` under the picker.
+- **Report.** `{pages, words, pages_no_text, pages_pictures, pages_unread, running_heads_removed, page_numbers_removed,
+  hyphens_joined, chapters_found, parts_found, scene_breaks, scene_marks_rewritten, lines_joined, ligatures, odd_spaces,
+  stray_spaces_removed, contents_lines, pages_two_up, pages_tables, words_left_out_sideways, scanned_text, warnings}`.
+  `pdf_text.report_line(report)` is the plain sentence.
+- **`manuscript_add_file(source, title?)`.** `source` is a name or a path inside My files (`Converted/My Novel.docx`), of a
+  .docx, .pdf, .txt or .md. A bare name is looked for in `Converted`, then in My files, leaving out `Manuscripts`.
+  Refused: `..`, any path outside My files, any link on the way, a name that fits two files. It calls the same `_add` as
+  the upload and starts no reading: the answer says the reading waits for the writer's yes and that `manuscript_analyze`
+  with `confirm` true starts it. The argument is not called `path` or `file`: the Core reads those as a file being
+  changed and hides such a tool while changing documents is off (`owner_files.py`, D140).
+

@@ -1,4 +1,4 @@
-"""Manuscript 0.3.3 against a stand-in Core: the server runs as its own process, the Core here answers
+"""Manuscript 0.3.5 against a stand-in Core: the server runs as its own process, the Core here answers
 ``/v1/owner-files`` and ``/v1/brain/chat`` with canned JSON. Run from the package folder: ``python -m pytest tests -q``.
 """
 
@@ -734,7 +734,7 @@ def test_old_routes_and_tools(env):
     assert code == 400                                                    # the stale-save refusal
     code, got = call(port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {t["name"] for t in got["result"]["tools"]}
-    assert names == {"manuscript_list", "manuscript_read", "manuscript_status", "manuscript_analyze", "manuscript_ask", "manuscript_remove",
+    assert names == {"manuscript_list", "manuscript_read", "manuscript_status", "manuscript_analyze", "manuscript_ask", "manuscript_remove", "manuscript_add_file",
                      "manuscript_show", "manuscript_point", "manuscript_notes_read", "manuscript_notes_append",
                      "manuscript_correct", "manuscript_desk"}
 
@@ -1070,3 +1070,394 @@ def test_analyze_needs_the_writers_yes(env):
     text, err = tool(port, "manuscript_analyze", title="Four", confirm=True)
     assert not err and "started reading Four" in text
     wait_done(port, "Four")
+
+
+# -- 0.3.5: PDFs ---------------------------------------------------------------------------------------------
+
+sys.path.insert(0, str(PKG))
+sys.path.insert(0, str(PKG / "tests"))
+import pdf_text  # noqa: E402
+import pdf_fixtures as fx  # noqa: E402
+
+
+def need_reportlab():
+    pytest.importorskip("reportlab")
+    pytest.importorskip("pypdf")
+
+
+def b64(raw: bytes) -> str:
+    return base64.b64encode(raw).decode()
+
+
+def texts(book, heading=None):
+    return [p.text for p in book.paragraphs if heading is None or bool(p.heading) == heading]
+
+
+def test_pdf_novel_paragraphs_exactly():
+    need_reportlab()
+    book = pdf_text.read_pdf(fx.novel())
+    got = texts(book)
+    # A wrong join anywhere fails here: each paragraph is compared whole.
+    start = got.index("Chapter 1")
+    assert got[:start] == fx.FRONT_TEXT                       # the title page's big type is no chapter
+    want = fx.PARAGRAPHS
+    assert got[start + 1:start + 7] == [want["ferry"], want["tonight"], want["cafe"], want["times"], want["wind"], want["short"]]
+    assert got[start + 7] == "* * *"                          # the mark, as it was
+    assert got[start + 8] == want["rain"]
+    assert got[start + 9:start + 12] == ["", "", ""]          # a large gap: three blank paragraphs, no invented words
+    assert got[start + 12:start + 15] == [want["three"], want["whose"], want["bells"]]
+    assert texts(book, heading=True) == ["Chapter 1", "Chapter 3", "IV."]
+    joined = " ".join(got)
+    assert "THE SALT LEDGER" not in joined and "Fine Blue Author" not in joined      # running heads gone
+    assert not [t for t in got if t.strip().isdigit()]        # page numbers gone
+    assert "\u201cNot tonight,\u201d" in joined and "caf\u00e9" in joined            # curly quotes and accents as they are
+    assert "breakwater" in joined and "baptism" in joined and "unforgivable" in joined    # split words joined
+    assert "well-known" in joined and "Anglo-Saxon" in joined                 # real hyphens kept
+    assert "The Harbour Times at the long table" in joined    # italics read in place, with their spaces
+
+
+def test_pdf_report_counts_what_it_did():
+    need_reportlab()
+    r = pdf_text.read_pdf(fx.novel()).report
+    assert r["pages"] == 5 and r["pages_no_text"] == [] and r["chapters_found"] == 3 and r["parts_found"] == 0
+    assert r["running_heads_removed"] == 3 and r["page_numbers_removed"] == 4
+    assert r["hyphens_joined"] == 3 and r["scene_breaks"] == 2 and r["warnings"] == []
+    words = sum(len(t.split()) for t in texts(pdf_text.read_pdf(fx.novel()), heading=False))
+    assert r["words"] == words
+    line = pdf_text.report_line(r)
+    assert line == (f"From the PDF: 5 pages, {words} words, 3 chapters found, 7 running heads and page numbers removed, "
+                    "3 hyphens joined.")
+    assert "\u2014" not in line
+
+
+def test_pdf_every_word_comes_from_the_page():
+    need_reportlab()
+    from pypdf import PdfReader
+    raw = fx.novel()
+    plain = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(raw)).pages)
+    have = set(plain.split())
+    book = pdf_text.read_pdf(raw)
+    glued = {"breakwater", "baptism", "unforgivable", "well-known", "Anglo-Saxon"}
+    for word in " ".join(texts(book)).split():
+        assert word in have or word.strip(".,") in glued, word
+
+
+def test_pdf_heads_keep_a_real_heading_and_a_contents_list_makes_no_sections():
+    need_reportlab()
+    trees = iter("oak ash elm yew fir bay box fig gum may nut oat pea rye sage teak vine wort yam lime".split())
+
+    def lines():
+        return [f"She walked the long way round the harbour wall, past the {next(trees)}, and did not look." for _ in range(4)]
+    pages = [["Contents", "", "Chapter 1", "Chapter 2", "Chapter 3"], ["", "", "Chapter 1", ""] + lines()]
+    pages += [["Chapter 1", "", "", ""] + lines() for _ in range(3)]
+    pages += [["", "", "Chapter 2", ""] + lines()]
+    book = pdf_text.read_pdf(fx.text_pages(pages))
+    assert texts(book, heading=True) == ["Chapter 1", "Chapter 2"]     # the heading stays, the same words as a head go
+    assert texts(book)[0:2] == ["Contents", "Chapter 1 Chapter 2 Chapter 3"]
+    assert book.report["contents_lines"] == 3 and book.report["running_heads_removed"] == 3
+
+
+def test_pdf_drop_cap_goes_back_on_its_word():
+    need_reportlab()
+    buf = io.BytesIO()
+    from reportlab.pdfgen import canvas
+    c = canvas.Canvas(buf, pagesize=(fx.W, fx.H))
+    c.setFont("Times-Bold", 40)
+    c.drawString(54, 560, "T")
+    c.setFont("Times-Roman", 11)
+    c.drawString(84, 585, "he ferry left at dawn and nobody on the harbour came")
+    c.drawString(84, 570, "down to see it go, and she counted the gulls alone")
+    c.drawString(54, 555, "from the end of the wall, in the rain, as she always did.")
+    c.save()
+    assert texts(pdf_text.read_pdf(buf.getvalue())) == [
+        "The ferry left at dawn and nobody on the harbour came down to see it go, and she counted the gulls alone "
+        "from the end of the wall, in the rain, as she always did."]
+
+
+def test_pdf_cleaning_keeps_what_the_writer_set():
+    counts = __import__("collections").Counter()
+    got = pdf_text._clean("\ufb01ne \ufb02oor\u00a0\u2009o\ufb00 \u201cquotes\u201d \u2014 caf\u00e9\u200b \u2019s", counts)
+    assert got == "fine floor  off \u201cquotes\u201d \u2014 caf\u00e9 \u2019s"
+    assert counts["ligatures"] == 3 and counts["odd_spaces"] == 3
+
+
+def test_pdf_guessed_spaces_are_weighed_by_the_book():
+    def sheet(*lines):
+        s = pdf_text.Sheet(1, 0, [pdf_text.Line(54, 600 - 15 * i, 11, t, "", 1) for i, t in enumerate(lines)], 216)
+        for ln in s.lines:
+            ln.finish()
+        return s
+    g = pdf_text.GUESS
+    s = sheet("He investigated the flood and the rope, and part of though she knew it", f"she inve{g}stigated it thoug{g}h the rope{g}frayed",
+              f"and then a{g}part of the flood{g}, enthu{g}-")
+    counts = __import__("collections").Counter()
+    pdf_text._settle_guesses([s], counts)
+    assert [ln.text for ln in s.lines][1:] == ["she investigated it though the rope frayed", "and then a part of the flood, enthu-"]
+    assert counts["stray_spaces"] == 3
+    # where the guesses mostly hold, a word the book does not know is left alone
+    s = sheet("The flood and the rope and the ledger came", f"the{g}flood and{g}the rope{g}ledger and a{g}zzyzx{g}qwerty")
+    pdf_text._settle_guesses([s], counts)
+    assert s.lines[1].text == "the flood and the rope ledger and a zzyzx qwerty"
+
+
+def test_pdf_no_chapters_says_so_and_scene_gaps_split_a_story():
+    need_reportlab()
+    para = ["The ferry left at dawn and nobody on the harbour came down to", "see it go, and she wrote it in the ledger that night by the",
+            "stove with the door shut against the rain and the dark.", "", "", "", "",
+            "In the morning she rowed out alone past the second buoy and", "let the boat drift while she ate her bread at the oars and did",
+            "not look back at the town until the sun had come up."]
+    raw = fx.text_pages([para])
+    book = pdf_text.read_pdf(raw)
+    assert book.report["chapters_found"] == 0 and book.report["warnings"] == [
+        "I found no chapter headings, so the book will be split by its scene breaks or by length."]
+    assert "I found no chapter headings" in pdf_text.report_line(book.report)
+    assert texts(book)[1:4] == ["", "", ""] and len(texts(book)) == 5
+
+
+def test_pdf_columns_and_tables_are_read_and_said():
+    need_reportlab()
+    book = pdf_text.read_pdf(fx.two_columns())
+    got = " ".join(texts(book))
+    assert got.index("Left column, line thorn") < got.index("Right column, line oak")      # the left column all before the right
+    assert book.report["pages_two_up"] == [1] and any("side by side" in w for w in book.report["warnings"])
+    book = pdf_text.read_pdf(fx.table_page())
+    assert "cell 0-0" in " ".join(texts(book)) and book.report["pages_tables"] == [1]
+    # the same lines, read as the writer would: each paragraph whole
+    assert texts(pdf_text.read_pdf(fx.two_columns()))[0].startswith("Left column, line oak, in plain words here.")
+    assert any("table" in w for w in book.report["warnings"])
+
+
+@pytest.mark.parametrize("make,line", [
+    (lambda: fx.scanned(), "This PDF is pictures of pages, so there is no text to read. Reading scans is not built."),
+    (lambda: fx.locked(), "This PDF is locked with a password, so I cannot read it. Save a copy with no password and try again."),
+    (lambda: fx.empty(), "This PDF has no text and no pictures. Its pages are empty."),
+    (lambda: b"This is a letter to my sister, renamed.", "That file is not a real PDF, so it will not open as one."),
+    (lambda: b"%PDF-1.7 and then nothing a reader could use", "That file is not a real PDF, so it will not open as one."),
+])
+def test_pdf_with_nothing_to_read_is_one_plain_line(make, line):
+    need_reportlab()
+    with pytest.raises(pdf_text.Refused) as got:
+        pdf_text.read_pdf(make())
+    assert str(got.value) == line
+
+
+def test_pdf_mixed_names_the_pages_with_no_text():
+    need_reportlab()
+    book = pdf_text.read_pdf(fx.mixed())
+    r = book.report
+    assert r["pages_no_text"] == [3] and r["pages_pictures"] == [3] and "ferry left at dawn" in texts(book)[0]
+    assert "Page 3 is a picture with no text, so its words are not here." in pdf_text.report_line(r)
+
+
+@pytest.mark.parametrize("algorithm", ["RC4-128", "AES-128", "AES-256"])
+def test_pdf_with_only_an_owner_lock_opens_with_no_password(algorithm):
+    need_reportlab()
+    if algorithm.startswith("AES"):
+        pytest.importorskip("cryptography")
+    assert texts(pdf_text.read_pdf(fx.locked(user_password="", algorithm=algorithm)), heading=True) == ["Chapter 1", "Chapter 3", "IV."]
+
+
+def test_pdf_warns_about_wrong_letters_and_a_scanners_hidden_text():
+    need_reportlab()
+    assert pdf_text._garbled([pdf_text.Para("\ue123\ue456 " * 150)]) is True
+    assert pdf_text._garbled([pdf_text.Para("x7#q 9$kz " * 150)]) is True
+    assert pdf_text._garbled([pdf_text.Para("She wrote it down in the ledger, as she always did. " * 20)]) is False
+    book = pdf_text.read_pdf(fx.hidden_text())
+    assert book.report["scanned_text"] is True and "scanner's hidden text" in pdf_text.report_line(book.report)
+    assert "second morning" in " ".join(texts(book))
+
+
+def test_novel_mode_fits_under_the_skill_cap_and_names_real_tools():
+    skill = PKG.parent / "novel-mode" / "SKILL.md"
+    if not skill.is_file():
+        pytest.skip("Novel mode is not beside this package here")
+    body = skill.read_text(encoding="utf-8").split("---", 2)[2].strip()
+    assert len(body) < 7000                                   # zone2/skills.py MAX_CHARS; past it the end is cut off
+    assert "manuscript.manuscript_add_file" in body and "pdf_to_word" in body and "send_document" in body
+
+
+def test_pdf_module_is_the_same_file_in_both_packages():
+    other = PKG.parent / "document-convert"
+    if not other.is_dir():
+        pytest.skip("Document convert is not beside this package here")
+    for name in ("pdf_text.py", "tests/pdf_fixtures.py"):
+        assert (PKG / name).read_bytes().replace(b"\r\n", b"\n") == (other / name).read_bytes().replace(b"\r\n", b"\n"), name
+
+
+@pytest.fixture(scope="module")
+def pdfenv(tmp_path_factory):
+    root = tmp_path_factory.mktemp("pdfdata")
+    proc, core, port = start_server(root)
+    try:
+        yield {"port": port, "root": root, "my": root / "My files", "shelf": root / "My files" / "Manuscripts"}
+    finally:
+        stop_server(proc, core)
+
+
+def test_upload_takes_a_pdf_and_sections_split_at_its_chapters(pdfenv):
+    need_reportlab()
+    port, shelf = pdfenv["port"], pdfenv["shelf"]
+    raw = fx.novel()
+    code, got = call(port, "POST", "/api/upload", {"file_name": "The Salt Ledger.pdf", "content_b64": b64(raw)})
+    assert code == 200, got
+    words = got["report"]["words"]
+    assert got["title"] == "The Salt Ledger" and got["message"].startswith("Added The Salt Ledger: 4 sections, ")
+    assert got["message"].endswith("Your bot is reading it now. From the PDF: 5 pages, "
+                                   f"{words} words, 3 chapters found, 7 running heads and page numbers removed, 3 hyphens joined.")
+    folder = shelf / "The Salt Ledger"
+    assert (folder / "original.pdf").read_bytes() == raw      # the original kept whole, as any upload is
+    idx = json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))
+    assert [c["heading"] for c in idx["sections"]] == ["Before the first chapter", "Chapter 1", "Chapter 3", "IV."]
+    assert idx["original_file"] == "original.pdf" and idx["pdf_report"]["chapters_found"] == 3
+    code, sec = call(port, "GET", "/api/section" + q(title="The Salt Ledger", n=1))
+    want = fx.PARAGRAPHS
+    assert sec["text"].startswith(f"# Chapter 1\n\n{want['ferry']}\n\n{want['tonight']}\n\n{want['cafe']}\n\n{want['times']}\n\n")
+    assert f"{want['rain']}\n\n{want['three']}" in sec["text"]     # blank paragraphs drop inside a chapter, as .docx
+    assert "\n\n* * *\n\n" in sec["text"]
+    st = wait_done(port, "The Salt Ledger")                   # a page upload starts the reading, as it always has
+    assert st["state"] == "done"
+    text, err = tool(port, "manuscript_list")
+    assert not err and "From the PDF: 5 pages" in text
+
+
+def test_upload_of_a_pdf_keeps_a_contents_list_as_text(pdfenv):
+    need_reportlab()
+    trees = iter("oak ash elm yew fir bay box fig".split())
+
+    def lines():
+        return [f"She walked the long way round the harbour wall, past the {next(trees)}, and did not look." for _ in range(4)]
+    raw = fx.text_pages([["Contents", "", "Chapter 1", "Chapter 2", "Chapter 3"], ["Chapter 1", ""] + lines(), ["Chapter 2", ""] + lines()])
+    code, got = call(pdfenv["port"], "POST", "/api/upload", {"file_name": "toc.pdf", "title": "With Contents", "content_b64": b64(raw)})
+    assert code == 200, got
+    code, lst = call(pdfenv["port"], "GET", "/api/list")
+    book = [m for m in lst["manuscripts"] if m["title"] == "With Contents"][0]
+    assert [s["heading"] for s in book["sections"]] == ["Before the first chapter", "Chapter 1", "Chapter 2"]
+    code, sec = call(pdfenv["port"], "GET", "/api/section" + q(title="With Contents", n=0))
+    assert sec["text"] == "# Before the first chapter\n\nContents\n\nChapter 1 Chapter 2 Chapter 3\n"
+    wait_done(pdfenv["port"], "With Contents")
+
+
+def test_upload_of_a_pdf_with_no_headings_splits_at_its_scene_gaps(pdfenv):
+    need_reportlab()
+    para = ["The ferry left at dawn and nobody on the harbour came down to", "see it go, and she wrote it in the ledger that night by the",
+            "stove with the door shut against the rain and the dark.", "", "", "", "",
+            "In the morning she rowed out alone past the second buoy and", "let the boat drift while she ate her bread at the oars and did",
+            "not look back at the town until the sun had come up."]
+    code, got = call(pdfenv["port"], "POST", "/api/upload", {"file_name": "story.pdf", "title": "Gap Story", "content_b64": b64(fx.text_pages([para]))})
+    assert code == 200 and got["sections"] == 2 and "no chapter headings" in got["message"], got
+    code, lst = call(pdfenv["port"], "GET", "/api/list")
+    book = [m for m in lst["manuscripts"] if m["title"] == "Gap Story"][0]
+    assert [s["heading"] for s in book["sections"]] == ["Scene 1", "Scene 2"]
+    wait_done(pdfenv["port"], "Gap Story")
+
+
+@pytest.mark.parametrize("make,word", [(lambda: fx.scanned(), "pictures of pages"), (lambda: fx.locked(), "locked with a password"),
+                                       (lambda: fx.empty(), "pages are empty"), (lambda: b"not a pdf at all", "not a real PDF")])
+def test_upload_refuses_a_pdf_it_cannot_read_and_adds_nothing(pdfenv, make, word):
+    need_reportlab()
+    before = sorted(p.name for p in pdfenv["shelf"].glob("*")) if pdfenv["shelf"].exists() else []
+    code, got = call(pdfenv["port"], "POST", "/api/upload", {"file_name": "bad.pdf", "content_b64": b64(make())})
+    assert code == 400 and word in got["error"], got
+    after = sorted(p.name for p in pdfenv["shelf"].glob("*")) if pdfenv["shelf"].exists() else []
+    assert after == before
+
+
+def test_old_types_upload_as_before_and_the_page_takes_pdf(pdfenv):
+    code, got = call(pdfenv["port"], "POST", "/api/upload", {"file_name": "a.exe", "content_b64": b64(b"MZ")})
+    assert code == 400 and got["error"] == "Upload a Word file (.docx), a PDF (.pdf), a text file (.txt) or a Markdown file (.md)."
+    assert 'accept=".docx,.pdf,.txt,.md"' in (PKG / "web" / "index.html").read_text(encoding="utf-8")
+    code, got = call(pdfenv["port"], "POST", "/api/upload", {"file_name": "plain.txt", "title": "Plain", "content_b64": b64(SCENES.encode())})
+    assert code == 200 and got["message"] == f"Added Plain: {got['sections']} sections, {sum_words(pdfenv, 'Plain')} words. Your bot is reading it now."
+    assert "report" not in got and "words" not in got and "folder" not in got
+    wait_done(pdfenv["port"], "Plain")
+
+
+def sum_words(pdfenv, title):
+    idx = json.loads((pdfenv["shelf"] / title / "manuscript.json").read_text(encoding="utf-8"))
+    return sum(c["words"] for c in idx["sections"])
+
+
+def test_add_file_adds_from_my_files_and_starts_no_reading(pdfenv):
+    need_reportlab()
+    port, my, shelf = pdfenv["port"], pdfenv["my"], pdfenv["shelf"]
+    converted = my / "Converted"
+    converted.mkdir(exist_ok=True)
+    (converted / "Added Novel.pdf").write_bytes(fx.novel())
+    (converted / "From Word.docx").write_bytes(make_docx())
+    (my / "Loose Notes.md").write_text("# One\n\nALPHA. Some words.\n", encoding="utf-8")
+    text, err = tool(port, "manuscript_add_file", source="Converted/Added Novel.pdf")
+    assert not err and text.startswith("Added Added Novel from My files: 4 sections, "), text
+    assert "From the PDF: 5 pages," in text and "The reading has not started; it waits for the writer's yes." in text
+    assert "manuscript_analyze" in text and "confirm true" in text
+    folder = shelf / "Added Novel"
+    assert (folder / "original.pdf").read_bytes() == (converted / "Added Novel.pdf").read_bytes()
+    assert (converted / "Added Novel.pdf").exists()           # the file stays where it was
+    code, st = call(port, "GET", "/api/status" + q(title="Added Novel"))
+    assert st.get("state") not in ("reading", "done", "failed") and not (folder / "bible.json").exists()
+    assert not (folder / "cache").exists()
+    # by bare name, in Converted or anywhere else in My files; a backslash path as Windows writes it
+    text, err = tool(port, "manuscript_add_file", source="From Word.docx", title="Word Book")
+    assert not err and text.startswith("Added Word Book from My files: 3 sections, "), text
+    text, err = tool(port, "manuscript_add_file", source="Loose Notes")
+    assert not err and "Added Loose Notes" in text
+    text, err = tool(port, "manuscript_add_file", source="Converted\\From Word.docx", title="Word Again")
+    assert not err and "Added Word Again" in text
+    # her yes still starts it, the usual way
+    text, err = tool(port, "manuscript_analyze", title="Added Novel")
+    assert not err and text.startswith("Not started.")
+    text, err = tool(port, "manuscript_analyze", title="Added Novel", confirm=True)
+    assert not err and "started reading Added Novel" in text
+    wait_done(port, "Added Novel")
+
+
+def test_add_file_refuses_outside_my_files(pdfenv):
+    port, root, my = pdfenv["port"], pdfenv["root"], pdfenv["my"]
+    secret = root / "outside.txt"
+    secret.write_text("Not hers to add.", encoding="utf-8")
+    (my / "Converted").mkdir(exist_ok=True)
+    (my / "Converted" / "runme.exe").write_bytes(b"MZ")
+    before = sorted(p.name for p in pdfenv["shelf"].glob("*")) if pdfenv["shelf"].exists() else []
+    for source in ("../outside.txt", "Converted/../../outside.txt", "..\\outside.txt", str(secret), secret.as_posix(), "/etc/passwd", "C:/Windows/win.ini"):
+        text, err = tool(port, "manuscript_add_file", source=source)
+        assert err and text == "I can only add a file from My files, and that one is outside it. Nothing was added.", (source, text)
+    text, err = tool(port, "manuscript_add_file", source="Converted/runme.exe")
+    assert err and text.startswith("I can add a Word file")
+    text, err = tool(port, "manuscript_add_file", source="Converted/not here.pdf")
+    assert err and "could not find" in text
+    text, err = tool(port, "manuscript_add_file", source="")
+    assert err and "Say which file" in text
+    assert (sorted(p.name for p in pdfenv["shelf"].glob("*")) if pdfenv["shelf"].exists() else []) == before
+
+
+def test_add_file_refuses_a_link_and_a_name_that_could_be_two(pdfenv):
+    port, root, my = pdfenv["port"], pdfenv["root"], pdfenv["my"]
+    (root / "outside dir").mkdir(exist_ok=True)
+    (root / "outside dir" / "secret.txt").write_text("Not hers to add.", encoding="utf-8")
+    (my / "a").mkdir(exist_ok=True)
+    (my / "b").mkdir(exist_ok=True)
+    (my / "a" / "twice.txt").write_text("One.", encoding="utf-8")
+    (my / "b" / "twice.txt").write_text("Two.", encoding="utf-8")
+    text, err = tool(port, "manuscript_add_file", source="twice.txt")
+    assert err and "More than one file" in text and "a/twice.txt" in text and "b/twice.txt" in text
+    try:
+        os.symlink(root / "outside dir", my / "linked", target_is_directory=True)
+        os.symlink(root / "outside dir" / "secret.txt", my / "secret link.txt")
+    except OSError:
+        pytest.skip("this computer does not let a test make links")
+    for source in ("linked/secret.txt", "secret link.txt"):
+        text, err = tool(port, "manuscript_add_file", source=source)
+        assert err and "outside it" in text, (source, text)
+
+
+def test_add_file_is_listed_as_a_change_with_no_argument_the_core_reads_as_her_file(pdfenv):
+    code, got = call(pdfenv["port"], "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    me = [t for t in got["result"]["tools"] if t["name"] == "manuscript_add_file"][0]
+    assert me["annotations"]["readOnlyHint"] is False and me["inputSchema"]["required"] == ["source"]
+    # owner_files.FILE_ARGS in the Core: with one of these, "write" and a listed change, the tool is hidden while edits are off
+    assert not set(me["inputSchema"]["properties"]) & {"path", "file", "file_path", "filepath", "filename", "file_name", "document"}
+    manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
+    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.3.5"
+    names = {t["name"] for t in got["result"]["tools"]}
+    assert set(manifest["abilities"]["tools"]) == names and set(manifest["abilities"]["examples"]) <= names
+    assert (PKG / "requirements.txt").read_text(encoding="utf-8").split() == ["python-docx==1.2.0", "pypdf==6.21.4", "cryptography==50.0.2"]
+    assert call(pdfenv["port"], "GET", "/api/list")[0] == 200

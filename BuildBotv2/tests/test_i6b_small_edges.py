@@ -537,3 +537,30 @@ def test_setup_says_the_same_status_words_as_puffpai_list(state):
     finally:
         core.steward.stop_all(remember=False)
         core.zone3.stop()
+
+
+def test_the_data_folder_follows_puffpai_home_when_no_env_is_given(state, monkeypatch, tmp_path):
+    """A real setup gives the engine no env. In a container that left the data folder off the mount."""
+    from wizard_kit import Kit
+    from puffpai_core.zone1.folders import folder_problem
+    eng = Kit(state).engine()
+    eng.env, eng.platform = None, "linux"
+    hook = eng.hook("vault")
+    monkeypatch.setenv("PUFFPAI_HOME", "/data/bot/puffpai")
+    moved = f"/data/bot/PuffPAI Data/{state.name}"
+    assert hook.default({"id": "data_folder"}, {}) == moved
+    assert hook.default({"id": "knowledge_folder"}, {}) == moved, "books and downloads go with it"
+    monkeypatch.delenv("PUFFPAI_HOME")
+    monkeypatch.setenv("HOME", "/home/owner")
+    assert hook.default({"id": "data_folder"}, {}) == f"/home/owner/PuffPAI Data/{state.name}"
+    # Windows never took PUFFPAI_HOME here, and still does not.
+    eng.platform = "windows"
+    monkeypatch.setenv("PUFFPAI_HOME", "C:\\elsewhere\\puffpai")
+    monkeypatch.setenv("USERPROFILE", "C:\\Users\\her")
+    assert hook.default({"id": "data_folder"}, {}) == f"C:\\Users\\her\\PuffPAI Data\\{state.name}"
+    # An env that was given is still the only one read.
+    eng.env, eng.platform = {"HOME": "/h"}, "linux"
+    assert hook.default({"id": "data_folder"}, {}) == f"/h/PuffPAI Data/{state.name}"
+    # The folder check takes the place beside the folder that holds every bot.
+    home = tmp_path / "bot" / "puffpai"
+    assert folder_problem(home / "writersbot", tmp_path / "bot" / "PuffPAI Data" / "writersbot", as_data=True) == ""

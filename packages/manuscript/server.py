@@ -5,7 +5,8 @@ One small server, bound to 127.0.0.1 (CONTRACT.md is the agreement with the page
 - ``/health``                 "ok"
 - ``/api/list``               GET: every manuscript with its sections and its reading status
 - ``/api/section``            GET ``?title=&n=``: one section's text (``/api/chapter?title=&chapter=``, as 0.1.0)
-- ``/api/upload``             POST ``{file_name, content_b64, title?}``: a new manuscript; starts the reading
+- ``/api/upload``             POST ``{file_name, content_b64, title?}``: a new manuscript (.docx .txt .md .pdf); starts
+                              the reading
 - ``/api/status``             GET ``?title=``: the reading's progress
 - ``/api/analyze``            POST ``{title}``: start the reading again
 - ``/api/bible``              GET ``?title=``: the story bible
@@ -55,6 +56,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # its own modules, also when started with python -I
 import analysis  # noqa: E402
+import pdf_text  # noqa: E402
 from analysis import (BIBLE, BUDGET, STATUS, Brain, BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet, QueuedBrain,
                       Reader, empty_bible, pick_facts, read_json, split_words, strip_think, tokens, words_of,
                       write_json)  # noqa: E402
@@ -66,11 +68,12 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "manuscript"
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 40 * 1024 * 1024                  # a long novel with pictures, as base64
 SHELF = "Manuscripts"
+CONVERTED = "Converted"                        # where Document convert leaves a Word file it made from a PDF
 REMOVED = "Removed"                     # put-away manuscripts live here, inside the shelf, never deleted
 INDEX = "manuscript.json"
 SECTIONS = "sections"
@@ -92,7 +95,7 @@ TWINS = [(r"\btouch ?points?\b", "touchpoints"), (r"\btime ?lines?\b", "timeline
          (r"\btrees?\b", "family"), (r"\brelationships?\b", "relationships"), (r"\binteract\w*", "relationships"),
          (r"\bsupporting\b", "relationships"), (r"\barcs?\b", "arcs"), (r"\bstructure\b", "structure"),
          (r"\bthreads?\b", "threads"), (r"\bworld\b", "world"), (r"\bmaps?\b", "world")]
-UPLOAD_TYPES = (".docx", ".txt", ".md")
+UPLOAD_TYPES = (".docx", ".txt", ".md", ".pdf")
 WEB_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
              ".json": "application/json", ".html": "text/html; charset=utf-8"}
 NOTE_MAX = 50_000
@@ -167,14 +170,15 @@ def is_chapter_line(text: str) -> bool:
     return word.isdigit() or word in _NUMBER_WORDS or re.fullmatch(r"[ivxlcdm]+", word) is not None
 
 
-def split_paragraphs(paras: list[tuple[str, bool]]) -> list[tuple[str, list[str]]]:
+def split_paragraphs(paras: list[tuple[str, bool]], by_words: bool = True) -> list[tuple[str, list[str]]]:
     """``paras``: (text, is_heading) in order. Chapters as (heading, paragraphs). Text before the first heading is
-    its own chapter; no heading at all is one chapter, "Whole manuscript"."""
+    its own chapter; no heading at all is one chapter, "Whole manuscript". ``by_words`` False: only the marks count
+    (a PDF's marks are already decided, and it may keep a contents line that reads like a heading)."""
     chapters: list[tuple[str, list[str]]] = []
     head: str | None = None
     body: list[str] = []
     for text, heading in paras:
-        if heading or is_chapter_line(text):
+        if heading or (by_words and is_chapter_line(text)):
             if head is not None or any(b.strip() for b in body):
                 chapters.append((head or FRONT, body))
             head, body = " ".join(text.split()), []
@@ -216,11 +220,11 @@ def split_scenes(body: list[str]) -> list[list[str]]:
     return scenes
 
 
-def split_sections(paras: list[tuple[str, bool]]) -> tuple[list[tuple[str, str]], bool]:
+def split_sections(paras: list[tuple[str, bool]], by_words: bool = True) -> tuple[list[tuple[str, str]], bool]:
     """(sections as (heading, text), whether the first is the text before the first heading). Headings first; with
     none, scene breaks; then any section over 2,200 words (1,000 with no headings) in parts at paragraph
     boundaries."""
-    chapters = split_paragraphs(paras)
+    chapters = split_paragraphs(paras, by_words)
     most = PART_WORDS
     if len(chapters) == 1 and chapters[0][0] == WHOLE:          # no headings: a short story, read finer
         most = analysis.SHORT_PART_WORDS
@@ -256,6 +260,18 @@ def text_paragraphs(text: str, markdown: bool) -> list[tuple[str, bool]]:
         m = re.match(r"^(#{1,2})\s+(.*\S.*)$", line) if markdown else None
         out.append((m.group(2), True) if m else (line, False))
     return out
+
+
+def pdf_book(raw: bytes) -> pdf_text.Book:
+    """A PDF through pdf_text.py: paragraphs with heading marks, and its report. A plain line when it can't be read."""
+    try:
+        return pdf_text.read_pdf(raw)
+    except pdf_text.Refused as exc:
+        raise Refused(str(exc)) from None
+    except ImportError:
+        raise Refused("Manuscript is missing a part it needs. Remove it and add it again from Apps.") from None
+    except Exception:  # noqa: BLE001 - a file it cannot read: a plain line, never the file's words
+        raise Refused("I could not read that PDF. Save it again from the program that made it and try once more.") from None
 
 
 def chapter_text(body: list[str]) -> str:
@@ -565,6 +581,8 @@ class Manuscripts:
             found = self.counts_line(self.counts(read_json(folder / BIBLE)))
             if found:
                 lines.append(f"  {found}")
+            if isinstance(idx.get("pdf_report"), dict):
+                lines.append(f"  {pdf_text.report_line(idx['pdf_report'])}")
             for c in secs:
                 lines.append(f"  {c.get('n')}. {c.get('heading')} ({c.get('words')} words)")
         return "\n".join(lines)
@@ -1070,14 +1088,95 @@ class Manuscripts:
         name = os.path.basename(str(file_name or "").replace("\\", "/"))
         ext = os.path.splitext(name)[1].lower()
         if ext not in UPLOAD_TYPES:
-            raise Refused("Upload a Word file (.docx), a text file (.txt) or a Markdown file (.md).")
+            raise Refused("Upload a Word file (.docx), a PDF (.pdf), a text file (.txt) or a Markdown file (.md).")
         try:
             raw = base64.b64decode(str(content_b64 or ""), validate=True)
         except (binascii.Error, ValueError):
             raise Refused("That file did not arrive whole. Try the upload again.") from None
+        got = self._add(name, ext, raw, title)
+        self.reader.start(got["folder"])
+        got["message"] = f"Added {got['title']}: {got['sections']} sections, {got['words']} words. Your bot is reading it now."
+        if got.get("report"):
+            got["message"] += " " + pdf_text.report_line(got["report"])
+        return {k: v for k, v in got.items() if k not in ("folder", "words")}
+
+    def manuscript_add_file(self, source: Any = None, title: Any = None) -> str:
+        """A file already in My files, as a new manuscript. It adds and stops: the reading waits for the writer's yes."""
+        path = self._my_file(source)
+        ext = path.suffix.lower()
+        if ext not in UPLOAD_TYPES:
+            raise Refused("I can add a Word file (.docx), a PDF (.pdf), a text file (.txt) or a Markdown file (.md).")
+        got = self._add(path.name, ext, path.read_bytes(), title)
+        line = f"Added {got['title']} from My files: {got['sections']} sections, {got['words']} words."
+        if got.get("report"):
+            line += " " + pdf_text.report_line(got["report"])
+        return (line + f" The reading has not started; it waits for the writer's yes. Ask her, then call manuscript_analyze "
+                       f"with this title and confirm true.")
+
+    def _my_file(self, source: Any) -> Path:
+        """One file under My files, by its name or its path inside My files. Never outside: no "..", no links."""
+        raw = str(source or "").strip().strip('"').replace("\\", "/")
+        if not raw:
+            raise Refused("Say which file in My files.")
+        outside = "I can only add a file from My files, and that one is outside it. Nothing was added."
+        if "\x00" in raw or ".." in raw.split("/"):
+            raise Refused(outside)
+        root = self.shelf().parent
+        real_root = root.resolve()
+        if os.path.isabs(raw) or raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+            for base in (root, real_root):
+                try:
+                    rel = Path(raw).relative_to(base)
+                    break
+                except ValueError:
+                    continue
+            else:
+                raise Refused(outside)
+            path = root / rel
+        elif "/" in raw:
+            path = root / raw
+        else:
+            path = self._named_in_my_files(root, raw)
+        here = root
+        for part in path.relative_to(root).parts:     # a link anywhere on the way: refused, wherever it points
+            here = here / part
+            if here.is_symlink() or getattr(os.path, "isjunction", lambda _p: False)(here):
+                raise Refused(outside)
+        if real_root not in path.resolve().parents:
+            raise Refused(outside)
+        if not path.is_file():
+            raise Refused(f"I could not find {raw} in My files. Nothing was added.")
+        return path
+
+    @staticmethod
+    def _named_in_my_files(root: Path, name: str) -> Path:
+        """A bare name: its place in Converted first, then anywhere in My files but the manuscripts' own folders."""
+        want = name.lower()
+        found = []
+        for here, dirs, names in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not (Path(here) == root and d == SHELF))
+            for n in sorted(names):
+                low = n.lower()
+                if low == want or (os.path.splitext(low)[0] == want and os.path.splitext(low)[1] in UPLOAD_TYPES):
+                    found.append(Path(here) / n)
+        first = [p for p in found if p.parent == root / CONVERTED]
+        if len(first) == 1 or len(found) == 1:
+            return first[0] if first else found[0]
+        if not found:
+            raise Refused(f"I could not find {name} in My files. Nothing was added.")
+        names = ", ".join(str(p.relative_to(root)).replace("\\", "/") for p in found[:8])
+        raise Refused(f"More than one file is called that: {names}. Say which, with its folder.")
+
+    def _add(self, name: str, ext: str, raw: bytes, title: Any) -> dict:
+        """The one way in, for the page's Upload and for manuscript_add_file: the folder, the sections and the index.
+        It starts no reading; the caller decides that."""
         if not raw:
             raise Refused("That file is empty.")
-        if ext == ".docx":
+        report = None
+        if ext == ".pdf":
+            book = pdf_book(raw)
+            paras, report = book.tuples(), book.report
+        elif ext == ".docx":
             try:
                 paras = docx_paragraphs(raw)
             except ImportError:
@@ -1090,7 +1189,7 @@ class Manuscripts:
             except UnicodeDecodeError:
                 text = raw.decode("cp1252", errors="replace")
             paras = text_paragraphs(text, ext == ".md")
-        sections, front = split_sections(paras)
+        sections, front = split_sections(paras, ext != ".pdf")
         shown = " ".join(str(title or "").split())[:120] or os.path.splitext(name)[0] or "Untitled"
         with self.lock:
             shelf = self.shelf()
@@ -1114,19 +1213,22 @@ class Manuscripts:
                               "sha": sha_of(content.encode("utf-8"))})
             for key, label in NOTES_AT_UPLOAD.items():
                 _write(folder / f"{key}.md", f"# {label}\n")
-            _write(folder / INDEX, json.dumps({"title": shown, "original": name, "original_file": "original" + ext,
-                                               "added": datetime.now().isoformat(timespec="seconds"),
-                                               "version": VERSION, "sections": index, "chapters": index},
-                                              ensure_ascii=False, indent=2) + "\n")
-        self.reader.start(folder)
-        total = sum(c["words"] for c in index)
-        return {"message": f"Added {shown}: {len(index)} sections, {total} words. Your bot is reading it now.",
-                "title": shown, "sections": len(index), "chapters": len(index)}
+            record = {"title": shown, "original": name, "original_file": "original" + ext,
+                      "added": datetime.now().isoformat(timespec="seconds"),
+                      "version": VERSION, "sections": index, "chapters": index}
+            if report:
+                record["pdf_report"] = report
+            _write(folder / INDEX, json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+        got = {"title": shown, "sections": len(index), "chapters": len(index), "folder": folder,
+               "words": sum(c["words"] for c in index)}
+        if report:
+            got["report"] = report
+        return got
 
 
 # -- MCP ------------------------------------------------------------------------------------------
 
-CHANGES = ("manuscript_notes_append", "manuscript_remove")
+CHANGES = ("manuscript_notes_append", "manuscript_remove", "manuscript_add_file")
 _TITLE = {"type": "string", "description": "The manuscript's title. May be left empty when there is only one."}
 _TAB = {"type": "string", "enum": list(TABS) + ["editing"], "description": "Which tab: characters, plot (plot and "
         "subplots), timeline, structure, world, science, themes, voice or desk (the editor's desk; editing is the "
@@ -1201,6 +1303,18 @@ TOOLS["manuscript_remove"] = (
     "and pictures, moves into a Removed folder inside Manuscripts, where it can be got back. Nothing is deleted. "
     "Refused while her bot is still reading it.",
     {"title": _TITLE}, ["title"])
+
+
+# 0.3.5: the argument is "source", not "path" or "file": the Core reads those names as a file being changed, and hides
+# such a tool while "Let your bot change your documents" is off. This one reads a file and changes nothing of hers.
+TOOLS["manuscript_add_file"] = (
+    "Adds a file from My files as a new manuscript: a Word file, PDF, text or Markdown file, by its name or its path "
+    "inside My files, such as Converted/My Novel.docx. The file stays where it is. The reading does not start: it "
+    "waits for the writer's yes, and then manuscript_analyze with confirm true starts it. A PDF's answer says what was "
+    "found in it.",
+    {"source": {"type": "string", "description": "The file's name, or its path inside My files, like Converted/My Novel.docx."},
+     "title": {"type": "string", "description": "The manuscript's title. Left empty, the file's name."}},
+    ["source"])
 
 
 def tool_list() -> list[dict]:

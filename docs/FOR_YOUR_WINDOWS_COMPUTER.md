@@ -62,7 +62,7 @@ Orin itself later instead.
 | `flux1-schnell-Q4_K_S.gguf` | `unet` | 6.4 GB | huggingface.co, city96/FLUX.1-schnell-gguf |
 | `t5xxl_fp8_e4m3fn.safetensors` | `clip` | 4.6 GB | huggingface.co, comfyanonymous/flux_text_encoders |
 | `clip_l.safetensors` | `clip` | 235 MB | huggingface.co, comfyanonymous/flux_text_encoders |
-| `ae.safetensors` | `vae` | 320 MB | huggingface.co, black-forest-labs/FLUX.1-schnell (the `ae.safetensors` file) |
+| `ae.safetensors` | `vae` | 320 MB | huggingface.co, Comfy-Org/Lumina_Image_2.0_Repackaged, in `split_files/vae` (the `ae.safetensors` file; the copy at black-forest-labs needs a sign-in) |
 
 **Start it**
 

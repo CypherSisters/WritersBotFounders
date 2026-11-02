@@ -34,8 +34,9 @@ Setup asks about the model (pick the one it recommends; the bot was built with `
 the Bridge, and Toolsmith's model. When it says BuildBot is running, it prints the home-network address, like
 `http://10.0.0.25:8423`. Give that to the writer for the window. Then `docs/FOR_YOUR_WINDOWS_COMPUTER.md`, Part 1.
 
-Already have another PuffPAI bot on this Orin? Fine: each bot has its own folder and its own ports, and setup picks free
-ones. The two share the chip and, if you choose the same model, the model.
+No sudo on that command, and do not run `BuildBotv2/install.sh`: the script above is the way in. Already have another
+PuffPAI bot in a container on this Orin? Ports 8423 and 19100-19120 must be free, or use the other set in
+`docs/FOR_THE_ORIN.md`, section 6. The two share the chip and, if you choose the same model, the model.
 
 ## The first ten minutes with it
 

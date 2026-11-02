@@ -95,6 +95,14 @@ if ! [[ "$BOT" =~ $BOT_SHAPE ]] || [[ "$BOT" == *..* ]]; then
     fail "'$BOT' can't be a bot name. Use letters, numbers, spaces, dots, dashes or underscores."
 fi
 
+# WritersBot's own copy of this code: the bot comes whole from its bundle, by its own installer. Inside its container,
+# and in any other copy of BuildBot, these two files are not next to this folder.
+if [ "$DRY_RUN" = "0" ] && [ -f "$REPO_DIR/../install-writersbot.sh" ] && [ -f "$REPO_DIR/../bot/puffpai-bot.json" ]; then
+    say "This copy of BuildBot belongs to WritersBot, so its own installer runs instead: install-writersbot.sh"
+    if [ "$NO_SETUP" = "1" ]; then exec bash "$REPO_DIR/../install-writersbot.sh" --no-setup; fi
+    exec bash "$REPO_DIR/../install-writersbot.sh"
+fi
+
 if [ -n "$DATA_DIR" ]; then
     case "$DATA_DIR" in /*) ;; *) fail "Give --data-dir as a full path, starting with /." ;; esac
     export PUFFPAI_HOME="${DATA_DIR%/}/puffpai"

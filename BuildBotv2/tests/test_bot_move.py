@@ -384,3 +384,79 @@ def test_settings_draws_with_edits_and_move_by_real_clicks(state, tmp_path, monk
         # the window's own Settings has the same setting
         b.js("location.href = '/window/'; true")
         assert b.wait("!!window.Puff && !!window.Puff.editsSetting && !!window.Puff.passageCard", timeout_s=30), b.js(WHERE)
+
+
+def _broken_first_bundle(tmp_path):
+    folder = tmp_path / "bundle"
+    own = folder / "apps" / "my-own-app"
+    shutil.copytree(REPO / "packages" / "example-page", own)
+    manifest = json.loads((own / "puffpai.json").read_text(encoding="utf-8"))
+    manifest.update(id="my-own-app", name="My own app")
+    (own / "puffpai.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return {"_folder": str(folder), "apps": [{"id": "my-own-app", "name": "My own app", "source": "apps/my-own-app"}]}
+
+
+def test_a_broken_app_is_added_again_with_its_data_kept(state, tmp_path, monkeypatch, drawbridge):
+    """The Bridge answered No: the app's install fails, she is told why and how, and running setup again repairs it."""
+    from puffpai_core.api.app import wire_core
+    from puffpai_core.steward.steward import StewardError
+    from puffpai_core.wizard.terminal import add_moved_apps
+    record = _broken_first_bundle(tmp_path)
+    core = wire_core(create_app())
+    core.packages.start_after_install = False
+    bridge = core.zone3.bridge
+    assert bridge.view()["state"] != "open"
+    real = core.packages.steward.setup
+
+    def fails(*_a, **_k):
+        raise StewardError("Setup step 1 failed (exit 1). See its log.")
+    monkeypatch.setattr(core.packages.steward, "setup", fails)
+    prompts, said = [], []
+
+    def no_to_the_bridge(prompt):
+        prompts.append(prompt)
+        return "n" if "Bridge" in prompt else "y"
+    assert add_moved_apps(core, record, no_to_the_bridge, said.append, again="./install-writersbot.sh setup") == []
+    assert "main apps" in prompts[0] and "[Y/n]" in prompts[0]
+    assert bridge.view()["state"] != "open", "a plain No stays a No"
+    assert core.registry.get("my-own-app")["status"] == "broken"
+    assert any("The Bridge is closed" in s and "./install-writersbot.sh setup" in s for s in said), said
+
+    data = core.state / "data" / "my-own-app"
+    (data / "kept.txt").write_text("hers", encoding="utf-8")
+    monkeypatch.setattr(core.packages.steward, "setup", real)
+
+    opened = []
+    monkeypatch.setattr(bridge, "open", lambda by: opened.append(by))     # the stub keyring has no machine key to open with
+
+    def enter_at_the_bridge(prompt):
+        return "" if "Bridge" in prompt else "y"
+    assert add_moved_apps(core, record, enter_at_the_bridge, said.append, repair=True) == ["my-own-app"], said
+    assert opened == ["owner"], "Enter means Yes"
+    assert core.registry.get("my-own-app")["status"] != "broken"
+    assert (data / "kept.txt").read_text(encoding="utf-8") == "hers"
+    # Nothing is left to do, so it asks nothing.
+    assert add_moved_apps(core, record, lambda _p: pytest.fail("asked again"), said.append, repair=True) == []
+
+
+def test_setup_run_again_leaves_what_she_changed(state, tmp_path, monkeypatch, drawbridge):
+    from puffpai_core.api.app import wire_core
+    from puffpai_core.wizard.terminal import take_moved
+    _bot(state)
+    core = wire_core(create_app())
+    out = tmp_path / "editor-bot"
+    bot_move.export(core.state, core.registry, core.packages, out)
+    second = tmp_path / "second"
+    second.mkdir()
+    monkeypatch.setenv("PUFFPAI_STATE", str(second))
+    core2 = wire_core(create_app())
+    record, repair = take_moved(core2, str(out))
+    assert record and repair is False and bot.read(second)["name"] == "Editor"
+    bot.save(second, name="Renamed", by="owner", registry=core2.registry)
+    # Not finished yet: it goes on from the bundle, as a first run.
+    assert take_moved(core2, str(out))[1] is False and bot.read(second)["name"] == "Editor"
+    bot.save(second, name="Renamed", by="owner", registry=core2.registry)
+    wizard = jsonfile.read(second / "settings" / "wizard.json", {})
+    jsonfile.write(second / "settings" / "wizard.json", {**wizard, "complete": True})
+    assert take_moved(core2, str(out))[1] is True
+    assert bot.read(second)["name"] == "Renamed"

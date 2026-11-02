@@ -364,26 +364,48 @@ def moved_lines(said: dict) -> list[str]:
     return out + ["This didn't travel, so it is entered again here:"] + [f"  - {s}" for s in STAYS]
 
 
-def add_moved_apps(core: Any, record: dict, ask: Callable[[str], str], write: Callable[[str], None]) -> list[str]:
-    """Each app of a moved bot through the Package Manager, with its own Yes card, as :func:`builtins`. Returns those added."""
+def _still_to_add(core: Any, pid: str) -> bool:
+    """Not on this bot yet, or added and broken (its install did not finish)."""
+    row = core.registry.get(pid)
+    return row is None or row.get("status") == "broken"
+
+
+def add_moved_apps(core: Any, record: dict, ask: Callable[[str], str], write: Callable[[str], None],
+                   *, again: str = "", repair: bool = False) -> list[str]:
+    """Each app of a moved bot through the Package Manager, with its own Yes card, as :func:`builtins`. Returns those
+    added. A broken one is taken out first, its data kept, and added again. *again* is the command that runs this again.
+    *repair*: setup finished earlier, so her look stays as it is now."""
     from .. import bot_move
     from ..consent import card_sha, card_view
     from ..packages.manager import AddError
     done = []
     apps = bot_move.to_add(record)
-    needs_way_out = any(core.registry.get(str(a.get("id"))) is None for a in apps)
+    needs_way_out = any(_still_to_add(core, str(a.get("id"))) for a in apps)
     bridge = getattr(getattr(core, "zone3", None), "bridge", None)
-    if needs_way_out and bridge is not None and bridge.view().get("state") != "open":
-        if ask("  Most apps download what they need while they install, and the Bridge is closed. Open it for this? [y/N] ").strip().lower() in ("y", "yes"):
+
+    def closed() -> bool:
+        return bridge is not None and bridge.view().get("state") != "open"
+
+    def not_added(name: Any, why: str) -> None:
+        write(f"  {name} was not added: {why}")
+        if closed():
+            write(f"  The Bridge is closed, and {name} may need it to download what it needs. "
+                  f"To try again and open it, run: {again or 'puffpai setup'}")
+
+    if needs_way_out and closed():
+        if ask("  This bot's main apps can't install while the Bridge is closed, because they download what they need. "
+               "Open it for this? [Y/n] ").strip().lower() not in ("n", "no"):
             bridge.open(by="owner")
     for app in apps:
         pid = str(app.get("id"))
-        if core.registry.get(pid) is not None:
+        if not _still_to_add(core, pid):
             continue
         try:
+            if core.registry.get(pid) is not None:
+                core.packages.remove(pid, keep_data="keep")
             staged = core.packages.add(bot_move.app_source(record, app))
         except AddError as exc:
-            write(f"  {app.get('name')} was not added: {' '.join(exc.problems)}")
+            not_added(app.get("name"), " ".join(exc.problems))
             continue
         seen = card_view(staged["card"], staged["floor"])
         write("")
@@ -400,9 +422,24 @@ def add_moved_apps(core: Any, record: dict, ask: Callable[[str], str], write: Ca
             done.append(pid)
             write(f"  {app.get('name')} is added.")
         else:
-            write(f"  {app.get('name')} was not added: {' '.join(result.get('problems') or [])}")
-    bot_move.finish_look(core.state, record, core.registry)
+            not_added(app.get("name"), " ".join(result.get("problems") or []))
+    if not repair:
+        bot_move.finish_look(core.state, record, core.registry)
     return done
+
+
+def take_moved(core: Any, folder: str) -> tuple[dict, bool]:
+    """The moved bot's record, and whether setup had finished already. Its name, look and the rest go on only the first
+    time: after that they are hers, and running setup again must not put them back."""
+    from .. import bot, bot_move
+    moved = bot_move.read(folder)
+    if bot._set_up(core.state):
+        return moved, True
+    for line in bot_move.apply(core.state, moved, core.registry):
+        print(line, flush=True)
+    bot_move.seed_setup(core.state)
+    print(f"Moving {(moved.get('bot') or {}).get('name') or 'your bot'} here. Setup asks only what can't travel.", flush=True)
+    return moved, False
 
 
 def builtins(core: Any, ask: Callable[[str], str], write: Callable[[str], None]) -> list[str]:
@@ -536,22 +573,22 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
     thread.start()
     code = 1
     stopped_here = False
+    finished = False                          # every step, and a moved bot's apps too
+    how_stopped = L.SETUP_STOPPED
+    again = setup_again_command(args.from_folder)
     try:
         print(f"BuildBot is running at http://puffpai.localhost:{args.port} while setup runs.", flush=True)
         print("System parts (the Desktop, setup, the cloud avatar): each one shows its Yes card first.")
         builtins(core, answers.line, print)
         moved = None
+        repair = False
         if args.from_folder:
             from .. import bot_move
             try:
-                moved = bot_move.read(args.from_folder)
+                moved, repair = take_moved(core, args.from_folder)
             except bot_move.MoveRefused as exc:
                 print(f"Not set up from that folder: {exc}", flush=True)
                 return 1
-            for line in bot_move.apply(core.state, moved, core.registry):
-                print(line, flush=True)
-            bot_move.seed_setup(core.state)
-            print(f"Moving {(moved.get('bot') or {}).get('name') or 'your bot'} here. Setup asks only what can't travel.", flush=True)
         with app.app_context():
             from ..api.groups import wizard as wizard_group
             engine = wizard_group.engine()    # the browser's engine too: one progress, two renderers
@@ -560,9 +597,11 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
         code = Terminal(engine, answers=answers).run()
         if moved is not None and code == 0:
             from .. import bot_move
-            add_moved_apps(core, moved, answers.line, print)
-            for line in moved_lines(bot_move.lines_for(moved)):
-                print(line, flush=True)
+            add_moved_apps(core, moved, answers.line, print, again=again, repair=repair)
+            if not repair:
+                for line in moved_lines(bot_move.lines_for(moved)):
+                    print(line, flush=True)
+        finished = code == 0
         if not args.exit:
             from .. import desktop
             if code == 0:
@@ -578,9 +617,12 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
         if answers.read_is_out:               # the cursor is still on the prompt's line
             print(flush=True)
     except KeyboardInterrupt:
-        pass
+        stopped_here = True
+        how_stopped = L.SETUP_INTERRUPTED
+        if answers.read_is_out:               # the cursor is still on the prompt's line
+            print(flush=True)
     except EOFError:
-        print("Setup stopped: there were no more answers. Run puffpai setup again to go on where you left off.")
+        print(f"Setup stopped: there were no more answers. Run {again or 'puffpai setup'} again to go on where you left off.")
     finally:
         with stopping():
             end_streams(app)
@@ -589,8 +631,8 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
             thread.join(15)
             stop_core(core, terminal)
         print(STOPPED_LINE, flush=True)
-    if stopped_here and code != 0:
-        for line in setup_stopped_lines():
+    if stopped_here and not finished:
+        for line in setup_stopped_lines(args.from_folder, how_stopped):
             print(line, flush=True)
     return code
 
@@ -760,12 +802,28 @@ def start_again_line() -> str:
     return f"To start it again later, run this in a terminal: {cli_command('serve')}"
 
 
-def setup_stopped_lines() -> list[str]:
-    """What the setup window says after Stop BuildBot ended setup before it was finished (D122), true to this install."""
+def setup_again_command(from_folder: str | None = None) -> str:
+    """The command that runs this same setup again, when plain setup is not it. An installer around setup names its own
+    in ``PUFFPAI_SETUP_AGAIN``. A moved bot goes on from its folder."""
+    own = os.environ.get("PUFFPAI_SETUP_AGAIN", "").strip()
+    if own:
+        return own
+    if not from_folder:
+        return ""
+    return cli_command("setup", "--from", f'"{from_folder}"' if os.name == "nt" else shlex.quote(str(from_folder)))
+
+
+def setup_stopped_lines(from_folder: str | None = None, first: str = L.SETUP_STOPPED) -> list[str]:
+    """What the setup window says after setup was stopped before it was finished (D122), true to this install."""
     start = launcher()
-    how = (f"To go on, {how_to_run(start)}, then open Setup." if start.is_file()
-           else f"To go on, run this in a terminal: {cli_command('setup')}")
-    return [L.SETUP_STOPPED, how]
+    again = setup_again_command(from_folder)
+    if again:
+        how = f"To go on, run this in a terminal: {again}"
+    elif start.is_file():
+        how = f"To go on, {how_to_run(start)}, then open Setup."
+    else:
+        how = f"To go on, run this in a terminal: {cli_command('setup')}"
+    return [first, how]
 
 
 def stop_from_elsewhere_line() -> str:

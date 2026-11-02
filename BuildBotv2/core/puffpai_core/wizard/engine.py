@@ -40,6 +40,7 @@ Only non-secret answers are written there.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import threading
 import time
@@ -817,7 +818,8 @@ class VaultStep(StepHooks):
         if field["id"] == "data_folder":
             base = "%USERPROFILE%\\PuffPAI Data" if self.e.platform == "windows" else "~/PuffPAI Data"
             sep = "\\" if self.e.platform == "windows" else "/"
-            moved = str((self.e.env or {}).get("PUFFPAI_HOME") or "").strip()     # install.sh --data-dir: a small home disk
+            # install.sh --data-dir, or a container: with no env given it is this process's own, as expand_path reads it.
+            moved = str((os.environ if self.e.env is None else self.e.env).get("PUFFPAI_HOME") or "").strip()
             if self.e.platform != "windows" and moved.startswith("/"):
                 base = moved.rstrip("/").rsplit("/", 1)[0] + "/PuffPAI Data"
             try:

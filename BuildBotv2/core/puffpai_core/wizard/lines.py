@@ -13,6 +13,7 @@ PRIVACY = "Nothing leaves your computer without your consent."
 
 # D122: Stop BuildBot during setup, and a question that was answered somewhere else.
 SETUP_STOPPED = "Stop BuildBot ended setup here. Your finished steps are saved, and setup goes on from there."
+SETUP_INTERRUPTED = "Setup stopped here. Your finished steps are saved, and setup goes on from there."
 ANSWERED_ELSEWHERE = "That question was answered somewhere else, or is no longer needed, so setup goes on here."
 
 # 03 1.3

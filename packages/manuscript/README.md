@@ -6,11 +6,13 @@ Keep your novel and short stories in one place and let your bot read them for yo
 
 ### What it does
 
-Upload a Word file (.docx), a text file (.txt) or a Markdown file (.md) on the Manuscript page. It is split into sections:
+Upload a Word file (.docx), a PDF (.pdf), a text file (.txt) or a Markdown file (.md) on the Manuscript page. It is split into sections:
 
 - at each Heading 1 or Heading 2, and at lines like "Chapter 3", "Part Two" or "12". Text before the first heading is section 0, "Before the first chapter";
 - with no headings, as in a short story, at scene breaks: a line that is only `***`, `* * *`, `---`, `#` or `~`, or three blank lines in a row. These are "Scene 1", "Scene 2" and so on;
 - a section longer than 2,200 words is cut at paragraph breaks into parts, "Chapter 3, part 1", "part 2", so each one fits what your bot can read at once. In a story with no headings the parts are about 1,000 words, so your bot reads it more closely.
+
+**A PDF** is turned into real paragraphs first: its line wraps are joined, words split at a line end are put back together, running heads and page numbers come out, and chapter headings are found by their size and their words ("Chapter 3", "Part Two", "IV."). No word is changed. The line under Upload says what it found: pages, words, chapters, how many running heads and hyphens, and a plain warning when it found no chapters. A PDF that is only pictures of pages is refused, because reading scans is not built; so is one locked with a password. Pages that are pictures in an otherwise normal PDF are named.
 
 Paragraph breaks are kept. As soon as the upload is in, your bot starts reading. The page shows how far it has got ("Reading section 3 of 12") and the tabs fill in as it goes, so you can look while it reads. When it is done the page says which model read it, on this computer.
 
@@ -51,6 +53,7 @@ Ask it to show you something and it makes a view on the right tab, which stays t
 | `manuscript_desk` | Lists what is open on the editor's desk, most serious first, or keeps, dismisses or adds your note to one item. | Only its own files |
 | `manuscript_notes_read` | Gives your bot your notes on one tab. | No |
 | `manuscript_notes_append` | Adds a dated section to the end of one notes file. Your earlier notes stay as they are. | Yes |
+| `manuscript_add_file` | Adds a Word file, PDF, text or Markdown file already in My files as a new manuscript, by its name or its path inside My files, such as `Converted/My Novel.docx`. It never reaches outside My files. The file stays where it is. It does not start a reading: that waits for your yes. | Only its own files |
 
 Things you might say: "show me the character arc of Jennifer", "show me where the ferry is first mentioned", "what does the story say about the tide", "is the timeline in chapter four consistent", "Tom is her cousin, not her brother", "what is on the editor's desk", "dismiss the second desk item", "add to my science notes that the moon's orbit takes 40 days".
 
@@ -67,7 +70,7 @@ The files that change are its own, and your notes:
 
 Everything is in `My files\Manuscripts\<title>\` in your data folder:
 
-- the file you uploaded, as `original.docx` (or `.txt`, `.md`)
+- the file you uploaded, as `original.docx` (or `.pdf`, `.txt`, `.md`)
 - `sections\NN - <heading>.md`, one file per section
 - your notes: `characters.md`, `plot.md`, `world.md`, `science.md`, `themes.md`, and `editing.md`, which is the Editor's desk notes. `timeline.md`, `structure.md` and `voice.md` are made the first time you write notes on those tabs
 - `manuscript.json`, the list of sections and their word counts
@@ -77,7 +80,7 @@ Manuscripts added with 0.1.0 keep their `chapters\` folder and open as before. A
 ### What it needs
 
 - The brain on this computer, to read. Every ask goes to your bot's own model through PuffPAI; nothing goes anywhere else. No keys.
-- About 10 MB, for python-docx, which its install fetches from PyPI into its own folder. After that it doesn't use the internet.
+- About 40 MB, for python-docx, pypdf and cryptography (for PDFs that limit printing or copying but open with no password), which its install fetches from PyPI into its own folder. After that it doesn't use the internet.
 - Maps, for the See in Maps links. Without it the links open a page that is not there.
 
 **Keep manuscripts out of the vault.** A switch under Settings, above the tabs, on to start with. On: dates, names and places in your manuscripts are treated as the work and go to your bot's brain as written. Off: they are filed in your vault like anything else you tell your bot, for someone whose manuscripts hold real people's details. A manuscript already read keeps what it was read with until you read it again; the line under the picker says "(out of the vault)" or "(vault on)". The switch is kept in Manuscript's own data folder.
@@ -89,6 +92,8 @@ Not yet proven on the owner's computer with the real model: the tests use a stan
 Reading is slow on a small model, a few minutes a section, and 0.3 asks more of it: two asks per section, then one each for the story order, the structure, the world, each main character, every four supporting characters, the desk and each of the nine briefs. Long books take hours. A reading stops if the brain can't answer for five minutes; start it again and it picks up the sections it already read. If Manuscript stops while reading, the page says so and you start it again.
 
 A correction it cannot match by the names in your words stays a note; it does not guess. Desk items are matched across readings by what they say, so if your bot words an item differently on a later reading, your Keep or Dismiss does not carry over to it. Removing a view does not remove its board from Maps; remove that in Maps.
+
+A PDF is only as good as how it was made. Text set in columns or tables, poetry and block quotes can come out in the wrong order or in the wrong paragraphs, and the upload line says so for columns and tables. A running head that appears on too few pages to repeat stays in the text. A PDF whose fonts have no letter map gives wrong letters, and one that is a scan with hidden text has its scanner's mistakes; the upload line warns about both. A large gap between scenes splits a story with no headings, and inside a chapter it becomes a plain paragraph break.
 
 Bold, italics, footnotes, comments and tracked changes in a Word file don't come across; each section is plain text with its paragraphs. A line that starts "Chapter" or "Part" followed by a number, a roman numeral or a number word starts a new section, so a sentence like "Part two of the plan failed." on a line of its own would split there. In a story with no headings, a line that is only `---` or `#` is taken as a scene break. Uploading the same book again makes a second copy, "<title> (2)", rather than replacing the first.
 
