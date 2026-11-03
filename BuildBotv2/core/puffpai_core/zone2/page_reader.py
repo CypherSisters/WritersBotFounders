@@ -295,6 +295,30 @@ def browser_path() -> Optional[str]:
     return found[0][1] if found else None
 
 
+def is_snap(path: str) -> bool:
+    """A snap browser (Ubuntu's Chromium) has its own private /tmp and can't write to hidden folders under home."""
+    if str(path).startswith("/snap/"):
+        return True
+    try:
+        return os.path.basename(os.path.realpath(path)) == "snap"
+    except OSError:
+        return False
+
+
+def _profile_parent(browser: str) -> Optional[str]:
+    """Where the throwaway profile goes: None is the usual temp folder. A snap browser's own folder, as this process has to
+    read the file it writes there, and it would write that into its private /tmp. Worked out from the snap's documented
+    folders; no snap has run this."""
+    if not is_snap(browser):
+        return None
+    folder = os.path.join(os.path.expanduser("~"), "snap", os.path.basename(browser), "common")
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except OSError:
+        return None
+    return folder
+
+
 def _devtools_port(profile: str, proc: Any, timeout: float = 20.0) -> int:
     """The DevTools port the browser wrote into its profile folder.
 
@@ -331,7 +355,7 @@ def read(url: str, *, wait_s: float = WAIT_S, shot_path: str = "") -> Optional[d
     if not browser:
         return None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # lan-egress: 127.0.0.1 only (DevTools), no proxy
-    with tempfile.TemporaryDirectory(prefix="bb-read-", ignore_cleanup_errors=True) as profile:
+    with tempfile.TemporaryDirectory(prefix="bb-read-", dir=_profile_parent(browser), ignore_cleanup_errors=True) as profile:
         # The browser runs in a Job Object of its own from its first instruction (started suspended, put in
         # the job, then let go: steward.jobs). Ending the job ends it and every helper it started, even
         # after a launcher (Edge's) has exited; nothing is ever found by its command line or PID number.

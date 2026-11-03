@@ -14,14 +14,15 @@ needs her Yes to :data:`LINKED_LINE`, and the package keeps the original beside 
 - :func:`where`: the one reading of a path, for the review below and for the package (``GET /v1/owner-files``).
 - :func:`question`: what ``wiring.tool_review`` asks for one tool call: a tool the package lists under
   ``abilities.changes`` with a ``path`` argument changes that file. It only ever adds a Yes or a refusal.
-- :func:`recent`, :func:`open_file`: the Knowledge page's list of the newest files in My files, and Open. A folder holding
-  ``.app-files`` (``folders.APP_FILES``, WB2) is an app's own bookkeeping, and the list leaves it out.
+- :func:`recent`, :func:`open_file`, :func:`remove_file`: the Knowledge page's list of the newest files in My files, Open and Remove.
+  A folder holding ``.app-files`` (``folders.APP_FILES``, WB2) is an app's own bookkeeping, and the list leaves it out.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -40,6 +41,8 @@ NO_FILE = "Say which file."
 OPEN_OUTSIDE = "I can only open files in your data folder or a folder you linked."
 OPEN_RUNS = "That kind of file runs as a program, so it isn't opened from here."
 OPEN_FAILED = "That file did not open on this computer."
+REMOVE_OUTSIDE = "I can only delete files in My files."
+REMOVE_NOT_LISTED = "That is a hidden file or a link, so it isn't deleted from here."
 RECENT_MAX = 30
 _LOOK_AT = 5000
 #: Never opened from a button: each of these runs as a program (v1 ``programs.RUNNABLE_EXTS``).
@@ -271,5 +274,45 @@ def for_device(state: Path | str, path: Any) -> tuple[str, str]:
     return str(got["path"]), ""
 
 
-__all__ = ["EDITS_OFF", "changes_a_file", "edits_on", "hidden", "set_edits", "LINKED_LINE", "MY_FILES", "OPEN_OUTSIDE", "OPEN_RUNS", "OUTSIDE", "RUNNABLE", "for_device", "made_folder", "my_files",
-           "open_file", "question", "recent", "safe_name", "takes_real_text", "where"]
+def remove_file(state: Path | str, path: Any) -> str:
+    """Delete one regular file inside My files, by its real path: "" or a plain reason. Never by way of a link, and never
+    a name :func:`recent` leaves out. Its words leave the index with it, with no scan running to put them back."""
+    from .zone1.folders import Library, LibraryBusy, _inside, _no_scan, _pin_odd_path, canon
+    from .zone1.knowledge_folder import is_link
+    raw = str(path or "").strip().strip('"')
+    try:
+        if _pin_odd_path(raw) or ".." in re.split(r"[\\/]", raw):
+            return REMOVE_OUTSIDE
+        got = where(state, raw)                    # blank, not there, a folder, any vault, settings that can't be read
+        if got.get("line"):
+            return REMOVE_OUTSIDE if got["line"] == OUTSIDE else got["line"]
+        given = Path(_resolve(state, raw))
+        real, root = given.resolve(), my_files(state).resolve()
+        parts = real.relative_to(root).parts       # both readings must agree: canon also expands variables in a name
+        if not _inside(canon(real), canon(root)):
+            return REMOVE_OUTSIDE
+        for step in (given, *given.parents):
+            if step.resolve() == root:
+                break
+            if is_link(step):
+                return REMOVE_NOT_LISTED
+        if any(p.startswith(".") for p in parts) or real.name.startswith("~$"):
+            return REMOVE_NOT_LISTED
+    except (OSError, RuntimeError, ValueError):
+        return REMOVE_OUTSIDE
+    try:
+        library = Library(None, state)             # the index only, which needs no vault. It can't open: nothing changes
+        with _no_scan():
+            os.unlink(real)
+            library.forget(real)
+    except LibraryBusy as exc:
+        return str(exc)
+    except (OSError, sqlite3.Error):
+        if os.path.lexists(real):
+            return f"{real.name} could not be deleted. If it is open somewhere, close it and try again."
+        return f"{real.name} is deleted, but a search may still find its words."
+    return ""
+
+
+__all__ = ["EDITS_OFF", "changes_a_file", "edits_on", "hidden", "set_edits", "LINKED_LINE", "MY_FILES", "OPEN_OUTSIDE", "OPEN_RUNS", "OUTSIDE", "REMOVE_NOT_LISTED", "REMOVE_OUTSIDE", "RUNNABLE",
+           "for_device", "made_folder", "my_files", "open_file", "question", "recent", "remove_file", "safe_name", "takes_real_text", "where"]

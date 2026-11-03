@@ -2,8 +2,10 @@
 
 On unless she turns it off (:data:`DEFAULT_ON`), saved per bot in ``<bot folder>/settings/network.json``. Off means no
 listener and no socket. On means one more listener beside the two on 127.0.0.1, which stay exactly as they were. Only a
-device she has paired gets in, and a Core that can't bind it still starts and says so:
-- the network listener (the Core's port + 3, :func:`network_ports`): the Desktop and the Core API for a paired browser;
+device she has paired gets in (and a program with a key she made, on its chat routes alone, D147), and a Core that can't
+bind it still starts and says so:
+- the network listener (the Core's port + 3, :func:`network_ports`): the Desktop and the Core API for a paired browser,
+  and ``/openai/v1`` and ``/ollama/api`` for a program key (D147, PROPOSED);
 - one page listener per package, opened when a paired device asks (``GET /v1/network/pages``). D53 needs each package
   its own origin, and ``<id>.localhost`` does not resolve on another device. Each port is one origin, so one
   localStorage: a page there can never read the Desktop's second half.
@@ -14,6 +16,7 @@ Before any route runs (``api.app._page_hosts`` calls :meth:`Network.refuse`):
 - the setting must be on;
 - the socket's real peer must be home-network or link-local, never public, never loopback. No forwarded header is read;
 - ``Host`` must be this computer's own home-network address or its own name, on the listener's port (DNS rebinding).
+  The addresses of Docker's and libvirt's own interfaces are not home-network addresses (:func:`own_addresses`).
 
 In a container with published ports and no host networking, the bot sees only the container's own address, not the one her
 browser uses. :data:`ADDRESSES_ENV` names what she really uses (:func:`own_addresses`, :func:`own_names`). It can't widen
@@ -24,8 +27,9 @@ home-network address (DNAT), and both pass :func:`peer_allowed`. Through the use
 address, so there the peer check can't tell where a connection really came from, and :class:`PairLimit` counts all of
 them as one device.
 
-Then the gates in ``api.app`` hold: only a paired browser's two halves count, and owner keys and package and Toolsmith
-tokens are refused whatever they could do on 127.0.0.1. Past that a paired device gets everything the owner gets on this
+Then the gates in ``api.app`` hold: a paired browser's two halves count, and a program key (``puffpai apikey``) counts on
+the chat routes for programs and nowhere else (D147, PROPOSED). Owner keys and package and Toolsmith tokens are refused
+whatever they could do on 127.0.0.1. Past that a paired device gets everything the owner gets on this
 computer (the owner's decision): "bots can be reached by any paired device with full functionality." Roles come later.
 Only what must happen on a screen differs: a file comes to the browser that asked, and a window or console is not opened.
 
@@ -75,6 +79,9 @@ _PLAIN_NAME = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 #: A browser reads a last label like these as an IPv4 address (2130706433 is 127.0.0.1), so it is never a name she gave.
 _NUMBER_NAME = re.compile(r"[0-9]+|0x[0-9a-f]*")
 NETWORK_WORKERS = 16                              # a phone holds one for each event stream
+#: How many turns program keys may have running at once on this listener (D147). Below :data:`NETWORK_WORKERS`: not a rule
+#: about keys, only room kept for the pair screen and paired devices, as a slow turn holds a worker until it ends.
+KEY_TURNS = 8
 #: The biggest request the network listeners take (D134): a file sent to a package as base64 (64 MB, ``send_file``).
 #: Waitress holds a body until it is whole, so a route can't stop one early. A bigger declared size is refused from its
 #: headers, and a body with no declared size stops at this.
@@ -97,8 +104,13 @@ PEER_WORDS = (b"BuildBot answers only devices on its own home network. This conn
               b"such as a VPN or the internet, so it was turned away.")
 HOST_WORDS = (b"BuildBot answers only at its own home-network addresses and its own name, on its own port. This address "
               b"is not one of them. A VPN address is not one either.")
-KEYS_REFUSED = ("The home network takes only a paired browser's login. Owner keys, package tokens and Toolsmith "
+KEYS_REFUSED = ("That key was not accepted here. The home network takes a paired browser's login, and a program key "
+                "(puffpai apikey) on /openai/v1 and /ollama/api and nowhere else. Owner keys, package tokens and Toolsmith "
                 "tokens work only on this computer.")
+#: A wrong key on a program route, while :class:`PairLimit` says wait (D147).
+KEYS_WAIT = "Too many wrong keys. Wait a few minutes, then try again."
+#: A right key while :data:`KEY_TURNS` turns are running. The key is fine.
+KEY_TURNS_BUSY = "BuildBot is already answering as many programs as it can at once. Try again in a moment."
 
 def network_ports(core_port: int) -> tuple[int, range]:
     """THE one place the network's ports come from: ``(network listener, page range)``.
@@ -121,26 +133,42 @@ def peer_allowed(address: str) -> bool:
     return any(ip in net for net in (*HOME_NETWORKS, *_LINK_LOCAL) if net.version == ip.version)
 
 
-def _interface_addresses() -> list[str]:
-    """Linux and other Unix: each interface's IPv4 address (Debian's hosts file gives the computer's name 127.0.1.1,
-    so the name alone finds nothing there). Only the standard library. Windows has no ``fcntl``: the name finds them."""
+#: Interfaces no home device is on: Docker's bridge and networks, their container links, libvirt's. A container's own
+#: ``eth0`` is not one of them.
+_VIRTUAL_INTERFACES = ("docker", "br-", "veth", "virbr")
+
+
+def _interface_table() -> list[tuple[str, str]]:
+    """Linux and other Unix: each interface's name and IPv4 address (Debian's hosts file gives the computer's name
+    127.0.1.1, so the name alone finds nothing there). Only the standard library. Windows has no ``fcntl``: the name
+    finds them."""
     try:
         import fcntl
         import struct
     except ImportError:
         return []
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             for _, name in socket.if_nameindex():
                 try:
                     packed = struct.pack("256s", name.encode("utf-8")[:15])
-                    out.append(socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, packed)[20:24]))   # SIOCGIFADDR
+                    out.append((name, socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, packed)[20:24])))   # SIOCGIFADDR
                 except OSError:       # an interface with no IPv4 address
                     continue
     except OSError:                   # no interface list here: the other two lookups still answer
         return out
     return out
+
+
+def _interface_addresses() -> list[str]:
+    """The addresses of the interfaces a home device could be on."""
+    return [address for name, address in _interface_table() if not name.startswith(_VIRTUAL_INTERFACES)]
+
+
+def _virtual_addresses() -> list[str]:
+    """The addresses of Docker's and libvirt's own interfaces, whichever lookup would bring them back."""
+    return [address for name, address in _interface_table() if name.startswith(_VIRTUAL_INTERFACES)]
 
 
 def _route_address() -> list[str]:
@@ -186,16 +214,18 @@ def _given() -> tuple[set[str], set[str]] | None:
 
 def own_addresses(*, named: Callable[[], Iterable[str]] = _named_addresses,
                   interfaces: Callable[[], Iterable[str]] = _interface_addresses,
-                  route: Callable[[], Iterable[str]] = _route_address) -> set[str]:
-    """This computer's own home-network and link-local IPv4 addresses. Windows and Linux, standard library only. When
-    :data:`ADDRESSES_ENV` holds anything valid, only the addresses in it, and nothing is looked up."""
+                  route: Callable[[], Iterable[str]] = _route_address,
+                  virtual: Callable[[], Iterable[str]] = _virtual_addresses) -> set[str]:
+    """This computer's own home-network and link-local IPv4 addresses, without those of Docker's and libvirt's own
+    interfaces: a route or a name can bring one back, so they are taken out last. Windows and Linux, standard library
+    only. When :data:`ADDRESSES_ENV` holds anything valid, only the addresses in it, and nothing is looked up."""
     given = _given()
     if given is not None:
         return given[0]
     found: set[str] = set()
     for source in (named, interfaces, route):
         found.update(str(a) for a in source())
-    return {a for a in found if peer_allowed(a) and ":" not in a}
+    return {a for a in found if peer_allowed(a) and ":" not in a} - {str(a) for a in virtual()}
 
 
 def own_names(hostname: Callable[[], str] = socket.gethostname) -> set[str]:
@@ -272,7 +302,10 @@ def page_row_ok(row: Any) -> bool:
 class PairLimit:
     """Wrong pairing codes on the network: 5 per device address in 5 minutes, and 30 from all of them together. A code
     is 60 random bits, so this is not what keeps it safe; it stops anything hammering the route. While limited, even a
-    right code waits. Pairing on this computer is never limited, so a guest hammering this can't lock the owner out."""
+    right code waits. Pairing on this computer is never limited, so a guest hammering this can't lock the owner out.
+
+    Wrong keys on the chat routes for programs count here too (D147, ``api.app._network_key``), so they can make pairing
+    wait. A key is looked up first and only a miss is taken, so a right key is never counted and never waits."""
 
     PER_PEER = 5
     IN_ALL = 30
@@ -321,6 +354,7 @@ class Network:
         self.addresses: Callable[[], Iterable[str]] = own_addresses
         self.names: Callable[[], Iterable[str]] = own_names
         self.limit = PairLimit()
+        self.key_turns = threading.BoundedSemaphore(KEY_TURNS)
         self.accepting = False              # the Core has started (``start_core``): the setting may open a socket
         self.why = ""                       # one plain line, when it is on and can't open
         self._lock = threading.RLock()

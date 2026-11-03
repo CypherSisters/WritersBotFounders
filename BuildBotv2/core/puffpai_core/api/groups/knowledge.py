@@ -10,20 +10,26 @@
   ``knowledge_folder.problem`` first. Nothing here reaches the network, or touches the vault.
 - Documents pinned to this bot (D125, ``zone1.pinned``): ``GET /v1/knowledge/pinned``; ``POST /v1/knowledge/pinned``
   ``{path}`` pins one file and reads it through the gate now; ``POST /v1/knowledge/pinned/remove`` ``{path}`` unpins it.
+  ``POST /v1/knowledge/pinned/fiction`` ``{path, on}``: the "No vault for this document" switch (D146).
   Every file goes through ``folders.file_problem`` first. The file itself is only ever read.
-- ``POST /v1/knowledge/pick`` ``{kind: file | folder}`` (D127): Windows's own Open dialog on this computer. From another
-  device, or where there is no such dialog, it says so, and a file comes by upload instead (D134).
+- Her one list (PROPOSED for v3, built, not yet tested by her): ``GET /v1/knowledge/documents``; ``POST /v1/knowledge/documents``
+  ``{path}`` adds one file and reads it through the gate now; ``POST /v1/knowledge/documents/named`` ``{path, on}``, "Name it
+  in every chat"; ``POST /v1/knowledge/documents/remove`` ``{path}``, which deletes a copy in ``uploads`` and never an original.
+- ``POST /v1/knowledge/pick`` ``{kind: file | files | folder}`` (D127): Windows's own Open dialog on this computer. From
+  another device, or where there is no such dialog, it says so, and a file comes by upload instead (D134).
 - ``POST /v1/knowledge/upload?name=<file name>`` (D134, ``zone1.uploads``): the file's bytes as the body, from the
   browser's own file input. It lands in the data folder's ``uploads`` folder; the name is the only thing the client says.
+  That folder is its list, so the page need not pin it.
 - Her books (D136, ``zone1.books``): ``GET /v1/knowledge/find``, whether it can look now and where;
   ``POST /v1/knowledge/find`` ``{words}``, a plan for books only (D99's card, no apps looked for, no model asked), that
   answers at once with ``planning`` true while the build looks; ``POST /v1/knowledge/books/remove`` ``{source, file?}``; ``GET /v1/knowledge/books/read``
   ``?source&file&part``; ``GET /v1/knowledge/books/articles`` ``?source&q&page``; ``GET /v1/knowledge/books/article``
   ``?source&url``; ``POST /v1/knowledge/books/look`` looks for a dropped ``.zim`` now. ``GET /v1/knowledge/sources`` also
   looks, and says each library and where to drop one.
-- Her files (D136, ``owner_files``): ``GET /v1/knowledge/files``, the newest in My files, leaving out a folder an app marked as its own (WB2); ``POST /v1/knowledge/files/open``
-  ``{path}`` opens one in its own app on the bot's computer. ``GET /v1/owner-files`` ``[?path=]``, for a package with
-  ``needs.owner_files`` and its own token: where it makes files, or where one file is.
+- Her files (D136, ``owner_files``): ``GET /v1/knowledge/files``, the newest in My files, leaving out a folder an app marked
+  as its own (WB2); ``POST /v1/knowledge/files/open`` ``{path}`` opens one in its own app on the bot's computer.
+  ``POST /v1/knowledge/files/remove`` ``{path}`` deletes one file in My files, her paired device only. ``GET /v1/owner-files``
+  ``[?path=]``, for a package with ``needs.owner_files`` and its own token: where it makes files, or where one file is.
 """
 
 from __future__ import annotations
@@ -81,6 +87,12 @@ def _pinned(status: int = 200):
     return r
 
 
+def _documents(lib, **more):
+    r = jsonify(documents=lib.documents_view(), **more)
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
 def _file_arg() -> str | None:
     body = request.get_json(silent=True)
     raw = body.get("path") if isinstance(body, dict) else None
@@ -96,15 +108,17 @@ def knowledge_pick():
     from ... import send_file
     body = request.get_json(silent=True)
     kind = body.get("kind") if isinstance(body, dict) else None
-    if kind not in ("file", "folder"):
-        return jsonify(error='Send {"kind": "file"} or {"kind": "folder"}.'), 400
+    if kind not in ("file", "files", "folder"):
+        return jsonify(error='Send {"kind": "file"}, {"kind": "files"} or {"kind": "folder"}.'), 400
     # D130: which listener, set by the server. Never the peer's address alone: being local is no proof on the network.
     if request.environ.get("puffpai.listener") in (NETWORK_LISTENER, NETWORK_PAGE_LISTENER) \
             or request.remote_addr not in ("127.0.0.1", "::1") or not send_file.can_pick():
-        if kind == "file":                               # D134: the browser's own file input, then an upload
+        if kind in ("file", "files"):                    # D134: the browser's own file input, then an upload
             return jsonify(path="", typed=True, upload=True, line="Choose the file from this device.")
         return jsonify(path="", typed=True, line=FOLDER_TYPED)
     try:
+        if kind == "files":
+            return jsonify(paths=[p.strip() for p in send_file.pick(kind).split("\n") if p.strip()])
         return jsonify(path=send_file.pick(kind))
     except send_file.SendRefused as exc:
         return jsonify(error=str(exc)), 409
@@ -116,7 +130,8 @@ FOLDER_TYPED = ("A folder is read where it is, so it can't come from this device
 
 @route(bp, "POST", "/v1/knowledge/upload", access=OWNER_DEVICE)
 def knowledge_upload():
-    """One file from the device she is at (D134). Pin and Send to... work on the copy; the reply names it."""
+    """One file from the device she is at (D134). It is on her list as a copy, read now. Pin and Send to... work on it.
+    A replaced copy that was pinned stays pinned: its path is the same."""
     from ...zone1 import uploads
     lib = _library()
     try:
@@ -125,13 +140,10 @@ def knowledge_upload():
         return jsonify(error=str(exc), code=exc.code), exc.status
     except OSError:
         return jsonify(error=uploads.NOT_SAVED, code="not_saved"), 507
-    try:
-        lib.scan_file(Path(got["path"]))                 # through the gate now, as a pin is. A second copy is read again
-    except Exception:  # noqa: BLE001 - it is saved; the bot's next walk reads it
-        pass
-    r = jsonify(ok=True, **got)
-    r.headers["Cache-Control"] = "no-store"
-    return r
+    ok, said = lib.read_now(Path(got["path"]))           # through the gate now, as a pin is. A second copy is read again
+    if got["replaced"]:
+        said = f"{got['name']} replaces your earlier copy and {said[len(got['name']) + 1:]}"
+    return _documents(lib, ok=ok, said=said, **got)
 
 
 @route(bp, "GET", "/v1/owner-files", access=PACKAGE_OK)
@@ -171,6 +183,15 @@ def knowledge_file_open():
     return (jsonify(error=why), 400) if why else jsonify(opened=True)
 
 
+@route(bp, "POST", "/v1/knowledge/files/remove", access=OWNER_DEVICE)
+def knowledge_file_remove():
+    text = _file_arg()
+    if text is None:
+        return jsonify(error="Say which file."), 400
+    why = owner_files.remove_file(current_core().state, text)
+    return (jsonify(error=why), 400) if why else jsonify(removed=True, said=f"{Path(text).name} is deleted from your bot.")
+
+
 @route(bp, "GET", "/v1/knowledge/pinned", access=OWNER)
 def knowledge_pinned():
     return _pinned()
@@ -199,6 +220,88 @@ def knowledge_unpin():
     if not _library().unpin(text):
         return jsonify(error="That file is not pinned."), 404
     return _pinned()
+
+
+@route(bp, "POST", "/v1/knowledge/pinned/fiction", access=OWNER_DEVICE)
+def knowledge_pin_fiction():
+    from ...zone1.folders import canon, file_problem
+    body = request.get_json(silent=True)
+    on = body.get("on") if isinstance(body, dict) else None
+    text = _file_arg()
+    if text is None or not isinstance(on, bool):
+        return jsonify(error='Send {"path": "<a pinned file>", "on": true or false}.'), 400
+    lib = _library()
+    if not lib.set_fiction(text, on):
+        return jsonify(error="That file is not pinned."), 404
+    for p in lib.pinned():                               # a path can change after the pin: the walk's own check first
+        if canon(p) == canon(text) and not file_problem(lib.state, p, data=lib.data_folder):
+            lib.scan_file(p)                             # so the row's line is right
+    return _pinned()
+
+
+@route(bp, "GET", "/v1/knowledge/index", access=OWNER_DEVICE)
+def knowledge_index():
+    """D159: is it indexing now, how far along, and when it last finished. Only reads."""
+    from ...zone1.folders import index_view
+    state = current_core().state
+    r = jsonify(dict(index_view(state), downloading=_downloading(), learning=bool(books.learning(state))))
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
+@route(bp, "GET", "/v1/knowledge/documents", access=OWNER)
+def knowledge_documents():
+    return _documents(_library())
+
+
+@route(bp, "POST", "/v1/knowledge/documents", access=OWNER_DEVICE)
+def knowledge_add_document():
+    from ...zone1.folders import FolderRefused
+    text = _file_arg()
+    if text is None:
+        return jsonify(error=f'Send {{"path": "<a file on this computer>"}}, at most {MAX_PATH} characters.'), 400
+    lib = _library()
+    try:
+        path = lib.add(text)                             # the one file check runs in Library.add
+    except FolderRefused as exc:
+        return jsonify(error=str(exc)), 400
+    ok, said = lib.read_now(path)                        # a line for her now; what it can't read shows on its row
+    return _documents(lib, name=path.name, path=str(path), ok=ok, said=said)
+
+
+@route(bp, "POST", "/v1/knowledge/documents/named", access=OWNER_DEVICE)
+def knowledge_document_named():
+    from ...zone1.folders import FolderRefused, LibraryBusy
+    body = request.get_json(silent=True)
+    on = body.get("on") if isinstance(body, dict) else None
+    text = _file_arg()
+    if text is None or not isinstance(on, bool):
+        return jsonify(error='Send {"path": "<a file on your list>", "on": true or false}.'), 400
+    lib = _library()
+    try:
+        if not lib.set_named(text, on):
+            return jsonify(error="That file is not on your list."), 404
+    except LibraryBusy as exc:
+        return jsonify(error=str(exc)), 409
+    except FolderRefused as exc:
+        return jsonify(error=str(exc)), 400
+    return _documents(lib)
+
+
+@route(bp, "POST", "/v1/knowledge/documents/remove", access=OWNER_DEVICE)
+def knowledge_remove_document():
+    from ...zone1.folders import LibraryBusy
+    text = _file_arg()
+    if text is None:
+        return jsonify(error=f'Send {{"path": "<a file on your list>"}}, at most {MAX_PATH} characters.'), 400
+    lib = _library()
+    try:
+        said = lib.remove_document(text)
+    except LibraryBusy as exc:
+        return jsonify(error=str(exc)), 409
+    if said is None:
+        return jsonify(error="That file is not on your list."), 404
+    return _documents(lib, said=said)
 
 
 @route(bp, "GET", "/v1/knowledge/recommended", access=OWNER_DEVICE)

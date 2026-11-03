@@ -91,6 +91,7 @@ from typing import Any
 
 from ...consent.shown import TUNNEL_DOES, TUNNEL_SHORT, TUNNEL_WORDS
 from ...steward import gitfence
+from ..toolsmith_zone import mark_began
 from ..toolsmith import adopt
 from ..toolsmith.errors import NotBuilt, Refused, TryEnded
 from . import allowlist, public_read
@@ -555,6 +556,7 @@ class Trials:
             raise Refused("The try's own git folder could not be made, so nothing runs.")
         logs = self.host.state / "logs" / "toolsmith" / pkg_id
         rec.logs, rec.scratch = logs, logs / "scratch"
+        mark_began(rec.scratch)                            # before anything of this try runs
         try:
             from .store import bridge_target
             rec.subject = f"pkg:{bridge_target(rec.build_id)}"
@@ -1120,8 +1122,9 @@ class Trials:
         return self._bridge_note(rec, got, "said")
 
     def _gate_note(self, rec: TryRecord, rest: list[str], got: dict) -> None:
-        """After a try's ``compose up``, one plain line when its gate can't reach the Bridge proxy (a firewall on
-        plain Linux Docker), so Toolsmith does not take it for the app's own fault. Anywhere else: nothing."""
+        """After a try's ``compose up`` on plain Linux Docker: when the wall did not hold or its gate can't reach the
+        Bridge proxy (a firewall), one plain line, and the try's containers come down, as at Steward's start. Toolsmith
+        does not take it for the app's own fault. Anywhere else: nothing."""
         ask = getattr(self.ports, "docker_gate_problem", None)
         if ask is None or got.get("exit") != 0 or "up" not in rest:
             return
@@ -1132,9 +1135,12 @@ class Trials:
             answer = rec.broker.core_run(base + args, rec.folder, allowlist.join(["docker", *base[1:], *args]), limit_s=30)
             code = answer.get("exit") if isinstance(answer, dict) else None
             return code if isinstance(code, int) else 1
-        problem = ask(run)
+        problem = ask(run, rec.pkg_id)
         if problem:
-            got["said"] = (str(got.get("said") or "") + "\n\n" + problem).strip()
+            down = [*base, "down", "-t", "1"]
+            self._guarded(rec, lambda: rec.broker.core_run(down, rec.folder, allowlist.join(["docker", *down[1:]])))
+            got["ok"] = False
+            got["said"] = (str(got.get("said") or "") + "\n\n" + problem + " This app was stopped.").strip()
 
     def mcp(self, rec: TryRecord, request: Any, tool: str = "", arguments: Any = None) -> dict:
         """D124: ask this program, as an MCP server over stdio, for its tools and one real call: zone checked, inside
@@ -1300,6 +1306,8 @@ class Trials:
         Resolved through every junction or link; *link_itself* (delete): a link is judged by its own folder."""
         rel = str(rel or "").replace("\\", "/").strip()
         rel = rel[2:] if rel.startswith("./") else rel
+        if os.name != "nt" and rel.startswith("/"):
+            return None, ""                       # Linux and Mac: a whole path, as C:/... is on Windows, never a name here
         rel = rel.lstrip("/") if not re.match(r"^[A-Za-z]:", rel) else rel
         if (rec.folder is None or ".." in rel.split("/") or re.match(r"^[A-Za-z]:", rel) or rel.startswith("~")
                 or ":" in rel or "\x00" in rel):

@@ -90,7 +90,7 @@ def test_anything_but_a_chats_id_is_refused(route, bad):
 def test_the_route_says_when_it_cant_open(route):
     route.answer["value"] = (False, cli.TERMINAL_NOT_HERE)
     r = route.client.post("/v1/terminal/open", headers=route.device)
-    assert r.status_code == 200 and r.json == {"ok": False, "line": cli.TERMINAL_NOT_HERE}
+    assert r.status_code == 200 and r.json == {"ok": False, "pane": True, "line": cli.TERMINAL_NOT_HERE}
 
 
 def test_the_window_may_ask_for_it_and_its_allowlist_is_as_it_was():
@@ -614,7 +614,7 @@ def test_the_window_gives_every_helper_the_pages_it_loads_call():
     files += [WEB / name for name in ("knowledge_place.js", "github.js", "addapi.js", "addresses.js", "searchkeys.js")]
     for f in files:
         uses |= set(re.findall(r"\bP\.([A-Za-z]+)", f.read_text(encoding="utf-8")))
-    made_by_pages = {"planCard", "storeRow", "knowledgePlaceTile", "sendTargets", "pickPath", "sendFileButton", "sendPathButton", "uploadInput", "editsSetting"}
+    made_by_pages = {"addModel", "toolsmithTile", "planCard", "storeRow", "knowledgePlaceTile", "sendTargets", "pickPath", "sendFileButton", "sendPathButton", "uploadInput", "editsSetting"}
     assert uses - made_by_pages - _window_puff() == set()
 
 

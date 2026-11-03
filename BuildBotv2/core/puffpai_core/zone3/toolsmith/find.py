@@ -59,6 +59,10 @@ limit on stars or searches, no cut of what a search gives and no limit on
 READMEs read, and it waits for each place's own timeout. GitHub's real rate
 limit and its pacing stay, and the plan still stops its slow steps at
 ``plan_share``. ``PER_JOB`` is how many apps the card names. The junk filters stay.
+D143: a cloud plan searches on the job name's words with no rank from this
+computer's brain, and its other asks of that brain (is an app on her bot or in
+the store for this job) come after every job's search (``asks_after``), so a slow
+local model costs no job its search.
 
 One local-brain rank call, never a veto (what it leaves out follows in star
 order). No company model is asked before her Yes (03 step 5 notes). The third
@@ -91,6 +95,8 @@ from . import programs, readme_steps, shelves
 
 #: Her line for a job the plan's time did not reach (D99): the plan is written with the jobs it got to.
 OUT_OF_TIME_LINE = "Toolsmith ran out of time before it looked for this one. Plan again to look once more."
+#: The same on a cloud plan: the job's conversation still looks, after her Yes (D121, D143).
+OUT_OF_TIME_CLOUD_LINE = "Toolsmith ran out of time before it looked for this one. It looks after your Yes."
 PER_JOB = 5
 #: A cloud plan has no limit on searches of its own (D121): only GitHub's real rate limit stops them.
 NO_CAP = 10 ** 9
@@ -741,6 +747,12 @@ def net_reason(exc: BaseException) -> str:
     return ""
 
 
+def _reused(reuse: str, rows: list[dict], picked: list[dict], not_used: list[dict]) -> dict:
+    """A job's plan when an app already on her bot does it."""
+    name = next((str(r.get("name") or reuse) for r in rows or [] if r.get("id") == reuse), reuse)
+    return {"reuse": reuse, "reuse_name": name, "picked": picked, "candidates": [], "not_used": not_used, "code": []}
+
+
 class Finder:
     """One build's finding work. ``link`` reaches the network and the brain (through the Core)."""
 
@@ -763,6 +775,8 @@ class Finder:
         self.looks: list[dict] = []                # this job's rows to look at (D99)
         self.searching = True                      # False: every job has her pasted project, so nothing is searched
         self.searched_github = False               # a job went past what is on her bot and searched
+        self.reads_closed = 0                      # reads the closed Bridge refused (D151)
+        self.reads_other = 0                       # reads answered, from the cache too, or that failed another way
         self.searches = 0
         self.cap = NO_CAP if from_files else int(self.src["github"]["searches_per_build"])   # D121
         self.jobs_left = 1                         # jobs still to search, this one included (their share of the cap)
@@ -817,6 +831,7 @@ class Finder:
         try:
             hit = json.loads(path.read_text(encoding="utf-8"))
             if time.time() - float(hit["at"]) < hours * 3600:
+                self.reads_other += 1
                 return int(hit["status"]), hit["body"].encode("utf-8")
         except (OSError, ValueError, KeyError, TypeError):
             pass
@@ -828,11 +843,16 @@ class Finder:
                                                        **({"keyed": True} if keyed and not self.keyless else {}))
         except Exception as exc:  # noqa: BLE001 - a source that can't be read is a line, not a stop
             said = str(exc).strip() or type(exc).__name__
+            if said_closed(said):
+                self.reads_closed += 1
+            else:
+                self.reads_other += 1
             kind = str(getattr(exc, "kind", "") or type(exc).__name__)
             self._log(f"{host}: no answer ({kind}: {said[:160]})")
             self.unreachable = unreachable_line(said)
             self.say(self.unreachable)            # one plain line, the same for every GitHub host (lane I8a)
             return 0, b""
+        self.reads_other += 1
         self.last_headers = rate_headers(headers)
         self.key_state = str((headers or {}).get(KEY_HEADER) or "") if isinstance(headers, dict) else ""
         if self.key_state == "unusable" and not self.keyless:
@@ -1132,8 +1152,13 @@ class Finder:
         if not self.searching or not self.searched_github:
             return {}                              # her own projects, or every job reused an app: no line on a search
         web = [rid for rid in (self.src.get("web") or {}) if rid not in self.rows]
-        return {"github": self.searched_github, "asked": list(self.round.asked), "not_asked": list(self.not_asked), "down": dict(self.round.down),
-                "ran_late": self.ran_late, "needs_key": web}
+        down = dict(self.round.down)
+        closed = sum(1 for why in down.values() if said_closed(why))
+        return {"github": self.searched_github, "asked": list(self.round.asked), "not_asked": list(self.not_asked), "down": down,
+                "ran_late": self.ran_late, "needs_key": web,
+                # D151: counts only, for the card's one line when the closed Bridge is why nothing came.
+                "reads": {"closed": self.reads_closed + closed,
+                          "other": self.reads_other + self.round.answered + len(down) - closed}}
 
     def awesome(self, words: list[str]) -> list[dict]:
         a = self.src["awesome_selfhosted"]
@@ -1173,10 +1198,12 @@ class Finder:
     def search_words(self, jobs: list[dict], goal: str) -> dict:
         """``{job n: [query words]}``: one small ask of this computer's brain per job (never a company model:
         this is before the plan Yes) for 2 to 4 short queries; the Core screens them (no names, numbers or
-        personal detail, ``screen_queries``). No answer, or none left after the screen: the job name's words."""
+        personal detail, ``screen_queries``). No answer, or none left after the screen: the job name's words. A cloud
+        plan asks nothing here: the job name's words are its leads, and the company's model picks its own words after
+        her Yes (D143)."""
         out = {}
         for j in jobs:
-            if self.over():
+            if self.from_files or self.over():
                 out[j["n"]] = name_queries(j["name"])
                 continue
             self._now(f"asking your bot's brain for search words for {j['name']}")
@@ -1225,14 +1252,14 @@ class Finder:
     def rank(self, job: dict, pool: list[dict], phrases: list[list[str]] | None = None) -> list[dict]:
         """Scored first (:func:`score`: the queries' words in its name, topics and description, stars, recent
         work, signs it runs here), then the local brain's order of the top :data:`RANK_MAX`, once; never removes
-        one; no answer = the score's order."""
+        one; no answer = the score's order. A cloud plan stays in the score's order (D143)."""
         name = words_of(job.get("name"), 3)
         queries = [list(p) for p in phrases or [] if p] + (_pairs(name) if len(name) >= 3 else [name])
         central = {stem(w) for w in name} - GENERIC
         now = self.clock()
         pool = sorted(pool, key=lambda i: -score(i, queries, now, central))
         shown = pool[:RANK_MAX]
-        if not shown or self.over():
+        if not shown or self.from_files or self.over():
             return pool
         ask = {"job": f"{job['name']}: {job['does']}".strip(": "),
                "projects": [{"n": n, "name": i.get("name") or i["full_name"],
@@ -1312,11 +1339,16 @@ class Finder:
 
     def store_reuse(self, job: dict) -> dict:
         """A PuffPAI store app for this job (lane I10c), or {}: the same two asks as :meth:`brain_reuse`, with the
-        store apps' listed tools in the brain's table; both must pick a tool of the same store app. It goes on
-        the plan card unticked; the search still runs, and only her tick makes the job use it instead."""
+        store apps' listed tools in the brain's table; when both pick a tool of the same store app, that one. It goes on
+        the plan card unticked; the search still runs, and only her tick makes the job use it instead. The listing's own
+        words decide first (:func:`store_by_words`, D154): the owner, 11-02, "the store should be availbale whether or not they
+        choose the cloud model". Only when they match nothing, and there is time, is the brain asked."""
         fn = getattr(self.link, "fits_store", None)
-        if not self.store_rows or not callable(fn) or self.over():
+        if not self.store_rows:
             return {}
+        words = store_by_words(job, self.store_rows)
+        if words or not callable(fn) or self.over():
+            return words
         ids = {str(a.get("id")) for a in self.store_rows}
         picked: list[dict] = []
         pids: list[str] = []
@@ -1324,17 +1356,17 @@ class Finder:
             self._now(f"asking your bot's brain whether an app in the PuffPAI store does this (ask {n} of 2)")
             try:
                 got = fn(text)
-            except Exception:  # noqa: BLE001 - not asked: no store suggestion
-                return {}
+            except Exception:  # noqa: BLE001 - not asked: the listing's own words
+                return words
             got = got if isinstance(got, dict) else {}
             pid = str(got.get("package") or "") if got.get("ok") else ""
             if got.get("asked") is False or pid not in ids:
-                return {}
+                return words
             tool = next((str(c) for c in got.get("called") or [] if str(c).startswith(pid + ".")), "")
             picked.append({"ask": text[:300], "tool": tool[:120]})
             pids.append(pid)
         if len(set(pids)) != 1:
-            return {}
+            return words
         name = next((str(a.get("name") or pids[0]) for a in self.store_rows if a.get("id") == pids[0]), pids[0])
         return {"package": pids[0], "name": name[:80], "tool": picked[0]["tool"], "picked": picked}
 
@@ -1420,12 +1452,10 @@ class Finder:
         reuse = reuse_for(job, registry_rows, proven)
         picked: list[dict] = []
         offer: dict = {}
-        if not reuse and not job.get("pasted"):
+        if not reuse and not job.get("pasted") and not self.from_files:     # a cloud plan asks later (asks_after)
             reuse = self.brain_reuse(job, registry_rows, not_used, picked, offer)
         if reuse:
-            name = next((str(r.get("name") or reuse) for r in registry_rows or [] if r.get("id") == reuse), reuse)
-            return {"reuse": reuse, "reuse_name": name, "picked": picked, "candidates": [], "not_used": not_used,
-                    "code": []}
+            return _reused(reuse, registry_rows, picked, not_used)
         pool: list[dict] = []
         seen: set[str] = set()
         for url in job.get("pasted") or []:
@@ -1437,7 +1467,7 @@ class Finder:
         found: list[dict] = []
         self.looks = []
         if not pool and self.over():
-            notes.append(OUT_OF_TIME_LINE)
+            notes.append(OUT_OF_TIME_CLOUD_LINE if self.from_files else OUT_OF_TIME_LINE)
             self.other_places(job, phrases or name_queries(job.get("name")), 0.0)   # their answers still reach the card
         elif not pool:                             # her own project: that one only, no search, no fallbacks
             found = self.hers_for(job, phrases) + self.search_job(job, phrases)   # hers first (D135)
@@ -1554,11 +1584,59 @@ class Finder:
             out["detail"] = detail
         if offer.get("package"):
             out["offer"] = dict(offer, picked=picked)
-        elif not job.get("pasted"):
+        elif not job.get("pasted") and not self.from_files:
             shop = self.store_reuse(job)
             if shop:
                 out["store"] = shop
         return out
+
+    def asks_after(self, job: dict, plan: dict, registry_rows: list[dict]) -> dict:
+        """A cloud plan's asks of this computer's brain about what she already has, once every job was searched, so a
+        slow brain costs no job its search (D143). What the plan's time leaves out, the company's model reads after her
+        Yes (``scout``: "Already on her bot")."""
+        if plan.get("reuse") or job.get("pasted"):
+            return plan
+        picked: list[dict] = []
+        offer: dict = {}
+        reuse = self.brain_reuse(job, registry_rows, plan["not_used"], picked, offer)
+        if reuse:
+            return _reused(reuse, registry_rows, picked, plan["not_used"])
+        if offer.get("package"):
+            return {**plan, "offer": dict(offer, picked=picked)}
+        shop = self.store_reuse(job)
+        return {**plan, "store": shop} if shop else plan
+
+
+def store_by_words(job: dict, rows: Any) -> dict:
+    """The store app whose own listing is most about this job, by its words alone, or {} (D154): a word of the app's name,
+    two words of what it and its tools say, or one word no other store app says. With no model and no subject known. It
+    costs her a look on a card at most, so a match is not lost for being thin: "date" finds a calendar for a timeline."""
+    want = stems(f"{job.get('name') or ''} {job.get('does') or ''}") - GENERIC - {stem(w) for w in _TOO_PLAIN}
+    said_by: dict[str, set] = {}
+    listed = []
+    for row in rows or []:
+        if isinstance(row, dict) and row.get("id"):
+            tools = [a for a in row.get("abilities") or [] if isinstance(a, dict)]
+            words = stems(f"{row.get('description') or ''} {' '.join(str(a.get('description') or '') for a in tools)} "
+                          f"{' '.join(str(a.get('tool') or '').split('.')[-1].replace('_', ' ') for a in tools)}")
+            listed.append((row, want & stems(row.get("name") or ""), want & words))
+            for w in want & words:
+                said_by.setdefault(w, set()).add(row["id"])
+    best: tuple[int, dict] = (0, {})
+    for row, named, said in listed:
+        score = 2 * len(named) + len(said)
+        if (named or len(said) >= 2 or any(len(said_by[w]) == 1 for w in said)) and score > best[0]:
+            best = (score, row)
+    row = best[1]
+    if not row:
+        return {}
+    pid = str(row.get("package") or row["id"]).split(":", 1)[-1]
+    tool = next((str(a.get("tool") or "") for a in row.get("abilities") or [] if isinstance(a, dict)), "")
+    return {"package": pid, "name": str(row.get("name") or pid)[:80], "tool": tool[:120], "picked": []}
+
+
+#: Plain words in what a job does that say nothing about it, for :func:`store_by_words`.
+_TOO_PLAIN = frozenset(("said", "say", "says", "yes", "no", "who", "what", "when", "which", "each"))
 
 
 #: Words that are never a job's subject: pronouns, place and amount words, and "limit" (lane I8a: "them", "you",
@@ -1744,11 +1822,36 @@ def tools_said(tools: Any, rows: Any, verb: str = "would") -> str:
     return f"it {verb} {' and '.join(plain)}" if plain else NO_TOOL_WORDS
 
 
+#: A job's line when the closed Bridge is what stopped every app it tried (D151). It stays on the job, so it says "was":
+#: the Bridge may be open by the time she reads it. Words only: nothing here opens it.
+BRIDGE_CLOSED_LINE = ("The Bridge was closed, so Toolsmith could not reach anything for this job. If it is still closed, "
+                      "open it on the Bridge page, then press Check again on Building.")
+
+
+def closed_now(link: Any) -> bool:
+    """The Core's word: does the Bridge read closed right now? Can't tell: no."""
+    try:
+        return link.build().get("bridge_closed") is True
+    except Exception:  # noqa: BLE001 - only words: can't tell is the usual words
+        return False
+
+
+def not_yet_words(tried: list[dict]) -> str:
+    """How the line of a job no app worked for begins: the Bridge only when it stopped every app tried (``closed``, set
+    from what each try really saw), anything else keeps the usual words, even with the Bridge closed."""
+    return BRIDGE_CLOSED_LINE if tried and all(t.get("closed") is True for t in tried) else "No app worked yet."
+
+
+def said_closed(said: str) -> bool:
+    """Do these words say the Bridge is closed (the Core's refusal, or the line made from it)?"""
+    return "bridge is closed" in " ".join(str(said or "").split()).lower()
+
+
 def unreachable_line(said: str) -> str:
     """Why GitHub could not be read, in her words (the Bridge closed, or the network error itself)."""
     said = " ".join(str(said or "").split()).rstrip(".")
     low = said.lower()
-    if "bridge is closed" in low:                 # the same line whichever GitHub host it was
+    if said_closed(said):                         # the same line whichever GitHub host it was
         return "GitHub could not be reached: the Bridge is closed, so nothing was sent"
     if "bridge needs your yes" in low:
         return "GitHub could not be reached: the Bridge needs your Yes first, so nothing was sent"
@@ -1815,18 +1918,6 @@ def nothing_line(job: dict, pasted: bool | None = None, code_said: bool = False)
 
 def _money(usd: float) -> str:
     return f"${usd:.2f}".removesuffix(".00")
-
-
-def share_line(spent: float, share: float, cap: float, left: list[str]) -> str:
-    """Her line for a job that stopped at its share of the cap (D119), and the apps it did not try. The wizard's
-    Prove and Done steps pick this part out of the job's line (``wizard.lines``)."""
-    line = (f"Toolsmith stopped trying apps for this job: it spent about ${spent:.2f}, which reached its {_money(share)} "
-            f"share of your {_money(cap)} limit. The other jobs keep their own shares. Check again on Building gives "
-            f"this job a new share and starts its apps over; the whole build still stops at {_money(cap)}.")
-    if not left:
-        return line
-    named = left[0] if len(left) == 1 else ", ".join(left[:-1]) + " and " + left[-1]
-    return f"{line} Not tried: {named}."
 
 
 def pasted_any(jobs: Any) -> bool:

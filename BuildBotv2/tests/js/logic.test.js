@@ -579,6 +579,17 @@ assert.strictEqual(vv.words, "Open");
 assert.strictEqual(vv.open, true);
 assert.deepStrictEqual(vv.conflicts, ["ANTHROPIC_API_KEY"]);
 assert.strictEqual(vv.idle, "Locks itself after 15 minutes with no use.");
+assert.strictEqual(vv.lent, "");
+assert.strictEqual(L.vaultView({ state: "open", idle_lock_minutes: 60, idle_own_minutes: 5 }).idle,   // D153, while held
+                   "Locks itself after 60 minutes with no use. That is while a build or setup is going. After that, 5 minutes.");
+assert.strictEqual(L.vaultView({ state: "open", idle_lock_minutes: 5, idle_own_minutes: 5 }).idle, "Locks itself after 5 minutes with no use.");
+assert.strictEqual(L.vaultView({ state: "locked", leases: 1 }).lent, L.VAULT_LENT);
+assert.strictEqual(L.VAULT_LENT, "What already has its key goes on.");   // only what is true: a ticked key and the inbox still work
+assert.strictEqual(L.vaultRowWords(true, { lent: L.VAULT_LENT }), L.UNLOCK_WAITING);
+assert.strictEqual(L.vaultRowWords(false, { lent: L.VAULT_LENT }), L.VAULT_LENT);
+assert.strictEqual(L.vaultRowWords(false, { lent: "" }), "");            // the build ended, the vault still locked: the line goes
+assert.strictEqual(L.vaultRowWords(false, null), "");
+assert.strictEqual(L.vaultView({ state: "locked", leases: 0 }).lent, "");
 assert.strictEqual(L.vaultView({ state: "not_set_up" }).setUp, false);
 assert.strictEqual(L.vaultView({}).words, "Not checked");
 
@@ -675,3 +686,50 @@ console.log("ok");
 // D121: a free site is a job's answer with nothing installed: its own words, and never Working or done.
 assert.strictEqual(L.jobWords("free_site"), "A free site does this, nothing installed");
 assert.strictEqual(L.jobActive("free_site"), false);
+
+// D159: Building says what is happening now per job, or that nothing runs.
+{
+  const at = Date.parse("2026-11-02T10:10:00Z");
+  const job = (over) => Object.assign({ id: "j", name: "Recipes", status: "working", words: "Working", now: "", since: "" }, over);
+  const view = (jobs, over) => Object.assign({ id: "b1", goal: "a shop", planning: false, nowAt: "", yes: true, store: { adding: false }, jobs: jobs }, over);
+  let w = L.workNow([], { builds: [] }, at);
+  assert.strictEqual(w.head, "Nothing is running right now.");
+  assert.deepStrictEqual(w.running, []);
+  w = L.workNow([view([job({})])], { builds: [{ id: "b1", jobs: [{ name: "Recipes", status: "working" }] }] }, at);
+  assert.strictEqual(w.head, "Nothing is running right now.");
+  w = L.workNow([view([job({ status: "building: koala/app", now: "Reading its README", since: "2026-11-02T10:00:00Z" })])], { builds: [] }, at);
+  assert.strictEqual(w.head, "Running now:");
+  assert.deepStrictEqual(w.running, ["Still working: Recipes: Reading its README, 10 minutes so far."]);
+  w = L.workNow([view([job({ status: "building", words: "Building", now: "Starting it", since: "2026-11-02T10:09:50Z" })])], { builds: [] }, at);
+  assert.deepStrictEqual(w.running, ["Recipes: Starting it."]);
+  w = L.workNow([view([job({ status: "waiting_vault", words: "Waiting for your vault to be unlocked" }), job({ name: "Notes", status: "planned", words: "Planned" })])], { builds: [] }, at);
+  assert.strictEqual(w.head, "Nothing is running right now.");
+  assert.deepStrictEqual(w.waiting, ["Recipes: Waiting for your vault to be unlocked.", "Notes: waiting its turn."]);
+  w = L.workNow([view([], { planning: true, nowAt: "2026-11-02T10:05:00Z" })], { builds: [] }, at);
+  assert.deepStrictEqual(w.running, ["Still working: Planning \"a shop\", finding apps for each job, 5 minutes so far."]);
+  // a build whose view did not come back still counts, and so does a library being fetched
+  w = L.workNow([], { builds: [{ id: "b2", jobs: [{ name: "Maps", status: "building: x/y" }] }] }, at);
+  assert.deepStrictEqual(w.running, ["Maps: Trying x/y."]);
+  w = L.workNow([], { builds: [{ id: "b3", goal: "g", jobs: [], library: { state: "fetching", done: 2, of: 5, sources: ["Wikipedia"] } }] }, at);
+  assert.deepStrictEqual(w.running, ["Library: fetching 2 of 5 from Wikipedia."]);
+}
+
+// D159: Knowledge says whether it is indexing, how far along, and when it last finished.
+{
+  const at = 1793600000000, secs = at / 1000;
+  let v = L.indexNow({ running: true, of: null, files: 0, pieces: 0, started_at: secs - 5 }, at);
+  assert.strictEqual(v.running, true);
+  assert.strictEqual(v.line, "Indexing now: finding your files.");
+  v = L.indexNow({ running: true, done: 120, of: 1900, now: "taxes.pdf", files: 118, pieces: 5400, started_at: secs - 180 }, at);
+  assert.strictEqual(v.line, "Indexing now: 120 of 1,900 files checked.");
+  assert.deepStrictEqual(v.more, ["118 files can be searched so far, in 5,400 pieces of text.", "Reading taxes.pdf.", "Started 3 minutes ago."]);
+  v = L.indexNow({ running: false, files: 1, pieces: 1, not_read: 2, last_finished: secs - 7200, last_new: 1 }, at);
+  assert.strictEqual(v.line, "Not indexing right now.");
+  assert.deepStrictEqual(v.more, ["1 file can be searched, in 1 piece of text.", "Last finished 2 hours ago, with 1 new or changed file.",
+    "New files in your folders are read the next time you search. A document you add, or a folder you link, is read right away.", "2 files could not be read, so they can't be searched."]);
+  v = L.indexNow({ running: false, files: 0, pieces: 0, last_finished: 0, learning: true, downloading: true }, at);
+  assert.deepStrictEqual(v.more, ["Nothing can be searched yet.", "New files in your folders are read the next time you search. A document you add, or a folder you link, is read right away.",
+    "Toolsmith is downloading for your library. Your library, below, says how far.", "Your bot is learning a library you added. Your library, below, says how far."]);
+  assert.strictEqual(L.indexNow({ last_finished: secs - 10, files: 3, pieces: 4 }, at).more[1], "Last finished just now, with nothing new.");
+  assert.strictEqual(L.agoWords(secs - 86400 * 3, at), "3 days ago");
+}

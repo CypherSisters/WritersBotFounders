@@ -1,8 +1,10 @@
-"""Floor: the owner is never named in anything tracked outside docs/ (file names count)."""
+"""Floor: the owner is never named in anything tracked, docs/ included (file names count)."""
 import hashlib
 import re
 import struct
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 BAD = {
@@ -29,8 +31,6 @@ def _bad(text):
 def find_hits(root, rels):
     hits = []
     for rel in rels:
-        if rel.startswith("docs/"):
-            continue
         if _bad(rel):
             hits.append(f"{rel}: file name")
         path = Path(root) / rel
@@ -52,6 +52,8 @@ def tracked_files(root):
         gitdir = Path(root) / dot.read_text(encoding="utf-8").split(":", 1)[1].strip()
     else:
         gitdir = dot
+    if not (gitdir / "index").is_file():
+        pytest.skip("no git index here (an export with nothing tracked), so there is no list of tracked files to read")
     data = (gitdir / "index").read_bytes()
     sig, version, count = struct.unpack(">4sII", data[:12])
     assert sig == b"DIRC" and version == 2

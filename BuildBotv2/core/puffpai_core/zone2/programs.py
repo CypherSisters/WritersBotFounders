@@ -24,7 +24,7 @@ row per program she added::
   ``.desktop`` file on Linux. It is started on purpose with its window showing (``os.startfile``, ``open -a``, the
   ``.desktop`` file's own ``Exec``), optionally with a file. The brain opens a file in one with ``open_in_program``,
   which asks her Yes the first time per program. ``"default"`` stands for the file's own app, shared by every file.
-* **Opening a file** works only for files inside her data folder, a linked folder or one she pinned, never the vault or
+* **Opening a file** works only for files inside her data folder, a linked folder or on her list, never the vault or
   the bot's own folder. A program file (``.exe``, ``.bat``, ``.js`` ...) is never opened in its default app: that would
   run it.
 
@@ -130,7 +130,7 @@ NOT_ON_PATH = ("I could not find a program called {name} on this computer. Give 
                "full path instead.")
 NOT_A_PROGRAM = "That file is not a program BuildBot can start here."
 NO_SUCH = "There is no program by that name in your list."
-FILE_OUTSIDE = ("I can only open files in your data folder, a file you pinned, or a folder you "
+FILE_OUTSIDE = ("I can only open files in your data folder, a document on your list, or a folder you "
                 "linked. That file is somewhere else.")
 FILE_MISSING = "There is no file at that place."
 FILE_RUNS = ("That file is a program, not a document, so opening it would run it. "
@@ -584,12 +584,12 @@ def run_cli(row: dict, args: list[str], *, folder: str, asked: bool, ctx: Option
 
 # -- files she may open -------------------------------------------------------------------------------------------
 def _folders(state: Path | str) -> tuple[str, list[str], list[str]]:
-    """Her data folder, linked folders and pinned files, as she has them."""
+    """Her data folder, linked folders and the files she pinned or added, as she has them."""
     data = jsonfile.read(Path(state) / "settings" / "folders.json", {})
     data = data if isinstance(data, dict) else {}
     home = str(data.get("data") or (Path(state) / "data"))
     linked = [p for p in data.get("linked") or [] if isinstance(p, str) and p.strip()]
-    return home, linked, [str(p) for p in zone1_folders.pinned_paths(state)]
+    return home, linked, [str(p) for p in [*zone1_folders.pinned_paths(state), *zone1_folders.added_paths(state)]]
 
 
 def file_refusal(state: Path | str, path: Any, *, default_app: bool = True) -> str:
@@ -601,6 +601,7 @@ def file_refusal(state: Path | str, path: Any, *, default_app: bool = True) -> s
     if zone1_folders._pin_odd_path(real):  # noqa: SLF001 - and where it really leads
         return FILE_OUTSIDE
     home, linked, pinned = _folders(state)
+    pinned = [f for f in pinned if not zone1_folders.file_problem(state, f, data=home)]   # the walk's own check, as handable's
     home, linked, pinned = (zone1_folders.canon(home), [zone1_folders.canon(f) for f in linked],
                             [zone1_folders.canon(f) for f in pinned])
     try:
@@ -622,8 +623,8 @@ def file_refusal(state: Path | str, path: Any, *, default_app: bool = True) -> s
 
 
 def resolve_file(state: Path | str, file: Any) -> str:
-    """A full path for *file*: as given when full, else inside her data folder or a linked folder, else the pinned file
-    of that name."""
+    """A full path for *file*: as given when full, else inside her data folder or a linked folder, else the file on her
+    list of that name."""
     text = str(file or "").strip().strip('"')
     if not text or os.path.isabs(text):
         return text
@@ -740,7 +741,7 @@ def open_file(state: Path | str, path: str) -> dict:
 # -- the brain's open_in_program ----------------------------------------------------------------------------------
 OPEN_TOOL = "open_in_program"
 OPEN_KIND = "open_program"
-OPEN_WORDS = ("Open a file from the owner's folders (her data folder, her linked folders, a file she pinned) on this "
+OPEN_WORDS = ("Open a file from the owner's folders (her data folder, her linked folders, a document on her list) on this "
               "computer's screen, in one of her desktop programs (like Word or Excel) or in the file's own app. The "
               "owner says yes the first time per program.")
 OPEN_SCHEMA = {"type": "object", "properties": {

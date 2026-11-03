@@ -60,6 +60,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Callable
 
+from ...consent.store import CARD_TTL
 from ...packages import plan_cover
 from .. import policy as bridge_rules
 from ..toolsmith import agent as agent_mod, find as find_mod, programs, scout, shelves, tries as agent_tries
@@ -68,6 +69,7 @@ from ..toolsmith.names import short_name
 from . import (address, broker, knowledge as knowledge_mod, owner_apis, public_read, redact, sender,
                settings as settings_mod, store, store_phase, trials)
 from .process import ProcessRunner
+from .store_phase import FAILED as STORE_FAILED, FINAL as STORE_FINAL, NO_ANSWER as STORE_NO_ANSWER
 
 logger = logging.getLogger(__name__)
 DEFAULT_API = "http://127.0.0.1:8420"
@@ -88,6 +90,7 @@ BOOKS_NO_WORDS_LINE = ("Nothing was looked up: those words can't be sent. A sear
                        "name of someone your bot knows. Try the book's title in other words, or its subject.")
 #: A Yes from before her plan card said a cloud build reads public pages and tries other apps (D121).
 AGAIN_OLDER_YES_LINE = "Your last Yes did not say Toolsmith may read public pages and try other apps."
+AGAIN_NO_READ_YES_LINE = "Your last Yes to check again did not name the places this plan reads knowledge from."
 #: Her GitHub key in the vault, named like Toolsmith's cloud keys (``toolsmith.<provider>``): used only on
 #: api.github.com, for search and her own project list (D135), through the Bridge, never logged (lane I15). None saved:
 #: searches go unkeyed and the list is not read.
@@ -223,6 +226,17 @@ AGAIN_TERMS_CHANGED_LINE = "Toolsmith's model or its cost cap changed after the 
 MODEL_NEEDS_WAIT_S = 30.0
 
 
+#: How long her Yes on a plan card keeps counting as live, for the start that follows it (D153). Without it, a Yes that
+#: came past her idle setting could lock the vault just before the build borrows its keys.
+CARD_YES_S = 60.0
+
+
+def _process_alive(child: Any) -> bool:
+    """Is this Toolsmith process itself still running (D153)? A runner with no ``ended`` says it by ``wait``."""
+    ended = getattr(child, "ended", None)
+    return not ended() if callable(ended) else not child.wait(0)
+
+
 class Paused(Refused):
     """Toolsmith is paused (safe mode): every plan, start and agent route says so (409 ``refused``)."""
 
@@ -244,6 +258,7 @@ class ToolsmithHost:
         self.sleep = sleep
         self._lock = threading.RLock()
         self._next: set[str] = set()
+        self._store_cards: dict[str, dict[str, dict]] = {}   # the store apps the goal's conversation asked for (D152)
         self._stopping = False
         self._paused = ""                          # safe mode's reason, plain words ("" = not paused)
         self._children: dict[str, Any] = {}
@@ -257,6 +272,8 @@ class ToolsmithHost:
         self._launch_failed: dict[str, str] = {}         # why a build's last launch did not start (lane I17 fix)
         self._again_busy: set[str] = set()               # builds a "Check again" is starting now (lane I18e)
         self._gh_leases: dict[str, str] = {}             # build id -> its GitHub key lease, for the build (D68)
+        self._cards_out: dict[str, float] = {}           # build id -> until when its plan card counts as live (D153)
+        self._now: Callable[[], float] = time.monotonic
         self.cards: list[dict] = []                # what the Core tells her (safe mode, a stopped try)
         if hasattr(ports, "toolsmith"):
             ports.toolsmith = self                 # the ports' safe-mode fallback pauses this host too
@@ -289,23 +306,25 @@ class ToolsmithHost:
             read = lambda i: manifest_mod.read_installed(self.registry, installs, i)   # noqa: E731
         return sender.installed_providers(self.registry, read)
 
-    def plan_waits_for_key(self) -> bool:
-        """D132: she chose a cloud model, and its key is in a vault that is locked now. A plan made like this runs on the
-        local brain and uses up its time, so it waits. Can't tell: it does not wait."""
-        opened = getattr(self.ports, "vault_open", None)
-        if self.settings().get("where") != "cloud" or not callable(opened):
-            return False
-        try:
-            return opened() is False
-        except Exception:  # noqa: BLE001 - as keys_view: the build still waits plainly
-            return False
-
     @staticmethod
     def _cloud_for(b: dict, st: dict) -> bool:
         """Cloud only when she chose it now AND this build was planned (and said yes to) with that provider."""
         rec = b.get("model") or {}
         return (st.get("where") == "cloud" and rec.get("where") == "cloud"
                 and rec.get("provider") == st.get("provider"))
+
+    def _local_goal(self) -> dict:
+        """``Ports.local_goal`` (D154). Ports with none (a test double): {}, so a local build walks its plan as it did."""
+        fn = getattr(self.ports, "local_goal", None)
+        try:
+            got = fn() if callable(fn) else {}
+        except Exception:  # noqa: BLE001 - can't tell: the walk down the plan
+            return {}
+        return got if isinstance(got, dict) else {}
+
+    def looks_after_yes(self, b: dict, st: dict) -> bool:
+        """After her Yes this build looks further than its plan: a cloud build (D121), or a local one (D154)."""
+        return self._cloud_for(b, st) or (st.get("where") != "cloud" and bool(self._local_goal().get("makes")))
 
     def _company(self, st: dict) -> str:
         prov = self.providers().get(str(st.get("provider") or "")) or {}
@@ -391,7 +410,22 @@ class ToolsmithHost:
                 out["consent_changed"] = changed       # Settings says why it asks again (D118); never on a new bot
         return out
 
+    def _settled(self, b: dict) -> dict:
+        """D160: a fetch whose process is gone (the Core was stopped hard, so ``_child_done`` never ran) ends now with its plain
+        line, so it stops saying it is reading and Check again can read the rest."""
+        run = b.get("knowledge_run")
+        if not isinstance(run, dict) or run.get("state") != "fetching":
+            return b
+        with self._lock:
+            busy = b["id"] in self._again_busy
+        if busy or self.running(b["id"]):
+            return b
+        with self.knowledge._lock(b["id"]):
+            self.store.change(b["id"], knowledge_mod.end_unfinished)
+        return self.store.read(b["id"]) or b
+
     def _summary(self, b: dict) -> dict:
+        b = self._settled(b)
         return {"id": b["id"], "goal": b["goal"], "created_at": b["created_at"],
                 "jobs": [{"id": j["id"], "name": j["name"], "status": store.job_status(b, j),
                           **({"library": True} if store.library_job(j) else {})} for j in b["jobs"]],
@@ -594,6 +628,28 @@ class ToolsmithHost:
         self._build(build_id, after_yes=False)
         return self.ports.brain_json(system, user), "local"
 
+    def holds_vault(self) -> bool:
+        """D153: is a build live now, so the vault's idle timer is its 60 minutes? Only what a dead build can't leave
+        true counts, and never a stored status: Toolsmith's own process (planning or building, and whatever it waits on
+        with her), a store phase's thread, or a plan card this Core raised, not yet answered and not past its time. All
+        of it is this process's memory, so a stop or a crash ends it. Paused or stopping: no.
+
+        The vault asks with its own lock held, and the writers that seal take their locks before the vault's. So this
+        takes no lock and never asks the consent store (its sweep runs listeners that reach those writers)."""
+        if self.halted():
+            return False
+        now = self._now()
+        return (any(_process_alive(child) for child in list(self._children.values()))
+                or self.store_phase.alive()
+                or any(now < end for end in list(self._cards_out.values())))
+
+    def halted(self) -> bool:
+        """Paused or stopping: nothing holds the vault open, whichever reason would (D153). No lock."""
+        return self._stopping or bool(self.paused_reason())
+
+    def _card_out(self, build_id: str) -> None:
+        self._cards_out[build_id] = self._now() + CARD_TTL.total_seconds()
+
     def running(self, build_id: str) -> bool:
         """True while Toolsmith's process works on this build."""
         with self._lock:
@@ -698,6 +754,26 @@ class ToolsmithHost:
                 return self.view(build_id)
         return self._begin_build(build_id, consent_id)
 
+    def settle_after_restart(self) -> list[str]:
+        """Core start: Toolsmith's process does not outlive a hard stop of the Core, and nothing is left to hold the jobs it
+        was on (``_child_done`` runs only while the Core lives). They hold now, with its line, so Check again can run. A
+        build whose store adds go on from here is left to ``resume_store_adds``. The ids settled."""
+        out = []
+        for b in self.store.all():
+            jobs = b.get("jobs") or []
+            if (not b.get("yes") or self.running(b["id"]) or not any((j.get("run") or {}).get("state") in store.ACTIVE for j in jobs)
+                    or (self.store_phase.record(b["id"]) or {}).get("state") in store_phase.RUNNING + ("asking",)):
+                continue
+
+            def fn(x: dict) -> None:
+                for j in x["jobs"]:
+                    if j["run"].get("state") in store.ACTIVE:
+                        j["run"].update(state="held", line=STOPPED_LINE, trying=None, since=settings_mod.now())
+                knowledge_mod.end_unfinished(x)
+            self.store.change(b["id"], fn)
+            out.append(b["id"])
+        return out
+
     def resume_store_adds(self) -> list[str]:
         """Core start: the builds whose store apps were being added go on (``store_phase.resume``, lane I16)."""
         return self.store_phase.resume()
@@ -794,15 +870,16 @@ class ToolsmithHost:
     # -- "Check again" (lane I18e) ----------------------------------------------------------
 
     def again(self, build_id: str, consent_id: str = "") -> dict:
-        """"Check again": try this build's unfinished jobs once more (held, not working yet, nothing found).
+        """"Check again": try this build's unfinished jobs once more (held, not working yet, nothing found), and
+        read what its knowledge fetch did not (D160).
 
         Jobs that work already stay as they are; each job tried again starts its tries over, with the hold-card
         answers she already gave (``Trials.restore_answers``). Her first Yes is reused only while the consent
         rules allow it (:meth:`_reuse_why`); otherwise ONE new Yes card asks again, covering no more than the
-        plan did: the same plan sha, only the jobs tried again and their install hosts, and the cost cap the card
-        names, which counts what this build spent already (its ledger). *consent_id*: her Yes on that card.
-        Refused plainly while Toolsmith works on the build, in safe mode, or (with a cloud model) while the vault
-        is locked."""
+        plan did: the same plan sha, only the jobs tried again and their install hosts, the plan's knowledge hosts
+        when its fetch came up short, and the cost cap the card names, which counts what this build spent already
+        (its ledger). *consent_id*: her Yes on that card. Refused plainly while Toolsmith works on the build, in
+        safe mode, or (with a cloud model and a job to try) while the vault is locked."""
         self._refuse_if_paused()
         b = self.store.read(build_id)
         if b is None:
@@ -811,6 +888,7 @@ class ToolsmithHost:
             raise Refused(store.REPLACED_LINE)
         if not b.get("yes") or not b.get("plan_sha"):
             raise Refused(AGAIN_NO_YES_LINE)
+        b = self._settled(b)
         with self._lock:
             if build_id in self._again_busy or self.running(build_id):
                 raise Refused(AGAIN_RUNNING_LINE)
@@ -825,20 +903,16 @@ class ToolsmithHost:
         build_id = b["id"]
         if (self.store_phase.record(build_id) or {}).get("state") in store_phase.RUNNING:
             raise Refused(AGAIN_RUNNING_LINE)
-        jobs = [j["id"] for j in b["jobs"] if store.job_status(b, j) in store.UNFINISHED]
-        if not jobs:
-            raise Refused(AGAIN_NOTHING_LINE)
         st = self.settings()
         cloud = self._cloud_for(b, st)
-        # Lane I19e: a job with no app on its plan has nothing to try again (no new search runs without a new
-        # plan), so it is left out; with none left, it is refused plainly instead of a run that does nothing.
-        # D121: on a cloud build it looks again with the company's model, so it stays in.
-        jobs = [j["id"] for j in b["jobs"] if j["id"] in jobs and ((j.get("plan") or {}).get("reuse")
-                                                                   or (j.get("plan") or {}).get("candidates")
-                                                                   or (cloud and not j.get("pasted")))]
-        if not jobs:
+        short = bool(knowledge_mod.missing(b))              # D160: its fetch came up short, so this run reads the rest
+        if not short and not any(store.job_status(b, j) in store.UNFINISHED for j in b["jobs"]):
+            raise Refused(AGAIN_NOTHING_LINE)
+        jobs = self._again_jobs(b, cloud, self.looks_after_yes(b, st))
+        if not jobs and not short:
             raise Refused(AGAIN_NOTHING_NEW_LINE)
-        self._again_vault(b, st)                            # D68: the key is borrowed now, for this run
+        if jobs:                                            # with none, the Core only reads: no cloud key to wait for
+            self._again_vault(b, st)                        # D68: the key is borrowed now, for this run
         launched = {"ok": False}
         try:
             got = self._again_go(b, consent_id, jobs, st, launched)
@@ -850,6 +924,17 @@ class ToolsmithHost:
             self.end_keys(build_id)
             got["keys"] = self.keys_view(b)                 # said after it went back, never "leased"
         return got
+
+    @staticmethod
+    def _again_jobs(b: dict, cloud: bool, looks: bool | None = None) -> list[str]:
+        """The jobs a "Check again" tries. Lane I19e: a job with no app on its plan has nothing to try again (no new
+        search runs without a new plan), so it is left out. D121, D154: a build that looks further after her Yes looks
+        again, so it stays in. D160: a job left planned by a hard stop starts in any run, so it is named here, and the
+        vault, the model and the cost are checked for it as for any job."""
+        looks = cloud if looks is None else looks
+        return [j["id"] for j in b["jobs"] if (store.job_status(b, j) in store.UNFINISHED or store.job_status(b, j) == "planned")
+                and ((j.get("plan") or {}).get("reuse") or (j.get("plan") or {}).get("candidates")
+                     or (looks and not j.get("pasted")))]
 
     def _again_go(self, b: dict, consent_id: str, jobs: list[str], st: dict, launched: dict) -> dict:
         build_id = b["id"]
@@ -911,8 +996,8 @@ class ToolsmithHost:
     def _reuse_why(self, b: dict, st: dict, jobs: list[str]) -> str:
         """"" when the build's Yes still covers a "Check again" of *jobs*: the same plan sha, that Yes still live
         (not taken back, not past its end) and for exactly this plan (an earlier "Check again" Yes: for these
-        jobs), and the same Toolsmith model and cost cap as her card said. Else the plain reason a new card
-        gives."""
+        jobs), naming the plan's knowledge hosts when its fetch came up short (D160), and the same Toolsmith model
+        and cost cap as her card said when a job uses them. Else the plain reason a new card gives."""
         yes = b.get("yes") or {}
         cid = str(yes.get("consent_id") or "")
         if yes.get("sha") != b.get("plan_sha"):
@@ -923,6 +1008,11 @@ class ToolsmithHost:
         covered = holds.get("again")
         if isinstance(covered, list) and not set(jobs) <= set(covered):
             return "Your last Yes to check again was for other jobs."
+        if knowledge_mod.missing(b) and not set((b.get("knowledge_plan") or {}).get("hosts") or []) \
+                <= set(holds.get("knowledge_hosts") or []):
+            return AGAIN_NO_READ_YES_LINE
+        if not jobs:                                   # D160: the Core only reads, so no model or cost is in play
+            return ""
         agreed = self._terms_of(cid) if isinstance(covered, list) else None   # a "Check again" Yes: its own terms
         if agreed is None and not isinstance(covered, list):
             agreed = b.get("agreed") if isinstance(b.get("agreed"), dict) else store.agreed_choice(
@@ -968,21 +1058,27 @@ class ToolsmithHost:
 
     def _again_ask(self, b: dict, jobs: list[str], st: dict, why: str) -> dict:
         """ONE new Yes card for a "Check again", raised the normal way (a plan card for this build, bound to its
-        plan sha). It covers only the jobs tried again and their install hosts from the plan."""
+        plan sha). It covers only the jobs tried again and their install hosts from the plan, and, when its fetch came
+        up short, the plan's own knowledge hosts (D160). With no job to try it opens nothing else."""
         build_id = b["id"]
         terms = self._choice_now(b, st)                 # what this card names: checked again at her Yes
-        cloud = terms.get("where") == "cloud"          # D124: a cloud build keeps reading and trying what it finds
+        # D124: a cloud build keeps reading and trying what it finds, but only a job does that.
+        cloud = terms.get("where") == "cloud" and bool(jobs)
         covers = {"build": build_id, "plan_sha": b["plan_sha"], "card": self._again_card(b, jobs, st, why),
                   "install_hosts": store.again_hosts(b, jobs, cloud), "again": list(jobs), "terms": terms}
         if cloud and bridge_rules.READ_PUBLIC_PAGES:
             covers["reads_public"] = True
         if cloud and bridge_rules.TRY_FOUND_APPS:
             covers["tries_found"] = True
+        hosts = (b.get("knowledge_plan") or {}).get("hosts") or []
+        if knowledge_mod.missing(b) and hosts:          # Bridge.open_build grants these from this Yes, while it runs
+            covers["knowledge_hosts"] = list(hosts)
         try:
             cid = self.ports.consent_request("package", store.bridge_target(build_id), covers, False,
                                              bound={"plan_sha": b["plan_sha"]})
         except NotBuilt as exc:
             raise Refused(f"{exc} So Toolsmith can't ask you to check again yet.") from None
+        self._card_out(build_id)
         self.store.change(build_id, lambda x: x.update(again={"consent_id": cid, "jobs": list(jobs),
                                                              "state": "asking", "why": why, "terms": terms,
                                                              "at": settings_mod.now()}))
@@ -994,8 +1090,9 @@ class ToolsmithHost:
         choice = self._choice_now(b, st)
         who = "the model on this computer"
         lines = [why]
-        found = store.found_line(self._company(st)) if choice["where"] == "cloud" else ""
-        if choice["where"] == "cloud":
+        cloud = choice["where"] == "cloud" and bool(mine)   # D160: with no job to try, no model and no key is used
+        found = store.found_line(self._company(st)) if cloud else ""
+        if cloud:
             who = (f"{self._company(st) or choice['provider']} ({choice['model']}), "
                    f"up to ${choice['cost_cap_usd']:g} for this build")
             spent = float(self._ledger(b["id"]).read().get("total_usd") or 0.0)
@@ -1003,20 +1100,26 @@ class ToolsmithHost:
             lines.append(store.KEY_KEPT_LINE)
         n = len(mine)
         goal = str(b.get("goal") or "")[:120]
-        sentence = f"Toolsmith tries {n} job{'s' if n != 1 else ''} of your plan for \"{goal}\" again, using {who}."
+        short = knowledge_mod.missing(b)
+        reads = "reads what is missing from your bot's library"
+        sentence = f"Toolsmith tries {n} job{'s' if n != 1 else ''} of your plan for \"{goal}\" again, using {who}" \
+            + (f", and {reads}." if short else ".") if mine else f"Toolsmith {reads} for your plan for \"{goal}\"."
+        if short:
+            lines.append(short)
         for j in mine:
             p = j.get("plan") or {}
             if p.get("reuse"):
                 lines.append(f"{j['name']}: checks {p.get('reuse_name') or p['reuse']} again.")
-            elif choice["where"] == "cloud" and not j.get("pasted"):
+            elif cloud and not j.get("pasted"):
                 lines.append(f"{j['name']}: looks again with {self._company(st) or choice['provider']}'s model.")
             elif p.get("candidates"):
                 names = ", ".join(c["name"] for c in p["candidates"])
                 lines.append(f"{j['name']}: tries the apps the plan listed again: {names}.")
             else:
                 lines.append(f"{j['name']}: looks again, with nothing new added.")
-        lines += [found if choice["where"] == "cloud" else "Nothing new is added: no new job, app or place on the internet.",
-                  "Jobs that work already stay as they are. Your answers on held apps still count."]
+        lines += [found if cloud else "Nothing new is added: no new job, app or place on the internet.",
+                  "Jobs that work already stay as they are. Your answers on held apps still count." if mine
+                  else "Your jobs stay as they are."]
         return {"title": AGAIN_TITLE, "sentence": sentence, "lines": lines}
 
     def _again_launch(self, build_id: str, jobs: list[str], cid: str, terms: dict | None = None) -> dict:
@@ -1037,11 +1140,13 @@ class ToolsmithHost:
                 if j["id"] in jobs and run.get("state") in store.UNFINISHED:
                     run.update(state="planned", line="", trying=None, now="", tried=[], result=None, since=now, found=[],
                                lines=(list(run.get("lines") or []) + [AGAIN_SAY])[-60:])
+            knowledge_mod.read_again(x)                # D160: what its fetch did not read goes back in its queue
             x["again"] = {"consent_id": cid, "jobs": list(jobs), "state": "started", "at": now}
         self.store.change(build_id, fn)
         self.trials.restore_answers(build_id, jobs)
         self._launch_failed.pop(build_id, None)
-        self.take_keys(build_id)                       # D68: this run keeps its keys until it ends
+        if jobs:                                       # D160: a run that only reads borrows no key
+            self.take_keys(build_id)                   # D68: this run keeps its keys until it ends
         try:
             self._launch("build", build_id)
         except Paused:
@@ -1053,7 +1158,7 @@ class ToolsmithHost:
         return self.view(build_id)
 
     def _again_held(self, build_id: str, jobs: list[str], why: str) -> None:
-        """A "Check again" whose launch failed: the jobs it was for hold again, with why."""
+        """A "Check again" whose launch failed: the jobs it was for hold again, with why, and its fetch ends short."""
         self.end_keys(build_id)
         line = AGAIN_NOT_STARTED_LINE.format(why=why)
 
@@ -1061,6 +1166,7 @@ class ToolsmithHost:
             for j in x["jobs"]:
                 if j["id"] in jobs and j["run"].get("state") in store.ACTIVE + ("held",):
                     j["run"].update(state="held", line=line, trying=None, now="")
+            knowledge_mod.end_unfinished(x)            # D160: never "fetching" with no process
         self.store.change(build_id, fn)
 
     def replace(self, old_id: str, new_id: str) -> bool:
@@ -1116,6 +1222,8 @@ class ToolsmithHost:
         build_id = str(covers.get("build") or "")
         if not build_id or not covers.get("plan_sha"):
             return
+        if build_id in self._cards_out:
+            self._cards_out[build_id] = self._now() + CARD_YES_S     # the start that follows her Yes takes over (D153)
         try:
             self.store.fix_use(build_id, str(rec.get("consent_id") or ""))
         except Exception:  # noqa: BLE001 - no copy means no tick counts (start reads only the copy)
@@ -1147,6 +1255,7 @@ class ToolsmithHost:
         covers = rec.get("covers") if isinstance(rec.get("covers"), dict) else {}
         scope = rec.get("scope") if isinstance(rec.get("scope"), dict) else {}
         build_id = str(covers.get("build") or "")
+        self._cards_out.pop(build_id, None)            # her No, or no answer in time: the card holds nothing now (D153)
         if not build_id or not covers.get("plan_sha") or scope.get("kind") != "package"                 or scope.get("target") != store.bridge_target(build_id):
             return
         try:
@@ -1271,6 +1380,7 @@ class ToolsmithHost:
         b = self.store.read(build_id)
         if b is None:
             raise KeyError(build_id)
+        b = self._settled(b)
         ledger = self._ledger(build_id).read()
         b["cost"] = {"usd": round(float(ledger.get("total_usd") or 0.0), 4), "calls": ledger.get("calls", 0)}
         for j in b["jobs"]:
@@ -1278,6 +1388,7 @@ class ToolsmithHost:
             if store.library_job(j):
                 j["library"] = True                # D123: every screen says no app yet
         b["keys"] = self.keys_view(b)
+        b["knowledge_missing"] = knowledge_mod.missing(b)    # D160: what its fetch did not read, "" when nothing
         return b
 
     # -- keys for the life of a build (D68, lane I19a) ---------------------------------------
@@ -1369,14 +1480,22 @@ class ToolsmithHost:
             self.end_keys(build_id)
 
     def end_keys(self, build_id: str) -> None:
-        """The build ended (its process ended, it did not start, a No): every key it borrowed goes back now."""
+        """The build ended (its process ended, it did not start, a No): every key it borrowed goes back now, and a store
+        card the goal's conversation raised and she never answered closes, so a later Yes installs nothing (D152)."""
         with self._lock:
             done = self._senders.pop(build_id, None)
             gh = self._gh_leases.pop(build_id, None)
+            cards = self._store_cards.pop(build_id, None) or {}
         if done is not None:
             done.close()
         if gh:
             self._end_handle(gh)
+        for cid, mine in cards.items():
+            try:
+                if (self.ports.consent_state(cid) or {}).get("status") == "pending":
+                    self.ports.consent_expire(cid, f"{mine['name']} was not added: the build ended before your answer.")
+            except Exception:  # noqa: BLE001 - it ends by itself in ten minutes
+                logger.exception("store card %s not closed", cid)
 
     def keys_view(self, b: dict) -> dict:
         """For her Yes in one step (D68): ``cloud`` (this build uses a cloud model's key), ``leased`` (it holds
@@ -1396,6 +1515,10 @@ class ToolsmithHost:
                 locked = opened() is False
             except Exception:  # noqa: BLE001 - can't tell: not asked here; the build still waits plainly
                 locked = False
+        # D160: its next Check again only reads what its fetch missed, with no job going on: no key, so no PIN to ask.
+        if locked and knowledge_mod.missing(b) and not self._again_jobs(b, cloud) \
+                and not any((j.get("run") or {}).get("state") in store.ACTIVE for j in b.get("jobs") or []):
+            locked = False
         return {"cloud": cloud, "leased": leased, "unlock": bool(cloud and not leased and locked)}
 
     def job(self, job_id: str) -> dict:
@@ -1439,6 +1562,8 @@ class ToolsmithHost:
         with self._lock:
             if not child.wait(0):              # still running (a finished one already cleaned up)
                 self._children[build_id] = child
+        if do == "build":
+            self._cards_out.pop(build_id, None)     # the process counts as live from here (D153)
         return child
 
     def _child_done(self, build_id: str, do: str, code: int | None) -> None:
@@ -1550,10 +1675,29 @@ class ToolsmithHost:
                 "settings": {"budgets": st["budgets"], "timing": st["timing"], "where": "cloud" if cloud else "local",
                              "provider": st.get("provider") if cloud else None,
                              "model": st.get("model") if cloud else None,
-                             "cost_cap_usd": st.get("cost_cap_usd") if cloud else None,    # a job's share (D119)
                              "company": self._company(st) if cloud else ""},
                 "shell": "none", "os_name": "Windows" if os.name == "nt" else "macOS" if sys.platform == "darwin" else "Linux",
-                "stop": self._stopping, "tries_found": not public_read.found_why_not(self, b), **self._places(b)}
+                "stop": self._stopping, "tries_found": not public_read.found_why_not(self, b), "local_goal": self._local_goal(),
+                "bridge_closed": self._bridge_closed(), **self._places(b)}
+
+    def _bridge_closed(self) -> bool:
+        """Does the Bridge read closed right now (D151)? Words only. Ports that can't say: no."""
+        read = getattr(self.ports, "bridge_closed", None)
+        try:
+            return callable(read) and read() is True
+        except Exception:  # noqa: BLE001 - only words: can't tell is the usual words
+            return False
+
+    def _search_closed(self, body: dict) -> bool:
+        """Is the closed Bridge really why this plan found so little (D151)? Toolsmith's count: it read something, every
+        read was refused for a closed Bridge, none answered and none failed another way. The Core's own word: it still
+        reads closed. Words only: it blocks nothing and opens nothing."""
+        places = body.get("places") if isinstance(body.get("places"), dict) else {}
+        reads = places.get("reads") if isinstance(places.get("reads"), dict) else {}
+        closed, other = reads.get("closed"), reads.get("other")
+        if type(closed) is not int or type(other) is not int or closed < 1 or other != 0:
+            return False
+        return self._bridge_closed()
 
     def _places(self, b: dict) -> dict:
         """``search_places``: the hosts Toolsmith may ask right now; ``web_ready``: the ``web`` rows that are on (her
@@ -1634,18 +1778,23 @@ class ToolsmithHost:
         body["knowledge"]["asked"] = {**{k: _count(asked.get(k)) for k in ("jobs", "gave", "no_answer", "timed_out")},
                                       "kept": len(body["knowledge"]["topics"])}
         changed = self._consent_changed(st)            # said on her plan card, before her Yes (D118)
-        b = self.store.set_plan(build_id, body, {**st, "consent_changed": changed} if changed else st, self._company(st),
+        search_closed = self._search_closed(body)      # said on her plan card too, so her Yes covers it (D151)
+        local_looks = st.get("where") != "cloud" and bool(self._local_goal().get("makes"))
+        b = self.store.set_plan(build_id, body, {**st, **({"consent_changed": changed} if changed else {}), **({"looks": True} if local_looks else {})},
+                                self._company(st),
                                 installed=self._installed_ids(),
                                 rows=self.registry.list() if self.registry is not None else [],
-                                shop=self._store_rows(), models=self._model_offers(build_id))
+                                shop=self._store_rows(), models=self._model_offers(build_id), search_closed=search_closed)
         kp = b.get("knowledge_plan") or {}
         # D121: a cloud job with no app still gets a Yes card, since after her Yes it looks further with the company's model.
-        looks = self._cloud_for(b, st) and any(not j["plan"]["reuse"] and not j.get("pasted") for j in b["jobs"])
+        looks = self.looks_after_yes(b, st) and any(not j["plan"]["reuse"] and not j.get("pasted") for j in b["jobs"])
+        if local_looks:
+            self.store.change(build_id, lambda x: x.update(looks_after_yes=True))       # chat reads it (wiring)
         if not looks and not any(j["plan"]["reuse"] or j["plan"]["candidates"] or j["plan"].get("offer") or j["plan"].get("store")
                                  for j in b["jobs"]) and not kp.get("topics") and not (b.get("card") or {}).get("model_offers"):
             # Nothing to install: no Yes card at all (one that could be answered would cover nothing).
             def empty(x: dict) -> None:
-                x["consent"]["said"] = store.EMPTY_PLAN_LINE
+                x["consent"]["said"] = f"{store.PLAN_BRIDGE_CLOSED_LINE} {store.EMPTY_PLAN_LINE}" if search_closed                     else store.EMPTY_PLAN_LINE
                 if x.get("books_only"):
                     x["consent"]["said"] = BOOKS_LOCKED_LINE if self._household() is None else BOOKS_NO_WORDS_LINE
                 for j in x["jobs"]:
@@ -1654,9 +1803,9 @@ class ToolsmithHost:
             return {"ok": True, "consent": None}
         covers = {"build": build_id, "plan_sha": b["plan_sha"], "card": b["card"],
                   "install_hosts": b["envelope"]["install_hosts"]}
-        if st.get("where") == "cloud" and bridge_rules.READ_PUBLIC_PAGES:
+        if (st.get("where") == "cloud" or local_looks) and bridge_rules.READ_PUBLIC_PAGES:
             covers["reads_public"] = True              # her Yes for public reads while this build runs (D121)
-        if st.get("where") == "cloud" and bridge_rules.TRY_FOUND_APPS:
+        if (st.get("where") == "cloud" or local_looks) and bridge_rules.TRY_FOUND_APPS:
             covers["tries_found"] = True               # the card's "other apps" sentence, with its Yes (D121)
         if kp.get("hosts"):
             # The Core's own knowledge reads (lane I11): granted from this Yes only while this build runs.
@@ -1667,6 +1816,8 @@ class ToolsmithHost:
         except NotBuilt as exc:
             self.store.change(build_id, lambda x: x["consent"].update(said=f"{exc} The plan can't get its Yes yet."))
             return {"ok": True, "consent": None}
+
+        self._card_out(build_id)
 
         def fn(x: dict) -> None:
             x["consent"]["id"] = cid
@@ -2364,8 +2515,8 @@ class ToolsmithHost:
         # The list decides the tools, since both have a read_page. A job's look (D121) and a try's done for a service
         # (D124) run only on the company's model.
         listed = body.get("tool_list")
-        if listed in ("find", "cloud_try") and not cloud:
-            raise Refused("A job looks for what it needs only with the company's model.")
+        if (listed == "cloud_try" or (listed == "find" and not self._local_goal().get("talks"))) and not cloud:
+            raise Refused("A job looks for what it needs only with a model that can use tools.")
         allowed = scout.TOOLS if listed == "find" else agent_tries.CLOUD_TOOLS if listed == "cloud_try" else agent_tries.TOOLS
         names = [str(t.get("name")) for t in body.get("tools") or [] if isinstance(t, dict)]
         if any(n not in {t["name"] for t in allowed} for n in names):
@@ -2444,7 +2595,7 @@ class ToolsmithHost:
     @staticmethod
     def _made_cand(body: dict) -> dict:
         """An app Toolsmith builds itself: nothing to download, and always its own card (``origin: made``)."""
-        what = store._s(body.get("what"), 240)
+        what = store._s(body.get("what"), 2000)
         name = short_name(what, 6, 60)
         if not name:
             raise Refused("Say in plain words what to build.")
@@ -2452,6 +2603,61 @@ class ToolsmithHost:
         return {"ref": f"made:{slug}-{os.urandom(2).hex()}", "name": name, "full_name": f"toolsmith/{slug}", "url": "",
                 "host": "", "stars": 0, "description": what, "language": "", "license": None, "branch": "", "readme_steps": [],
                 "runtime": "", "readme_port": None, "docker_file": "", "tries_in": "native", "programs": [], "source": "made"}
+
+    def agent_store_add(self, build_id: str, job_id: str, body: dict) -> dict:
+        """D152: the goal's conversation asks for a store app. Only a row of the store list, through the same add and the
+        same Yes card as a store app ticked on a plan (``store_phase``). Nothing more is covered by this: she answers."""
+        self._refuse_if_paused()
+        b = self._build(build_id)
+        self._job_of(b, job_id)
+        pid = str((body if isinstance(body, dict) else {}).get("id") or "")
+        row = next((r for r in self._store_rows() if r.get("id") == pid), None)
+        if row is None:
+            raise Refused("That is not in the PuffPAI store.")
+        pkg, name = str(row.get("package") or pid), str(row.get("name") or pid)
+        gone = self.store_phase._no_longer_offered(name, pkg)
+        if gone:
+            raise Refused(gone)
+        staged = self.ports.packages_add(pkg, official_only=True) if pkg.startswith("store:") else self.ports.packages_add(pkg)
+        cid = str(staged["consent_id"])
+        with self._lock:
+            self._store_cards.setdefault(build_id, {})[cid] = {"name": name, "id": store.bare_id(pkg)}
+        return {"ok": True, "consent_id": cid, "name": name}
+
+    def store_cards(self, build_id: str) -> list[str]:
+        """The Yes cards the goal's conversation raised for store apps, for the build's card list."""
+        with self._lock:
+            return list(self._store_cards.get(build_id) or {})
+
+    def agent_store_state(self, build_id: str, consent_id: str) -> dict:
+        """Her answer to that card and how its install went, in the store phase's own words."""
+        self._refuse_if_paused()
+        self._build(build_id)
+        with self._lock:
+            mine = (self._store_cards.get(build_id) or {}).get(consent_id)
+        if mine is None:
+            raise Refused("This build did not raise that card.")
+        name = mine["name"]
+        status = str((self.ports.consent_state(consent_id) or {}).get("status") or "gone")
+        if status == "pending":
+            return {"waiting": True}
+        if status == "declined":
+            return {"ok": False, "said": f"You said No. {name} was not added."}
+        if status != "granted":
+            return {"ok": False, "said": STORE_NO_ANSWER.format(name=name)}
+        got = self.ports.packages_wait(consent_id, 0.0) or {}
+        if got.get("status") == "pending":
+            return {"waiting": True}
+        if got.get("status") != "installed":
+            problems = " ".join(map(str, got.get("problems") or [])) or "the install did not finish."
+            return {"ok": False, "said": STORE_FAILED.format(name=name, why=problems)}
+        row = self.registry.get(mine["id"]) if self.registry is not None else None
+        status = (row or {}).get("status")
+        if status == "installing":
+            return {"waiting": True}
+        if status not in STORE_FINAL:
+            return {"ok": False, "said": STORE_FAILED.format(name=name, why=f"it is {status or 'not there'}.")}
+        return {"ok": True, "said": f"You said Yes. {name} is added."}
 
     def agent_page(self, build_id: str, body: dict) -> dict:
         self._refuse_if_paused()

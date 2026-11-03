@@ -169,8 +169,8 @@ def static_root(state: Path, ui_id: str, registry: Any = None) -> Path | None:
     data = read_manifest(state, ui_id, registry)
     if folder is None or not data:
         return None
-    run = data.get("run") or {}
-    block = run.get("windows") or run.get("default") or next(iter(run.values()), None)
+    from .steward.steward import run_block
+    block = run_block(data) or next(iter((data.get("run") or {}).values()), None)
     if not block or block.get("type") != "static":
         return None
     return (folder / block.get("dir", ".")).resolve()

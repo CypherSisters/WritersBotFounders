@@ -45,7 +45,7 @@ def _view():
     wizard = jsonfile.read(core.state / "settings" / "wizard.json", {})
     bridge, search, said = _bridge()
     on_network = request.environ.get("puffpai.listener") == NETWORK_LISTENER     # D130: no 127.0.0.1 pages address there
-    return {"ui": desktop.active_ui(core.state, core.registry),
+    return {"ui": desktop.active_ui(core.state, core.registry), "own_desktop": desktop.own_desktop_is_active(core.state),
             "uis": desktop.ui_ids(core.registry),
             "avatar": desktop.avatar_view(core.state, core.registry),
             "bridge": bridge, "bridge_search": search, "bridge_said": said,
@@ -282,6 +282,8 @@ def terminal_open():
     if not conversations.valid_id(conversation):
         return jsonify(error="That is not a chat's id."), 400
     ok, line = cli.open_terminal(current_core().state, conversation)
+    if line == cli.TERMINAL_NOT_HERE:                                  # D144: the window off Windows
+        return jsonify(ok=False, pane=True, line=line)
     return jsonify(ok=ok, line=line)
 
 

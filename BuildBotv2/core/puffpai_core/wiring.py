@@ -61,6 +61,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -408,12 +409,14 @@ class WizardToolsmith:
         """Plan in the background (the plan step shows what Toolsmith does now): ``{ready, now}``."""
         host = self.host()
         b = host.view(build)
-        if b.get("plan_sha") or b.get("said") or b.get("yes"):
+        # A plan is kept a moment before its Yes card is made: the step waits for the card, or for why there is none.
+        consent = b.get("consent") or {}
+        if b.get("said") or b.get("yes") or (b.get("plan_sha") and (consent.get("id") or consent.get("said"))):
             return {"ready": True}
         with self._lock:
             th = self._planning.get(build)
-            if th is None and host.plan_waits_for_key():
-                return {"ready": False, "now": "", "vault": True}      # D132: the plan starts when the key can be used
+            if th is None and b.get("plan_sha"):
+                return {"ready": True}             # planned before this Core started: nothing here will add a card
             if th is not None and not th.is_alive():
                 return {"ready": True}             # it ended: the plan step shows the plan or why not
             if th is None:
@@ -545,6 +548,7 @@ class WizardToolsmith:
         ids = list(holds) + [rec.pending for rec in host.trials.of_build(build) if rec.pending and not rec.covered]
         # A PuffPAI store app ticked on the plan card: its own Yes card, raised by the Core before the build.
         shop = [str(a.get("card") or "") for a in (host.store_phase.record(build) or {}).get("apps") or []]
+        shop += getattr(host, "store_cards", lambda _b: [])(build)        # D152: one the goal's conversation asked for after her Yes
         ids += [c for c in shop if c]
         for cid in [c for c in ids if c]:
             card = self.consent.get(cid) or {}
@@ -636,7 +640,7 @@ def knowledge_view(b: dict, running: bool) -> dict | None:
     state = run.get("state")
     counts = run.get("counts") or {}
     if state == "done":
-        status = "working" if any(int(v or 0) for v in counts.values()) else "not_yet"
+        status = "working" if any(int(v or 0) for v in counts.values()) and not run.get("retry") else "not_yet"
         line = str(run.get("line") or "")
     elif b.get("yes") and (state == "fetching" or running):
         status, line = "building", ""
@@ -772,6 +776,7 @@ def _ask(core: Any, package: str, name: str, app: str, args: dict, call: dict, v
             "why": f"{app} asks before it changes this file." if mine else why.format(**words),
             "review_id": str(verdict.get("review_id") or ""),
             "args_sha": sha(args)}
+    card = _said_by(card, call.get("asked_by"))
     floor = verdict.get("floor") is True
     try:
         if store is None:
@@ -836,6 +841,8 @@ def wire(app: Any) -> None:
     core.vault = WizardVault(core.state, core.bus)
     core.models = WizardModels(core.state)
     core.toolsmith = WizardToolsmith(app)
+    from .zone1.archivist import set_hold
+    set_hold(core.state, vault_hold(core, app))
     if zone3 is None:
         return                                        # no Zone 3: nothing installs, nothing leaves (X26)
     if getattr(zone3, "bridge", None) is not None:
@@ -848,6 +855,52 @@ def wire(app: Any) -> None:
     core.steward.docker_wall_kw = lambda id: docker_wall_kw(zone3)
     core.bridge = WizardBridge(zone3)
     app.extensions["puffpai.tool_review"] = tool_review(core, zone3.drawbridge)
+
+
+#: How often the vault's hold reads ``wizard.json`` at most. On Windows a reader with the file open makes the wizard's
+#: ``os.replace`` fail, so the file is read as little as can be (D153).
+SETUP_READ_S = 5.0
+
+
+def vault_hold(core: Any, app: Any, now: Any = time.monotonic):
+    """What the vault asks when it decides its idle timer (D153): a live build or unfinished setup. Never in safe mode
+    or on a paused or stopping host. It runs with the vault's lock held, so it waits on no lock
+    (:meth:`ToolsmithHost.holds_vault`), and a failure in it holds nothing (``Vault._held``).
+
+    Setup counts while ``wizard.json`` says plainly ``complete: false``: no file, or one with anything else in it, holds
+    nothing, and a finished bot running a step again stays complete. The file is read only when no live build already
+    answers, at most once per :data:`SETUP_READ_S`, and never again in this Core's run once it says complete, since
+    nothing sets that back. A read that fails (a Windows sharing clash) keeps the last answer."""
+    from . import jsonfile
+    progress = Path(core.state) / "settings" / "wizard.json"
+    seen: dict[str, Any] = {"complete": False, "unfinished": False, "at": None}
+
+    def setup_unfinished() -> bool:
+        if seen["complete"]:
+            return False
+        at = now()
+        if seen["at"] is not None and at - seen["at"] < SETUP_READ_S:
+            return seen["unfinished"]
+        seen["at"] = at
+        try:
+            wizard = jsonfile.read(progress, {})
+        except OSError:
+            return seen["unfinished"]
+        complete = wizard.get("complete") if isinstance(wizard, dict) else None
+        seen["complete"], seen["unfinished"] = complete is True, complete is False
+        return seen["unfinished"]
+
+    def hold() -> bool:
+        if core.caretaker.in_safe_mode:
+            return False
+        host = app.extensions.get("puffpai_toolsmith")
+        if host is not None:
+            if host.halted():
+                return False
+            if host.holds_vault() is True:
+                return True
+        return setup_unfinished()
+    return hold
 
 
 def docker_wall_kw(zone3: Any) -> dict:
@@ -978,6 +1031,18 @@ COMMAND_EXPIRED = "The Yes card for that command got no answer in time, so it di
 OPEN_EXPIRED = "The Yes card to open that file got no answer in time, so it was not opened."
 
 
+#: One plain line on a Yes card a program key's turn raises (D147), by the label she gave the key.
+ASKED_BY_KEY = "A program asked for this, using your key \"{label}\". It did not come from your own chat."
+
+
+def _said_by(card: dict, label: Any) -> dict:
+    """*card* with the line that says which key asked for it, part of what her Yes covers. No label: *card* as it is."""
+    if not label:
+        return card
+    from .zone2.commands import visible
+    return {**card, "what": f"{card.get('what') or ''} {ASKED_BY_KEY.format(label=visible(str(label)))}".strip()}
+
+
 def _one_card(store: Any, target: str, card: dict, expired: str, wait_s: float, notify: Any = None) -> bool | None:
     """One ``tool_call`` Yes card, and her answer (the turn waits). True only for a Yes on exactly this card."""
     from .consent import card_sha
@@ -1012,20 +1077,21 @@ def core_question(core: Any, *, wait_s: float = CARD_WAIT_S):
         store = getattr(core, "consent", None)
         if store is None:
             return None
+        by = question.get("asked_by")
         if question.get("kind") == "command":
             from .zone2 import commands
             if not str(question.get("command") or "").strip():
                 return None
-            return _one_card(store, f"concierge.{commands.TOOL}", commands.card_for(question), COMMAND_EXPIRED, wait_s,
-                             question.get("notify"))
+            return _one_card(store, f"concierge.{commands.TOOL}", _said_by(commands.card_for(question), by), COMMAND_EXPIRED,
+                             wait_s, question.get("notify"))
         if question.get("kind") == "open_program":
             from .zone2 import programs
-            return _one_card(store, f"concierge.{programs.OPEN_TOOL}", programs.open_card(question), OPEN_EXPIRED, wait_s,
-                             question.get("notify"))
+            return _one_card(store, f"concierge.{programs.OPEN_TOOL}", _said_by(programs.open_card(question), by), OPEN_EXPIRED,
+                             wait_s, question.get("notify"))
         package = str(question.get("package") or "")
         if question.get("kind") == CORE_CHANGE:
             card, target = _core_change_card(question)
-            return _one_card(store, target, card, CHANGE_EXPIRED, wait_s)
+            return _one_card(store, target, _said_by(card, by), CHANGE_EXPIRED, wait_s)
         if not package or question.get("kind") != "start":
             return None                               # only these ask here; anything else gets no Yes
         row = core.registry.get(package) or {}
@@ -1034,7 +1100,7 @@ def core_question(core: Any, *, wait_s: float = CARD_WAIT_S):
                 "what": START_WHAT.format(app=app), "package": package, "package_name": app,
                 "tool": str(question.get("tool") or "read_app"), "arguments": [f"start: {app}"],
                 "why": "It is stopped, and reading its page needs it running."}
-        return _one_card(store, f"{package}.start", card,
+        return _one_card(store, f"{package}.start", _said_by(card, by),
                          f"The Yes card to start {app} got no answer in time, so it was not started.", wait_s)
     return ask
 
@@ -1164,8 +1230,10 @@ def chat_toolsmith(core: Any, app: Any, *, wait_s: float = CARD_WAIT_S, every_s:
         # their card stays open, as on the wizard's path (lane I14). Only an installed app's offer is closed:
         # chat has no tick for it, so the line says how to use it instead.
         topics = ((b.get("knowledge_plan") or {}).get("topics") or [])
-        if jobs and not topics and not any(j["plan"].get("reuse") or j["plan"].get("candidates")
-                                           or j["plan"].get("store") for j in jobs):
+        # D121, D143, D154: a job with no app on its plan still looks further after her Yes, so its card stays open.
+        looks = ((b.get("model") or {}).get("where") == "cloud" or b.get("looks_after_yes")) and any(not j["plan"].get("reuse") and not j.get("pasted") for j in jobs)
+        if jobs and not topics and not looks and not any(j["plan"].get("reuse") or j["plan"].get("candidates")
+                                                         or j["plan"].get("store") for j in jobs):
             from .zone3.toolsmith.find import nothing_line, pasted_any
             left = str((b.get("consent") or {}).get("id") or "")
             if left:                                   # only an offer: chat has no tick, so no card is left open
@@ -1374,9 +1442,11 @@ def knowledge_search(core: Any):
             finally:
                 SCAN_LOCK.release()
         from .zone1.fetched import meta_for
+        from .zone1.gate import OwnWords
         out = []
         for h in library.search(query, limit):
-            hit = {"file": Path(h["path"]).name, "path": h["path"], "snippet": h["snippet"]}
+            snippet = OwnWords(h["snippet"]) if library.is_fiction(h["path"]) else h["snippet"]   # D146
+            hit = {"file": Path(h["path"]).name, "path": h["path"], "snippet": snippet}
             credit = meta_for(core.state, h["path"])
             if credit:
                 hit["from"] = credit           # fetched knowledge: its source, title, address and license
@@ -1419,7 +1489,7 @@ class PinnedDocuments:
         return bool(sendable(self.core))
 
     def send(self, name: str, app: str) -> dict:
-        """``send_document`` (D127): a file she pinned or linked, by its name, never a path, to a package by its id."""
+        """``send_document`` (D127): a file on her list or one she linked, by its name, never a path, to a package by its id."""
         from .send_file import SendRefused, hand, sendable
         from .zone1 import pinned
         from .zone1.folders import Library
@@ -1430,8 +1500,8 @@ class PinnedDocuments:
         known = lib.known_documents()
         path = pinned.named(known, name)
         if path is None or lib.handable(path) is None:
-            return {"ok": False, "error": "No one file she pinned or linked is called that. She adds documents on the "
-                                          "Knowledge page, in Your documents."}
+            return {"ok": False, "error": "No one file on her list or in a folder she linked is called that. She adds "
+                                          "documents on the Knowledge page, with the Add documents button."}
         want = str(app or "").strip().lower()
         fit = [t for t in sendable(self.core) if want in (t["id"].lower(), t["name"].lower())]
         if not fit:

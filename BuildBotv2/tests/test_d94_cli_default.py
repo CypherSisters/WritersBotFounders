@@ -9,6 +9,7 @@ are stubs, except the stale ``terminal.json`` case, which asks a closed port for
 
 from __future__ import annotations
 
+import os
 import io
 import json
 import socket
@@ -61,7 +62,9 @@ def test_start_with_a_core_already_running_starts_no_second_core(monkeypatch, ca
     out = capsys.readouterr().out
     assert start_kit.launched == [] and start_kit.chats == 1 and start_kit.opened == [] and start_kit.windows == []
     assert "BuildBot is already running." in out
-    assert "Closing this chat leaves it running; Stop BuildBot.cmd stops it." in out
+    assert f"Closing this chat leaves it running; {cli._runs_words()['stop']} stops it." in out
+    if os.name == "nt":
+        assert "Closing this chat leaves it running; Stop BuildBot.cmd stops it." in out
     assert "Your dashboard: http://puffpai.localhost:51234. Type /dashboard to open it." in out
 
 
@@ -70,7 +73,9 @@ def test_start_by_default_opens_the_window_and_no_chat(monkeypatch, capsys, star
     assert cli.main(["start"]) == 0
     out = capsys.readouterr().out
     assert start_kit.windows == [51234] and start_kit.chats == 0 and start_kit.launched == []
-    assert window.OPENING_LINE in out and "BuildBot runs in its own window." in out and "Traceback" not in out
+    assert window.OPENING_LINE in out and f"BuildBot runs in {cli._runs_words()['where']}." in out and "Traceback" not in out
+    if os.name == "nt":
+        assert "BuildBot runs in its own window." in out
 
 
 def test_start_falls_back_to_the_chat_with_one_plain_line_when_the_window_cant_open(monkeypatch, capsys, start_kit):
@@ -120,7 +125,10 @@ def test_a_stale_terminal_json_does_not_count_as_running(state, capsys, start_ki
     out = capsys.readouterr().out
     assert len(start_kit.launched) == 1 and start_kit.chats == 0    # it started one, and no chat ran
     assert "BuildBot did not start within 0 seconds." in out
-    assert 'Look at the window named "BuildBot (Puff) is running. Close this window to stop it."' in out
+    if os.name == "nt":
+        assert 'Look at the window named "BuildBot (Puff) is running. Close this window to stop it."' in out
+    else:
+        assert f"{cli._serve_log()} says why." in out
     assert time.monotonic() - t0 < 30
 
 
@@ -132,7 +140,9 @@ def test_start_opens_the_dashboard_when_she_picked_it_and_no_chat(monkeypatch, c
     assert start_kit.chats == 0 and start_kit.launched == []
     assert len(start_kit.opened) == 1 and start_kit.opened[0].startswith(PAIR)
     assert start_kit.opened[0] in out and "works once, for 10 minutes" in out
-    assert "BuildBot runs in its own window." in out
+    assert f"BuildBot runs in {cli._runs_words()['where']}." in out
+    if os.name == "nt":
+        assert "BuildBot runs in its own window." in out
     from puffpai_core import pairing
     assert pairing.redeem(state, start_kit.opened[0].split("#pair=")[1])      # a real one-time code
 
@@ -263,12 +273,15 @@ def test_setup_end_enter_opens_the_window_with_its_shortcuts_then_the_terminal_s
     events, out = [], []
     term_mod.setup_done(51234, state, "Sunny", read_line=_keys(""), write=out.append,
                         open_url=lambda u: events.append("browser"), chat=lambda: events.append("chat"))
-    assert setup_window.calls == [("shortcuts", "Sunny", 51234), ("window", 51234)]
+    # D144: off Windows the window opens too, and shortcuts are for Windows only.
+    shortcuts = [("shortcuts", "Sunny", 51234)] if os.name == "nt" else []
+    assert setup_window.calls == [*shortcuts, ("window", 51234)]
     assert events == ["chat"]                                     # no browser, and this terminal is still hers
     text = "\n".join(out)
     assert "Setup is done. Sunny is running." in text
     assert "Your dashboard is ready too:  http://puffpai.localhost:51234   (in your browser)" in text
-    assert "PuffPAI Sunny.lnk" in text and "--no-shortcuts removes them" in text and window.OPENING_LINE in text
+    assert ("PuffPAI Sunny.lnk" in text and "--no-shortcuts removes them" in text) == (os.name == "nt")
+    assert window.OPENING_LINE in text
 
 
 def test_setup_end_says_all_three_choices_with_enter_for_the_window(state, setup_window):
@@ -311,13 +324,29 @@ def test_setup_end_another_word_makes_nothing_and_goes_to_the_chat(state, setup_
     assert events == ["chat"] and setup_window.calls == []
 
 
-def test_setup_end_enter_with_no_way_to_open_it_makes_no_shortcuts_and_the_chat_is_there(state, setup_window):
+def test_setup_end_enter_with_no_way_to_open_it_makes_no_shortcuts_and_the_chat_is_there(monkeypatch, state, setup_window):
+    monkeypatch.setenv("DISPLAY", ":99")                          # D144: off Windows, no screen has a line of its own
     setup_window.why = "the Microsoft Edge WebView2 Runtime is not installed"
     events, out = [], []
     term_mod.setup_done(51234, state, "Sunny", read_line=_keys(""), write=out.append, chat=lambda: events.append("chat"))
     assert setup_window.calls == [("window", 51234)] and events == ["chat"]
     assert any("The window can't open on this computer: the Microsoft Edge WebView2 Runtime is not installed. "
                "Your dashboard works: http://puffpai.localhost:51234" in line for line in out)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the line for a computer with no screen is off Windows only")
+def test_setup_end_enter_over_ssh_says_the_home_network_address_and_the_chat_is_there(monkeypatch, state, setup_window):
+    from puffpai_core.api import network
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr(network, "saved_on", lambda st: True)
+    monkeypatch.setattr(network, "own_addresses", lambda: {"192.168.1.20"})
+    monkeypatch.setattr(network, "own_names", lambda: set())
+    setup_window.why = "there is no screen here"
+    events, out = [], []
+    term_mod.setup_done(51234, state, "Sunny", read_line=_keys(""), write=out.append, chat=lambda: events.append("chat"))
+    assert setup_window.calls == [("window", 51234)] and events == ["chat"]
+    assert any("there is no screen here" in line and "http://192.168.1.20:51237/" in line for line in out)
 
 
 def _free_port() -> int:

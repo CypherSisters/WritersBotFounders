@@ -7,7 +7,8 @@
         powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 
     It:
-      1. finds Python 3.11 or newer (if there is none, it shows you the one command to get it),
+      1. finds Python 3.11 or newer, Node.js and Ollama. For what is missing it asks once, then downloads plain
+         copies into a tools folder of their own: no installer, no administrator, nothing else changed (D145),
       2. makes .venv next to this file and installs BuildBot into it,
       3. makes your bot's own folder, %LOCALAPPDATA%\PuffPAI\<bot name> (a folder that is
          already there is never used or deleted: the new bot gets <bot name>-2 and it says so),
@@ -17,7 +18,9 @@
          its own Yes card for you, then the setup steps. The apps that ship with BuildBot are offered
          in the setup step "Apps", and are off until you pick them.
 
-    Nothing is installed on Windows itself without you: a missing Python is a step for you.
+    Nothing is installed on Windows itself. -DryRun shows every step and every file it would write, and changes nothing.
+    Test hook (not for owners): PUFFPAI_INSTALL_PRETEND_MISSING=python,node,ollama makes those look missing, so the
+    missing path can be run on a computer that has them.
     Everything this window shows is also kept in install-log.txt next to this file.
     ASCII only in what it prints: the old Windows console garbles curly quotes and dashes.
 #>
@@ -29,6 +32,9 @@ param(
     [string]$From = "",            # a bot moved from another computer (puffpai export): setup asks only what can't travel
     [switch]$NoSetup,              # set everything up, but do not start "puffpai setup" yet
     [string]$WindowFor = "",       # D139: only the window, for a bot on another computer at this address; no bot here
+    [switch]$DryRun,               # show every step and every file it would write, and change nothing
+    [switch]$Yes,                  # download what is missing without asking
+    [switch]$NoTools,              # never download anything; say what is missing instead
     [switch]$Help,
     [string]$WindowName = "PuffPAI window"   # WritersBot: the desktop shortcut's name with -WindowFor
 )
@@ -43,16 +49,18 @@ $VenvDir = Join-Path $RepoDir ".venv"
 $VenvPy  = Join-Path $VenvDir "Scripts\python.exe"
 $Puffpai = Join-Path $VenvDir "Scripts\puffpai.exe"
 $InstallLog = Join-Path $RepoDir "install-log.txt"
-try { Start-Transcript -Path $InstallLog -Force | Out-Null } catch { }
+if (-not $DryRun) { try { Start-Transcript -Path $InstallLog -Force | Out-Null } catch { } }
 
 # Started by "Run with PowerShell", the window would close at once: wait for Enter first.
 function Pause-IfAlone {
-    if ($env:PUFFPAI_NO_PAUSE) { return }
+    if ($env:PUFFPAI_NO_PAUSE -or $DryRun) { return }
     try { if ([Console]::IsInputRedirected) { return } } catch { return }
     Write-Host ("The steps above are also in " + $InstallLog + ".")
     try { [void](Read-Host "Press Enter to close this window") } catch { }
 }
 
+$Pretend = @(([string]$env:PUFFPAI_INSTALL_PRETEND_MISSING).ToLower().Split(",") | ForEach-Object { $_.Trim() })
+function Pretends ($name) { return ($Pretend -contains $name) }
 function Say ($m) { Write-Host $m }
 function Step ($n, $m) { Write-Host ""; Write-Host ("Step " + $n + " of 5: " + $m) }
 function Fail ($m) {
@@ -82,13 +90,16 @@ if ($Help) {
     @"
 BuildBot setup for Windows.
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 [-Bot NAME] [-NoSetup]
+    powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 [-Bot NAME] [-NoSetup] [-DryRun]
 
   -Bot NAME   your bot's name (default buildbot). Its folder is
               %LOCALAPPDATA%\PuffPAI\NAME. A folder already there is kept as it is;
               the new bot gets NAME-2 (or -3, ...).
   -Python EXE use this python.exe (3.11 or newer)
   -NoSetup    do everything but "puffpai setup" (run it yourself later)
+  -DryRun     show every step and every file it would write, and change nothing
+  -Yes        download what is missing without asking
+  -NoTools    never download anything; say what is missing instead
   -From DIR   a bot moved from another computer (puffpai export). Setup asks only what can't travel.
   -WindowFor  only the PuffPAI window, for a bot on another computer: the address "puffpai pair" prints there
   -Help       this text
@@ -103,6 +114,7 @@ if ($Bot -notmatch '^[A-Za-z0-9][A-Za-z0-9 _.-]{0,59}$' -or $Bot.Contains(".."))
 Say ""
 Say "BuildBot setup"
 Say "This gets BuildBot ready on this computer. Nothing leaves your computer without your consent."
+if ($DryRun) { Say "(Practice run: it shows each step and changes nothing.)" }
 # D108: this folder may be one the cloud syncs. It works there, so it never stops the install. Her bot's own data is not
 # in it: step 3 puts that under LOCALAPPDATA, which none of these sync.
 $SyncedBy = ""
@@ -118,7 +130,7 @@ if ($SyncedBy) {
 }
 
 # --- 1. Python ---------------------------------------------------------------
-Step 1 "Python (BuildBot is written in it)"
+Step 1 "Python, Node.js and Ollama"
 
 # Where Python is (lane I7): the -Python file, or else every python.exe found in these places:
 #   the Windows registry (PEP 514: python.org installers and the Python install manager both write it),
@@ -319,15 +331,159 @@ function Find-Python {
 }
 
 $Found = Find-Python -Wanted $Python -MinMinor $PyMinMinor
+if ($Found -and -not $Python -and (Pretends "python")) { $Found = $null }
+
+# D145: what is missing can come from its maker's own website, after one yes, as a plain copy in a tools folder of its
+# own. Each file has one fixed version and the SHA-256 written here, checked before anything is unpacked. No installer, no
+# admin prompt, no registry, nothing on the PATH of this computer: only the launchers below use them. A tool already on this
+# computer is used as it is. The same versions as scripts/install_tools.sh. Python: python-build-standalone 20261003
+# (SHA256SUMS). Node.js 24.21.0 (SHASUMS256.txt). Ollama 0.40.2 (sha256sum.txt). To move a pin: change them together.
+$ToolArch = if (($env:PROCESSOR_ARCHITEW6432, $env:PROCESSOR_ARCHITECTURE) -contains "ARM64") { "arm64" } else { "x64" }
+$ToolPy = "3.12.15"; $ToolPyBuild = "20261003"; $ToolNode = "24.21.0"; $ToolOllama = "0.40.2"
+$ToolPins = @{
+    "python-x64"   = @("x86_64", "4b6f0beebbb695a0f3ea237b8c3eaa5bd424f47a7bc25b2fbe3a43390c770f08")
+    "python-arm64" = @("aarch64", "2de96a340fecdabe215094345ed3aea1b473e858bd098360f2253299e18f24d2")
+    "node-x64"     = @("win-x64", "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541")
+    "node-arm64"   = @("win-arm64", "8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921")
+    "ollama-x64"   = @("amd64", "e29ad1d5063dd4b54b2492d9b00adab2cff9621bfa654b6c92aa8d6f1fdfe7fc")
+    "ollama-arm64" = @("arm64", "82ad9bff6dd5c1c70400ceac00d01aaa0389e9182b98d918d1d164ebf87acdb2")
+}
+$ToolSizes = @{ "ollama-x64" = "1.4 GB"; "ollama-arm64" = "200 MB" }
+$PyPin = $ToolPins["python-" + $ToolArch]; $NodePin = $ToolPins["node-" + $ToolArch]; $OllamaPin = $ToolPins["ollama-" + $ToolArch]
+$ToolsDir = $env:PUFFPAI_TOOLS_DIR
+if (-not $ToolsDir) {
+    $ToolsBase = $env:LOCALAPPDATA
+    if (-not $ToolsBase) { $ToolsBase = Join-Path $env:USERPROFILE "AppData\Local" }
+    $ToolsDir = Join-Path $ToolsBase "PuffPAI-tools"
+}
+$OwnPyHome = Join-Path $ToolsDir ("python-" + $ToolPy + "-" + $ToolPyBuild)
+$OwnNodeHome = Join-Path $ToolsDir ("node-v" + $ToolNode + "-" + $NodePin[0])
+$OwnOllamaHome = Join-Path $ToolsDir ("ollama-" + $ToolOllama)
+
+function Test-OllamaAnswers {
+    foreach ($port in @(11434, 11435)) {
+        try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri ("http://127.0.0.1:" + $port + "/api/version") | Out-Null; return $true } catch { }
+    }
+    return $false
+}
+
+# One download: fetched into a new folder inside the tools folder, checked, unpacked, moved into place. Any failure leaves
+# nothing behind, says why in plain words and returns $false, so setup can go on or stop as it should.
+function Install-Tool {
+    param([string]$Label, [string]$Url, [string]$Sha, [string]$File, [string]$Dest, [string]$Inner)
+    if ($DryRun) {
+        Say ("  [dry-run] would download " + $Label + " from " + $Url)
+        Say ("  [dry-run] check it is exactly " + $Sha + ", and unpack it to " + $Dest)
+        return $true
+    }
+    Say ("  Downloading " + $Label + ".")
+    $stage = Join-Path $ToolsDir (".download-" + $PID + "-" + (Get-Random))
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    try {
+        $out = Join-Path $stage $File
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 7200 -Uri $Url -OutFile $out
+        } catch {
+            Say "  The download did not work. Check this computer is online, then run setup again."
+            return $false
+        }
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLower() -ne $Sha) {
+            Say "  The download did not match the copy BuildBot expects, so it was thrown away and nothing was run."
+            return $false
+        }
+        $x = Join-Path $stage "x"
+        New-Item -ItemType Directory -Force -Path $x | Out-Null
+        & (Join-Path $env:SystemRoot "System32\tar.exe") -xf $out -C $x
+        if ($LASTEXITCODE -ne 0) { Say ("  " + $Label + " could not be unpacked."); return $false }
+        $from = if ($Inner) { Join-Path $x $Inner } else { $x }
+        if (-not (Test-Path -LiteralPath $from)) { Say ("  " + $Label + " did not hold what it should."); return $false }
+        if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
+        Move-Item -LiteralPath $from -Destination $Dest
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# What is here. A copy an earlier run of this setup downloaded counts, whatever the test hook says.
+$OwnPy = Join-Path $OwnPyHome "python.exe"
+if (-not $Found -and -not $Python -and (Test-Path -LiteralPath $OwnPy)) {
+    $t = Test-Python $OwnPy $PyMinMinor
+    if ($t.Ok) { $Found = [pscustomobject]@{ Minor = $t.Minor; Path = $OwnPy; Version = $t.Version } }
+}
+$NodeHome = ""
+if (Test-Path -LiteralPath (Join-Path $OwnNodeHome "node.exe")) { $NodeHome = $OwnNodeHome }
+$NeedNode = (-not $NodeHome) -and ((Pretends "node") -or -not (Get-Command node.exe -ErrorAction SilentlyContinue))
+$OllamaExe = ""
+if (Test-Path -LiteralPath (Join-Path $OwnOllamaHome "ollama.exe")) { $OllamaExe = Join-Path $OwnOllamaHome "ollama.exe" }
+$NeedOllama = $false
+if (-not $OllamaExe) {
+    if (Pretends "ollama") { $NeedOllama = $true }
+    elseif (Test-OllamaAnswers) { Say "  Ollama is already running here. BuildBot uses it as it is." }
+    elseif ((Get-Command ollama.exe -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"))) {
+        Say "  Found Ollama. Open it once before you start your bot, so it is running."
+    } else { $NeedOllama = $true }
+}
+if ($WindowFor) { $NeedNode = $false; $NeedOllama = $false }      # the window needs only Python
+if (-not $NeedNode -and -not $WindowFor) { Say "  Found Node.js." }
+
+$OfferPy = (-not $Found) -and (-not $Python); $OfferNode = $NeedNode; $OfferOllama = $NeedOllama
+$ToolsPlace = ([string]$ToolsDir).ToLower().TrimEnd("\") + "\"
+if ($NoTools -or $ToolsPlace.StartsWith($RepoDir.ToLower().TrimEnd("\") + "\")) { $OfferPy = $false; $OfferNode = $false; $OfferOllama = $false }
+$GoTools = $false
+if ($OfferPy -or $OfferNode -or $OfferOllama) {
+    Say "  This computer doesn't have:"
+    if ($OfferPy) { Say ("    - Python " + $ToolPy + " (about 50 MB), which BuildBot is written in") }
+    if ($OfferNode) { Say ("    - Node.js " + $ToolNode + " (about 40 MB), which many apps need") }
+    if ($OfferOllama) { Say ("    - Ollama " + $ToolOllama + " (about " + $ToolSizes["ollama-" + $ToolArch] + "), which runs the AI model") }
+    Say "  Setup can download them from their makers' own websites, check that each one"
+    Say "  is exactly the copy BuildBot expects, and keep them in this folder:"
+    Say ("    " + $ToolsDir)
+    Say "  It doesn't need an administrator, and it changes nothing else on this computer."
+    if ($Yes) { $GoTools = $true }
+    elseif ($DryRun) { Say "  [dry-run] would ask: Download them now? (y/n)"; $GoTools = $true }
+    else {
+        $answer = ""
+        try { if (-not [Console]::IsInputRedirected) { $answer = Read-Host "  Download them now? (y/n)" } } catch { }
+        if ($answer -match '^[Yy]') { $GoTools = $true } else { Say "  Nothing was downloaded." }
+    }
+}
+if ($GoTools) {
+    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null }
+    if ($OfferPy) {
+        $tag = "cpython-" + $ToolPy + "+" + $ToolPyBuild + "-" + $PyPin[0] + "-pc-windows-msvc-install_only.tar.gz"
+        $url = "https://github.com/astral-sh/python-build-standalone/releases/download/" + $ToolPyBuild + "/" + $tag.Replace("+", "%2B")
+        if (Install-Tool ("Python " + $ToolPy) $url $PyPin[1] "python.tar.gz" $OwnPyHome "python") {
+            if ($DryRun) { $Found = [pscustomobject]@{ Minor = 12; Path = $OwnPy; Version = $ToolPy } }
+            else {
+                $t = Test-Python $OwnPy $PyMinMinor
+                if ($t.Ok) { $Found = [pscustomobject]@{ Minor = $t.Minor; Path = $OwnPy; Version = $t.Version } }
+                else { Say ("  The downloaded Python did not run: " + $t.Why + ".") }
+            }
+        }
+    }
+    if ($OfferNode) {
+        $url = "https://nodejs.org/dist/v" + $ToolNode + "/node-v" + $ToolNode + "-" + $NodePin[0] + ".zip"
+        if (Install-Tool ("Node.js " + $ToolNode) $url $NodePin[1] "node.zip" $OwnNodeHome ("node-v" + $ToolNode + "-" + $NodePin[0])) { $NodeHome = $OwnNodeHome; $NeedNode = $false }
+        else { Say "  Node.js could not be set up. BuildBot works without it, but apps that need it won't start." }
+    }
+    if ($OfferOllama) {
+        $url = "https://github.com/ollama/ollama/releases/download/v" + $ToolOllama + "/ollama-windows-" + $OllamaPin[0] + ".zip"
+        if (Install-Tool ("Ollama " + $ToolOllama) $url $OllamaPin[1] "ollama.zip" $OwnOllamaHome "") { $OllamaExe = Join-Path $OwnOllamaHome "ollama.exe"; $NeedOllama = $false }
+        else { Say "  Ollama could not be set up. Setup goes on, but your bot needs Ollama to answer." }
+    }
+}
+if ($NeedNode) { Say "  Node.js isn't here. BuildBot works without it, but apps that need it won't start. Get it from https://nodejs.org/" }
+if ($NeedOllama) { Say "  Ollama isn't here, and your bot needs it to think. Get it from https://ollama.com/download" }
+if ($NodeHome) { $env:PATH = $NodeHome + ";" + $env:PATH }
 if (-not $Found) {
     if ($Python -and $Python -notmatch '[\\/]') { Fail "Give the full path to python.exe with -Python, not just its name." }
     if ($Python) { Fail ("'" + $Python + "' is not Python $PyMinMajor.$PyMinMinor or newer that setup can use. The line above says why.") }
     Say "  Python $PyMinMajor.$PyMinMinor or newer is not on this computer, and BuildBot needs it."
     Say ""
-    Say "  Your turn: open PowerShell and run this one command (Windows' own app installer):"
-    Say "      winget install -e --id Python.Python.3.11"
-    Say "  Or get it from https://www.python.org/downloads/ (tick 'Add python.exe to PATH')."
-    Say "  Then open a NEW PowerShell window and run this setup again,"
+    Say "  Your turn: run this setup again and let it download Python,"
+    Say "  or get it from https://www.python.org/downloads/ (tick 'Add python.exe to PATH') and open a NEW PowerShell window,"
     Say "  or run this again with -Python <full path to python.exe>."
     Fail "BuildBot needs Python $PyMinMajor.$PyMinMinor or newer."
 }
@@ -336,6 +492,14 @@ Say ("  Found Python " + $Found.Version + " (" + $Python + ").")
 
 # --- 2. .venv and BuildBot's own parts ------------------------------------------
 Step 2 "BuildBot's own parts"
+if ($DryRun) {
+    Say ("  [dry-run] would make " + $VenvDir + " with " + $Python + ", and install BuildBot into it.")
+    if ($WindowFor) {
+        Say ("  [dry-run] would write the window's one launcher, for " + $WindowFor + ". No bot here, and no setup.")
+        Say "  Practice run done. Nothing was changed."
+        exit 0
+    }
+} else {
 if (Test-Path -LiteralPath $VenvPy) {
     Say "  Using the .venv folder from last time."
 } else {
@@ -347,6 +511,7 @@ Invoke-Checked $VenvPy @("-m", "pip", "install", "-q", "--disable-pip-version-ch
 Invoke-Checked $VenvPy @("-m", "pip", "install", "-q", "--disable-pip-version-check", "-e", $RepoDir) "Installing BuildBot"
 if (-not (Test-Path -LiteralPath $Puffpai)) { Fail "the puffpai command was not made in .venv." }
 Say "  Done."
+}
 
 # D139: only the window, for a bot on another computer. No bot folder, no setup. It pairs once, on the window's own screen.
 if ($WindowFor) {
@@ -395,8 +560,12 @@ if ($Name -ne $Bot) {
     Say ("  A bot named " + $Bot + " is already on this computer. It is kept exactly as it is.")
     Say ("  This new bot is called " + $Name + ".")
 }
-New-Item -ItemType Directory -Path $BotDir -Force | Out-Null
-Say ("  Your bot's folder: " + $BotDir)
+if ($DryRun) {
+    Say ("  [dry-run] would make your bot's folder: " + $BotDir)
+} else {
+    New-Item -ItemType Directory -Path $BotDir -Force | Out-Null
+    Say ("  Your bot's folder: " + $BotDir)
+}
 $env:PUFFPAI_BOT = $Name
 Remove-Item Env:\PUFFPAI_STATE -ErrorAction SilentlyContinue
 
@@ -417,7 +586,25 @@ function Set-LauncherLines ([string[]]$Lines) {
     return ($Lines | ForEach-Object { $_.Replace('%~dp0.venv', '%~dp0..\..\.venv').Replace('cd /d "%~dp0"', 'cd /d "%~dp0..\..\"') })
 }
 $LauncherDir = Get-LauncherDir $RepoDir $Name
+if ($DryRun) {
+    foreach ($written in @("Start BuildBot.cmd", "Stop BuildBot.cmd", "Chat with BuildBot.cmd", "Sign in a browser.cmd", "Open BuildBot window.cmd")) {
+        Say ("  [dry-run] would write " + (Join-Path $LauncherDir $written))
+    }
+    Step 5 "The system parts, then setup"
+    Say ("  [dry-run] would run: " + $Puffpai + " setup")
+    Say "  Practice run done. Nothing was changed."
+    exit 0
+}
 New-Item -ItemType Directory -Force -Path $LauncherDir | Out-Null
+# D145: a downloaded Node.js goes first on the PATH of what these start, and a downloaded Ollama, which has no service,
+# starts on this computer only when nothing answers there. Stop BuildBot.cmd leaves Ollama running.
+$OllamaStart = "`$env:OLLAMA_HOST='127.0.0.1:11434'; Start-Process -WindowStyle Hidden -FilePath '" + $OllamaExe.Replace("'", "''") + "' -ArgumentList 'serve'"
+$ToolLines = @()
+if ($NodeHome) { $ToolLines += "set ""PATH=" + $NodeHome + ";%PATH%""" }
+if ($OllamaExe) { $ToolLines += "curl.exe -fsS --max-time 2 http://127.0.0.1:11434/api/version >nul 2>&1 || powershell -NoProfile -WindowStyle Hidden -Command """ + $OllamaStart + """" }
+function Add-ToolLines ([string[]]$Lines) {
+    return ($Lines | ForEach-Object { $_; if ($_ -eq 'set "PUFFPAI_STATE="') { $ToolLines } })
+}
 $CodeDir = $RepoDir
 $RepoDir = $LauncherDir
 $Launcher = Join-Path $RepoDir "Start BuildBot.cmd"
@@ -447,7 +634,7 @@ $cmd = @(
     ">con echo To sign in another browser later, double-click Sign in a browser.cmd next to this file.",
     """%~dp0.venv\Scripts\puffpai.exe"" start <con >con"
 )
-Set-Content -LiteralPath $Launcher -Value $cmd -Encoding ASCII
+Set-Content -LiteralPath $Launcher -Value (Add-ToolLines $cmd) -Encoding ASCII
 Say ("  Written: " + $Launcher)
 # Stop BuildBot.cmd (lane I7): "puffpai shutdown" for the same bot, from any window. It asks the running Core
 # to stop the way Ctrl+C does. Any code but 0 pauses, so she can read why (compared as text, so a crash code
@@ -524,7 +711,7 @@ $windowCmd = @(
     "if not ""%BUILDBOT_EXIT%""==""0"" pause",
     "exit /b %BUILDBOT_EXIT%"
 )
-Set-Content -LiteralPath $WindowLauncher -Value $windowCmd -Encoding ASCII
+Set-Content -LiteralPath $WindowLauncher -Value (Add-ToolLines $windowCmd) -Encoding ASCII
 if ($LauncherDir -ne $CodeDir) {
     foreach ($written in @($Launcher, $StopLauncher, $ChatLauncher, $SignInLauncher, $WindowLauncher)) {
         Set-Content -LiteralPath $written -Value (Set-LauncherLines (Get-Content -LiteralPath $written)) -Encoding ASCII
@@ -548,6 +735,7 @@ if ($NoSetup) {
 }
 Say "  Each system part (the Desktop, setup, the cloud avatar) shows its Yes card first. Then setup asks a few questions."
 try { Stop-Transcript | Out-Null } catch { }     # setup shows PINs and a recovery code: never in the log
+if ($OllamaExe -and -not (Test-OllamaAnswers)) { Invoke-Expression $OllamaStart }
 if ($From) { & $Puffpai setup --from $From } else { & $Puffpai setup }
 $code = $LASTEXITCODE
 Write-Host ""

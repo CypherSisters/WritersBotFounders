@@ -101,6 +101,13 @@ def test_a_compose_file_mounting_her_keys_is_refused(places):
     assert Z.compose_refusal(ok, f, z) == ""
 
 
+def test_a_compose_file_is_read_as_yaml_too(places):
+    """D157: a list item with no colon, which only the YAML reader sees. A real install had no PyYAML, so it passed."""
+    z, f = places["zone"], places["folder"]
+    bad = "services:\n  app:\n    image: x\n    env_file:\n      - ~/.ssh/id_rsa\n"
+    assert Z.compose_refusal(bad, f, z) == Z.refused_line(Z.KEYS)
+
+
 def test_a_container_holding_the_docker_engine_is_refused(places):
     z, f = places["zone"], places["folder"]
     for cmd in ("docker run -v /var/run/docker.sock:/var/run/docker.sock img",

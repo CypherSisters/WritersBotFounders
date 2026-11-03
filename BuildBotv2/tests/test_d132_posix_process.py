@@ -440,7 +440,7 @@ def test_a_script_shim_that_hides_the_real_npm_is_said_plainly(tmp_path, monkeyp
         noshell.resolve(["npm", "install"])
 
 
-@pytest.mark.skipif(not noshell.node_exe(), reason="no Node.js here")
+@pytest.mark.skipif(not noshell.npm_cli(noshell.node_exe(), "npm"), reason="no Node.js with npm here")
 def test_the_real_npm_on_this_computer_runs_with_no_shell(tmp_path):
     argv = noshell.resolve(["npm", "--version"])
     assert argv[0] == noshell.node_exe() and argv[1].endswith("npm-cli.js")

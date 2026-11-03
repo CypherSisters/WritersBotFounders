@@ -3,16 +3,16 @@
  * CommandLine.tsx, UseCliPanel.tsx, parts.tsx and app/_components/AddATool.tsx (adapted, lane I18f: the same sections,
  * order and words as v1, in v2's plain Desktop, on v2's Core routes).
  *
- * #developer: Add your own (a folder, GitHub, Toolsmith's cloud model), the three zone cards, Add a tool, the command
+ * #developer: Add your own (a folder, GitHub), the three zone cards, Add a tool, the command
  *   line, the audit log.
  * #developer/vault (Zone 1): the vault now, lock and open, how it is locked, the data folder and linked folders.
  * #developer/brain (Zone 2): the brain now, this computer, the models for each job (lane I17).
- * #developer/bridge (Zone 3): the Bridge and Toolsmith's search, what went out, Toolsmith's model, cost cap and key,
+ * #developer/bridge (Zone 3): the Bridge and Toolsmith's search, what left your computer,
  *   the hosts Toolsmith may reach and Drawbridge's checks (read only), your own gear.
  * #developer/terminal: the command line alone (its own window).
  * #developer/github: the GitHub block alone (github.js, lane I18g; the same block is on Overview and Apps > Add),
  *   reachable from Zone 3 Bridge.
- * #developer/toolsmith: Toolsmith's cloud model alone (D101; the same tile is on Overview and Zone 3 Bridge).
+ * #developer/toolsmith: goes to Settings, where Toolsmith's cloud model is (D162).
  *
  * Every change that lets more leave the computer, or lets Toolsmith do more, goes through the same Yes the wizard
  * uses: a Yes card (Toolsmith's search, a model download, a folder of code), or her Yes to the company's sentence
@@ -200,6 +200,26 @@
     return t.node;
   }
 
+  /* D147: your bot for a program on another computer: the command that makes its key (no key is shown here), and
+   * the addresses, from GET /v1/network. PROPOSED, not tested by the owner. */
+  function programKeyTile() {
+    const t = P.tile({ id: "program-key", icon: "api", title: "A program on another computer" });
+    const where = el("div", { "data-dev": "program-where" });
+    const draw = (v) => {
+      clear(where);
+      where.appendChild(el("p", { class: "small", text: v.line }));
+      if (v.rows.length) where.appendChild(el("ul", { class: "lines" }, v.rows.map((r) => el("li", {}, [el("div", {}, [el("span", { class: "small muted", text: "OpenAI-style programs: " }), el("code", { text: r.openai })]),
+        el("div", {}, [el("span", { class: "small muted", text: "Ollama-style programs: " }), el("code", { text: r.ollama })])]))));
+    };
+    t.body.append(el("p", { class: "small muted", text: "Home Assistant or another program can use your bot as a model. It needs a key, made once on the computer running your bot. A key can call only /openai/v1 and /ollama/api. A chat through it is a full turn of your bot: it can use your bot's tools, your documents and knowledge, and real values from your vault while it is open. From another computer its conversations are its own, so it can't name your chat. On this computer it can." }),
+      el("div", { class: "row" }, [el("code", { "data-dev": "program-key-command", text: L.PROGRAM_KEY_COMMAND })]), cliWhere(), where);
+    P.api("GET", "/v1/network").then((r) => {
+      if (r.status === 200) draw(L.programWhere(r.data));
+      else clear(where).appendChild(el("p", { class: "fail", text: P.said(r) }));
+    }).catch(() => {});
+    return t.node;
+  }
+
   /* The parts of a zone a package may fill (moved here from Settings): for developers. Changing one shows a Yes card. */
   async function partsTile() {
     const t = P.tile({ id: "parts", icon: "tune", title: "Parts a package can replace", wide: true });
@@ -227,20 +247,21 @@
   }
 
   async function overview(sec) {
-    const [vault, model, bridge, smith] = await Promise.all([P.api("GET", "/v1/vault/status"), P.api("GET", "/v1/model"), P.api("GET", "/v1/bridge"), toolsmithHere()]);
+    const [vault, model, bridge] = await Promise.all([P.api("GET", "/v1/vault/status"), P.api("GET", "/v1/model"), P.api("GET", "/v1/bridge")]);
     const ok = (r) => (r.status === 200 ? r.data : null);
     const head = header("", "Add what you already have, and see the three parts of your bot.", "overview");
     const own = el("div", { class: "tiles", "data-dev": "add-your-own" }, [folderCard(), window.PuffGitHub ? window.PuffGitHub.block({ where: "developer" }) : null,
       window.PuffSearchKeys ? window.PuffSearchKeys.block() : null, window.PuffAddApi ? window.PuffAddApi.block() : null,
-      window.PuffOwnPrograms ? window.PuffOwnPrograms.block() : null, smith]);
+      window.PuffOwnPrograms ? window.PuffOwnPrograms.block() : null]);
+    const smith = el("div", { class: "row lede", "data-dev": "goto" }, [goTo("#settings/toolsmith", "Toolsmith's cloud model", "Pick a company for Toolsmith and add its key, or keep it on this computer. It is on Settings.")]);
     const cards = el("div", { class: "tiles", "data-dev": "zones" }, D.zoneCards({ vault: ok(vault), model: ok(model), bridge: ok(bridge) }).map((c) => {
       const t = P.tile({ id: "zone-" + c.id, icon: c.icon, title: c.name, stat: c.zone.toUpperCase() });
       t.body.append(el("p", { class: "now", "data-zone-status": c.id, text: c.status }), el("p", { class: "small muted", text: c.more }),
         el("div", { class: "row" }, [el("a", { href: c.href, "data-zone-open": c.id }, ["Open ", P.icon("arrow_forward")])]));
       return t.node;
     }));
-    const tools = el("div", { class: "tiles" }, [terminalTile(false)]);
-    clear(sec).append(head, cards, el("h2", { class: "micro", text: "Add your own" }), own, el("h2", { class: "micro", text: "Tools" }), tools);
+    const tools = el("div", { class: "tiles" }, [terminalTile(false), programKeyTile()]);
+    clear(sec).append(head, cards, el("h2", { class: "micro", text: "Add your own" }), own, smith, el("h2", { class: "micro", text: "Tools" }), tools);
     tools.append(await auditTile(), await partsTile());
   }
 
@@ -304,22 +325,14 @@
     t.body.appendChild(el("p", { class: "micro", text: "Linked folders" }));
     if (f.none) t.body.appendChild(el("p", { class: "empty", text: f.none }));
     else t.body.appendChild(el("ul", { class: "lines", "data-dev": "linked" }, f.linked.map((x) => {
-      const un = el("button", { class: "link", text: "Unlink", on: { click: async () => {
+      const un = el("button", { class: "link", text: "Remove", on: { click: async () => {
         const y = await P.api("POST", "/v1/folders/unlink", { path: x.path });
         if (y.status !== 200) { say(said, y); return; }
         redraw();
       } } });
       return el("li", { "data-linked": x.path }, [el("code", { class: "grow", text: x.path }), el("span", { class: "small muted", text: x.line }), un]);
     })));
-    const path = el("input", { class: "grow", type: "text", placeholder: "C:\\Users\\me\\Documents\\Recipes", autocomplete: "off", spellcheck: "false", "aria-label": "A folder to link" });
-    const link = el("button", { on: { click: async () => {
-      const p = D.folderPath(path.value);
-      if (!p.ok) { said.textContent = p.line; return; }
-      const y = await P.api("POST", "/v1/folders/link", { path: p.path });
-      if (y.status !== 200) { say(said, y); return; }
-      redraw();
-    } } }, [P.icon("add_link"), "Link this folder"]);
-    t.body.append(el("div", { class: "row" }, [path, link]), said);
+    t.body.append(el("div", { class: "row" }, [goTo("#knowledge", "Add a folder on Knowledge", "Add a whole folder from Your documents.")]), said);
     return t.node;
   }
 
@@ -330,6 +343,26 @@
       el("div", { class: "row lede", "data-dev": "goto" }, [goTo("#vault", "Vault page", "Lock or open the vault, make a new recovery code, change your PIN, or open it if you forgot your PIN.")]),
       el("div", { class: "tiles" }, [tiles[0], tiles[1], P.knowledgePlaceTile(), howLocked()]));
   }
+
+  /* Adding a model, here and on Settings' brain row (D162): its Yes card, then how the download goes, then *ended*. */
+  async function followModel(model, note, ended) {
+    for (let i = 0; i < 7200; i++) {                // the Core keeps going if this page goes
+      const r = await P.api("GET", "/v1/models");
+      const p = r.status === 200 && r.data && r.data.pulls ? r.data.pulls[model] || {} : {};
+      if (p.line) note.textContent = p.line + (typeof p.done_gb === "number" && p.size_gb ? " (" + p.done_gb + " of " + p.size_gb + " GB)" : "");
+      if (p.state && p.state !== "asking" && p.state !== "downloading") break;
+      await new Promise((ok) => setTimeout(ok, 1500));
+    }
+    ended();
+  }
+  async function addModel(model, button, note, cardBox, ended) {
+    button.disabled = true;
+    const got = await P.api("POST", "/v1/models/pull", { model });
+    if (got.status !== 202 || !got.data || !got.data.consent_id) { note.textContent = P.said(got); button.disabled = false; return; }
+    note.textContent = "Its Yes card is below, and on Your turn.";
+    P.consentInline(cardBox, got.data.consent_id, () => followModel(model, note, ended));
+  }
+  P.addModel = addModel;
 
   /* ---- Zone 2: Brain (v1 developer/brain/page.tsx) ---- */
   async function brainNow() {
@@ -353,17 +386,6 @@
     const t = P.tile({ id: "models", icon: "memory", title: "Models", wide: true });
     const box = el("div", { "data-models": "" });
     t.body.appendChild(box);
-    const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
-    async function follow(model, note) {
-      for (let i = 0; i < 7200; i++) {              // the Core keeps going if this page goes
-        const r = await P.api("GET", "/v1/models");
-        const p = r.status === 200 && r.data && r.data.pulls ? r.data.pulls[model] || {} : {};
-        if (p.line) note.textContent = p.line + (typeof p.done_gb === "number" && p.size_gb ? " (" + p.done_gb + " of " + p.size_gb + " GB)" : "");
-        if (p.state && p.state !== "asking" && p.state !== "downloading") break;
-        await wait(1500);
-      }
-      draw();
-    }
     async function use(role, id, note) {
       const got = await P.api("PUT", "/v1/models/roles", { [role]: id });
       if (got.status !== 200) { note.textContent = P.said(got); return; }
@@ -390,13 +412,7 @@
           const btns = el("div", { class: "row" });
           if (row.canAdd) {
             const add = el("button", { class: "primary", text: "Add" });
-            add.addEventListener("click", async () => {
-              add.disabled = true;
-              const got = await P.api("POST", "/v1/models/pull", { model: row.id });
-              if (got.status !== 202 || !got.data || !got.data.consent_id) { note.textContent = P.said(got); add.disabled = false; return; }
-              note.textContent = "Its Yes card is below, and on Your turn.";
-              P.consentInline(cardBox, got.data.consent_id, () => follow(row.id, note));
-            });
+            add.addEventListener("click", () => addModel(row.id, add, note, cardBox, draw));
             btns.appendChild(add);
           }
           if (row.canUse) {
@@ -468,7 +484,7 @@
   }
 
   async function ledgerTile() {
-    const t = P.tile({ id: "ledger", icon: "receipt", title: "What went out", wide: true });
+    const t = P.tile({ id: "ledger", icon: "receipt", title: "What left your computer", wide: true });
     const led = await P.api("GET", "/v1/bridge/ledger?limit=20");
     if (led.status !== 200 || !Array.isArray(led.data)) { t.body.appendChild(el("p", { class: "fail", text: P.said(led) })); return t.node; }
     const names = P.names();
@@ -480,8 +496,8 @@
   }
 
   /* Toolsmith's cloud model: the company and model in use, its cost cap and key (v2 Settings' tile, plus its key and
-   * a lower cap at once). The same tile on Overview, Zone 3 Bridge and #developer/toolsmith (D101): it uses no page
-   * ids, and asks *redraw* to draw it again after a change of model, so each page says how. The cloud choice is the
+   * a lower cap at once). On Settings' Toolsmith row (D162; D101 had it here): it uses no page ids, and asks *redraw*
+   * to draw it again after a change of model. The cloud choice is the
    * wizard's own Yes: she ticks the company's sentence, and the Core checks its sha (PUT /v1/toolsmith/model).
    *
    * THE KEY, as in github.js. It is read from the password box once, sent once to the Core, and the box is cleared
@@ -491,7 +507,8 @@
    * ONE THING AT A TIME. While a key or model write is on its way, nothing here can be changed or pressed: no second
    * write starts, the company can't change under it, and no key can be pasted into a box a redraw would take away. */
   async function toolsmithTile(redraw, note) {
-    const t = P.tile({ id: "toolsmith", icon: "construction", title: "Toolsmith's cloud model", wide: true });
+    const box = el("div", { "data-toolsmith": "tile" });     // inside its row on Settings: never a box in a box
+    const t = { node: box, head: box, body: box };
     const [st, prov, keys, vault] = await Promise.all([P.api("GET", "/v1/toolsmith"), P.api("GET", "/v1/toolsmith/providers"), P.api("GET", "/v1/toolsmith/keys"), P.api("GET", "/v1/vault/status")]);
     const stat = el("span", { class: "stat", "data-toolsmith": "stat" });
     t.head.appendChild(stat);
@@ -662,8 +679,7 @@
     return t.node;
   }
 
-  /* The tile drawn again in its own place (Overview, #developer/toolsmith): the page around it is left alone, so a
-   * running command line keeps its screen. Its "Saved" line goes in its own data-said slot. */
+  /* The tile drawn again in its own place: the page around it is left alone. Its "Saved" line goes in its own data-said slot. */
   async function toolsmithHere(note) {
     const node = await toolsmithTile(async (line) => {
       const next = await toolsmithHere(line);
@@ -671,6 +687,7 @@
     }, note);
     return node;
   }
+  P.toolsmithTile = toolsmithHere;
 
   async function hostsTile() {
     const t = P.tile({ id: "toolsmith-hosts", icon: "dns", title: "Where Toolsmith may reach" });
@@ -730,17 +747,15 @@
     return t.node;
   }
 
-  async function bridgePage(sec, note, keepTile) {
-    /* Toolsmith's own change draws it again. The Bridge's buttons leave its tile as it is, with any key she pasted. */
-    const [now, led, ts, hosts, checks] = await Promise.all([bridgeNow((line) => bridgePage(sec, line, ts)), ledgerTile(),
-      keepTile || toolsmithTile((line) => bridgePage(sec, line)), hostsTile(), drawbridgeTile()]);
+  async function bridgePage(sec, note) {
+    const [now, led, hosts, checks] = await Promise.all([bridgeNow((line) => bridgePage(sec, line)), ledgerTile(), hostsTile(), drawbridgeTile()]);
     if (note && now.said) now.said.textContent = note;
     const noted = note && !now.said ? el("p", { class: "small", "data-said": "bridge", text: note }) : "";   // no Bridge tile to say it in
     clear(sec).append(back(), header("Zone 3: Bridge", "What may leave your computer, who can switch things on, Toolsmith, and your own gear.", "bridge"), noted,
-      el("div", { class: "row lede", "data-dev": "goto" }, [goTo("#outside", "What leaves your computer", "Every app that may reach the internet, and what it reached."),
+      el("div", { class: "row lede", "data-dev": "goto" }, [goTo("#outside", "The Bridge", "Every app that may reach the internet, and what left your computer."),
         goTo("#developer/github", "GitHub", "Link your GitHub for Toolsmith's searches, or add code from a GitHub project."),
-        goTo("#developer/toolsmith", "Toolsmith's cloud model", "Pick a company for Toolsmith and add its key, or keep it on this computer.")]),
-      el("div", { class: "tiles" }, [now.node || now, ts, led, hosts, checks, window.PuffAddresses ? window.PuffAddresses.block() : null, gearTile()]));
+        goTo("#settings/toolsmith", "Toolsmith's cloud model", "Pick a company for Toolsmith and add its key, or keep it on this computer. It is on Settings.")]),
+      el("div", { class: "tiles" }, [now.node || now, led, hosts, checks, window.PuffAddresses ? window.PuffAddresses.block() : null, gearTile()]));
   }
 
   /* ---- GitHub alone (lane I18g), from Zone 3 Bridge ---- */
@@ -750,11 +765,9 @@
         window.PuffSearchKeys ? window.PuffSearchKeys.block() : null, window.PuffAddApi ? window.PuffAddApi.block() : null]));
   }
 
-  /* ---- Toolsmith's cloud model alone (D101), from Zone 3 Bridge ---- */
-  async function toolsmithPage(sec) {
-    const tile = await toolsmithHere();
-    clear(sec).append(back(), header("Toolsmith's cloud model", "Pick a company for Toolsmith and add its key, or keep it on this computer. " + CONSENT, "bridge"),
-      el("div", { class: "tiles" }, [tile]));
+  /* An old address of Toolsmith's cloud model: it is on Settings now (D162). */
+  async function toolsmithPage() {
+    P.go("settings", "toolsmith");
   }
 
   /* ---- the page and its parts ---- */

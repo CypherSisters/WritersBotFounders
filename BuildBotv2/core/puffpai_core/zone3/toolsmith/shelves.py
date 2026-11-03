@@ -380,6 +380,7 @@ class Round:
         self.clock = clock
         self.down: dict[str, str] = {}             # row id -> why it gave no answer (plain words)
         self.asked: list[str] = []                 # row ids asked in this plan, in order
+        self.answered = 0                          # asks that gave an answer, from the cache too (D151)
         self.whole: dict[str, list[dict]] = {}     # a list row's rows, read once per plan
         self.keys_refused: set[str] = set()
         self._got: dict[Any, list[dict]] = {}
@@ -438,6 +439,7 @@ class Round:
                 self._settle(rid, [t for _u, t in asks[n:]])
                 return
             with self._cond:
+                self.answered += 1
                 if tag == WHOLE:
                     self.whole.setdefault(rid, []).extend(rows)
                 else:

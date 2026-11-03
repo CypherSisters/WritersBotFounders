@@ -9,7 +9,7 @@
 - :func:`read`: one part at a time, about 4,000 characters, so a whole novel works on a small local model. Nothing
   of a document goes in a prompt but its name. A local brain with the vault open gets the whole file through the gate
   (``prepare``: real values, never keys). Anyone else gets the index's locked form, which holds nothing new. The tool
-  result then passes the turn's own gate, like every tool result (D50).
+  result then passes the turn's own gate, like every tool result (D50). A document she marked "no vault" (D146) skips all that.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .classify import Binary, DecodedFile, MAX_FILE_BYTES, TooBig, Unsupported, _check_clean, decode_file
-from .gate import prepare
+from .gate import OwnWords, prepare
 
 #: One part, in characters. A local brain's tool result holds 6,000 (``zone2.gate.MAX_MODEL_CHARS``).
 PART = 4000
@@ -208,18 +208,21 @@ _read_lock = threading.Lock()
 
 def _words(library: Any, path: Path, st: Any, real: bool) -> tuple[str, list[int]]:
     open_now = bool(real and library.archivist.is_open())
-    key = (str(path), st.st_size, st.st_mtime, open_now)
+    plain = library.is_fiction(path)
+    key = (str(path), st.st_size, st.st_mtime, open_now, plain)
     with _read_lock:
         got = _read.get(key)
     if got:
         return got
     text = None
-    if open_now:
+    if open_now and not plain:
         decoded = read_document(path)
         if not decoded.also:                 # a file that reads two ways is read from the index, as the scan chose
             text = prepare(decoded.text, True, archivist=library.archivist, path="files")[0]
     if text is None:
         text = library.indexed_text(path)
+    if plain:
+        text = OwnWords(text)
     got = (text, part_starts(text))
     with _read_lock:
         if len(_read) >= 2:
@@ -240,7 +243,8 @@ def read(library: Any, name: str, part: int = 1, find: str = "", *, real: bool =
         return {"ok": False, "error": f"{shown} has parts 1 to {len(starts)}."}
     end = starts[part] if part < len(starts) else len(text)
     next_up = f" Part {part + 1} is next." if part < len(starts) else " That is the end."
-    return f"{shown}, part {part} of {len(starts)}.{next_up}\n\n{text[starts[part - 1]:end]}"
+    words = f"{shown}, part {part} of {len(starts)}.{next_up}\n\n{text[starts[part - 1]:end]}"
+    return OwnWords(words) if isinstance(text, OwnWords) else words
 
 
 #: Either kind of quote mark, since a model copies those loosely.
@@ -280,8 +284,9 @@ def show(library: Any, name: str, passage: str, suggestion: str = "", why: str =
         return {"ok": False, "error": f"Those words aren't in {shown}. Copy them exactly with read_pinned, and try again."}
     at, end = span
     where = bisect.bisect_right(starts, at)
+    mine = OwnWords if isinstance(text, OwnWords) else str
     return {"ok": True, "show_passage": True, "document": shown, "part": where, "of": len(starts),
-            "before": text[max(0, at - AROUND):at], "passage": text[at:end], "after": text[end:end + AROUND],
+            "before": mine(text[max(0, at - AROUND):at]), "passage": mine(text[at:end]), "after": mine(text[end:end + AROUND]),
             "suggestion": str(suggestion or "").strip(), "why": str(why or "").strip(),
             "said": "She sees this passage highlighted, with your suggestion beside it. Nothing in her file changed. "
                     "In your answer, quote the passage and your suggested wording, and say which part it is in."}

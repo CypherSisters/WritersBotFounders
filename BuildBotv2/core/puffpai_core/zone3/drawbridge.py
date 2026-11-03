@@ -983,7 +983,7 @@ class Drawbridge:
             return {"verdict": "allow", "reason_code": "read_only", "floor": False, "line": ""}
         if tool in scope.floor_tools:
             return {"verdict": "ask", "reason_code": "floor_level", "floor": True,
-                    "line": "This changes your network, so it needs your PIN or Windows Hello."}
+                    "line": "This changes your network, so it needs your PIN" + (" or Windows Hello." if os.name == "nt" else ".")}
         if tool in scope.ask or tool not in scope.approved:
             return {"verdict": "ask", "reason_code": "needs_yes", "floor": False, "line": ""}
         for arg, allowed in (scope.targets.get(tool) or {}).items():

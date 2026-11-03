@@ -122,12 +122,15 @@ def test_reads_and_look_alikes_are_not_stops(try_zone, command):
 
 # -- 2. changing the computer outside the try -------------------------------------------------------
 
+#: Another place on this computer, and the try's own pip, written the way this computer writes them.
+ELSEWHERE = "C:/Users/Public/elsewhere" if sys.platform == "win32" else "/opt/elsewhere"
+VENV_PIP = ".venv/Scripts/pip" if sys.platform == "win32" else ".venv/bin/pip"
 MACHINE = [
     "winget install -e --id Git.Git", "winget upgrade --all", "choco install nodejs -y", "scoop install go",
     "msiexec /i node.msi /qn", "Start-Process msiexec -ArgumentList '/i x.msi'", "Start-Process .\\setup.msi",
     "py install 3.12", "pymanager install 3.13", "pip install --user requests",
-    ".venv/Scripts/pip install --target C:/Users/Public/elsewhere requests",
-    "python -m pip install --prefix=C:/elsewhere requests", "pip install -tC:/elsewhere requests",
+    f"{VENV_PIP} install --target {ELSEWHERE} requests",
+    f"python -m pip install --prefix={ELSEWHERE} requests", f"pip install -t{ELSEWHERE} requests",
     "pip --isolated install requests", "PIP_REQUIRE_VIRTUALENV=0 pip install requests",
     "$env:PIP_REQUIRE_VIRTUALENV=''; pip install requests", "pip install --break-system-packages requests",
     "uv pip install --system requests", "uv tool install ruff", "pipx install httpie", "pip config set global.user true",

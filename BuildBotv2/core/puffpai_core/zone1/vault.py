@@ -29,7 +29,10 @@ recovery code with the PIN, or a recovery with the code); the repair rewrites
 the keyring under a fresh MAC and drops unattended wraps that don't agree. Adding or
 removing a way in needs the current PIN or the recovery code (D29). Throttle before any KDF work, in memory, at
 most 5 minutes, PIN and recovery counted apart (F13). Idle lock always on, 5
-minutes by default, at most 60 (F14). Locked means refuse (``Locked``, 423),
+minutes by default, at most 60 (F14); while a live build or an unfinished setup
+exists it is the 60 (D153, ``Vault.hold``). Only a real vault use resets it; the
+Core's own anchor seals do not.
+Locked means refuse (``Locked``, 423),
 never empty; a missing store means wait (``StoreMissing``, 503), never a new
 empty vault (F8).
 
@@ -208,6 +211,7 @@ class Vault:
         self._vault_id_cache: str | None = None
         self._safe: str | None = None          # why the vault is open for repair only (F10 or the MAC failed)
         self._ring_ok = True
+        self.hold: Callable[[], bool] | None = None   # D153: set at wiring. May run under self._lock: it must wait on no lock
 
     # -- small state ------------------------------------------------------------
     def is_set_up(self) -> bool:
@@ -259,8 +263,28 @@ class Vault:
         _atomic_write(self.settings_path, json.dumps(data).encode("utf-8"))
         return seconds // 60
 
+    def _held(self) -> bool:
+        """D153: does a live build or an unfinished setup exist? The Core's wiring answers; the vault knows neither.
+        Anything but a plain True, or a check that fails, holds nothing: her setting applies."""
+        fn = self.hold
+        if fn is None:
+            return False
+        try:
+            return fn() is True
+        except Exception:  # noqa: BLE001 - can't tell: holds nothing
+            logger.warning("the vault's hold check failed, so her idle setting applies")
+            return False
+
+    def _idle_limit(self) -> float:
+        """The idle time in force now: 60 minutes while held, else her setting. Never held in safe mode. Her saved
+        setting is not changed, and nothing here resets the timer or writes to the vault log (D68(e), D153)."""
+        return float(IDLE_MAX_S) if self._safe is None and self._held() else self.idle_s
+
     def _idle_expired(self) -> bool:
-        return self._dek is not None and self.clock() - self._last_touch >= self.idle_s
+        if self._dek is None:
+            return False
+        idle = self.clock() - self._last_touch
+        return idle >= self.idle_s and idle >= self._idle_limit()     # the check is only asked once her setting is up
 
     def _touch(self) -> None:
         self._last_touch = self.clock()
@@ -268,7 +292,7 @@ class Vault:
     def idle_left_s(self) -> float | None:
         if not self.is_open():
             return None
-        return max(0.0, self.idle_s - (self.clock() - self._last_touch))
+        return max(0.0, self._idle_limit() - (self.clock() - self._last_touch))
 
     def watch_once(self) -> bool:
         """Lock if idle. True when it locked. Caretaker or the watcher thread calls it."""
@@ -527,8 +551,9 @@ class Vault:
             except Exception:
                 logger.exception("vault lock listener failed")
 
-    def _require_open(self, *, repair: bool = False) -> None:
-        """Open for use; with *repair*, safe mode is enough (only the F10 repairs pass it)."""
+    def _require_open(self, *, repair: bool = False, touch: bool = True) -> None:
+        """Open for use; with *repair*, safe mode is enough (only the F10 repairs pass it). With ``touch=False`` (the
+        Core's anchor seals, D153) it still needs an open vault, and the idle timer does not move."""
         if not self.is_set_up():
             raise NotSetUp()
         if self._safe is not None and self._dek is not None and not self._idle_expired():
@@ -538,7 +563,8 @@ class Vault:
             return
         if not self.is_open():
             raise Locked()
-        self._touch()
+        if touch:
+            self._touch()
 
     def _leave_safe_mode(self, ring: dict) -> bool:
         """After a repair write: out of safe mode when F10 holds again. True when it left."""
@@ -824,7 +850,7 @@ class Vault:
         return record
 
     def put(self, name: str, value: bytes | str, *, kind: str = "secret", label: str = "secret.api_key",
-            tier: str = "P4", extra: dict | None = None, reserved: bool = False) -> str:
+            tier: str = "P4", extra: dict | None = None, reserved: bool = False, touch: bool = True) -> str:
         """Seal one item under *name*. Returns its ref. Vault must be open.
 
         Every write to a name first deletes its machine-wrapped copy (the ticked tier, D27), so an old value
@@ -834,7 +860,7 @@ class Vault:
         data = value.encode("utf-8") if isinstance(value, str) else bytes(value)
         extra = {k: v for k, v in (extra or {}).items() if k != "unattended"}
         with self._lock:
-            self._require_open()
+            self._require_open(touch=touch)
             self._delete_unattended(name, strict=True)
             bid = self._blob_id(name)
             old = self._root["items"].get(bid)
@@ -847,10 +873,10 @@ class Vault:
             self.audit("stored", name=self._safe_name(name), kind=kind)
             return ref
 
-    def get(self, name: str) -> bytes:
+    def get(self, name: str, *, touch: bool = True) -> bytes:
         """The value of *name*. Core-internal (Archivist only); never returned over HTTP."""
         with self._lock:
-            self._require_open()
+            self._require_open(touch=touch)
             if self._tombstoned(name):
                 raise NotFound()
             bid = self._blob_id(name)
@@ -860,9 +886,9 @@ class Vault:
             record = self._read_blob(bid, meta)
             return bytes.fromhex(record["value"])
 
-    def meta(self, name: str) -> dict | None:
+    def meta(self, name: str, *, touch: bool = True) -> dict | None:
         with self._lock:
-            self._require_open()
+            self._require_open(touch=touch)
             if self._tombstoned(name):
                 return None
             m = self._root["items"].get(self._blob_id(name))
@@ -1117,7 +1143,9 @@ class Vault:
         if not self.is_set_up():
             return {"state": "not_set_up", "ways_in": [], "store": self._health()}
         health = self._health()
-        open_ = self.is_open()
+        with self._lock:                 # one moment: a lock during this read must not fail it (a page reads that as locked)
+            open_ = self.is_open()
+            rows = list(self._root["items"].values()) if open_ else []
         state = "open" if open_ else "locked"
         try:
             problem = self._safe or self._f10_problem(self._read_keyring())
@@ -1137,11 +1165,12 @@ class Vault:
             "ways_in": [w["label"] for w in self.ways_in()],
             "store": {"ok": bool(health.get("ok")), "reason": health.get("reason", ""),
                       "location": self.store.info().get("location_text", "")},
-            "idle_lock_minutes": int(self.idle_s // 60),
+            "idle_lock_minutes": int(self._idle_limit() // 60),     # in force now, so "locks after N" stays true
+            "idle_own_minutes": int(self.idle_s // 60),             # her setting, which applies again after a hold
             "idle_left_s": int(self.idle_left_s() or 0) if open_ else None,
             "warnings": list(self.warnings) if open_ else [],
         }
         if open_:
-            out["items"] = len([m for m in self._root["items"].values() if not m["name"].startswith(RESERVED)])
-            out["unattended_keys"] = [m["name"] for m in self._root["items"].values() if m.get("unattended")]
+            out["items"] = len([m for m in rows if not m["name"].startswith(RESERVED)])
+            out["unattended_keys"] = [m["name"] for m in rows if m.get("unattended")]
         return out

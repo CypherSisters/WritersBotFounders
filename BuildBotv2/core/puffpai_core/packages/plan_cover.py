@@ -69,7 +69,8 @@ def step_sha(step: Any) -> str:
         if k == "title":
             v = " ".join(str(v or "").split())
         elif k == "shell":
-            v = str(v or ("powershell" if kind == "run_command" else ""))
+            # The shell the Core gives a step that names none (ToolsmithHost.agent_step_add), so both sides match.
+            v = str(v or (("powershell" if os.name == "nt" else "bash") if kind == "run_command" else ""))
         elif k == "kind":
             v = kind
         elif k == "admin":

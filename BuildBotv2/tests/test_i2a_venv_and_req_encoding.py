@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from test_d61_allowlist import WIN, _checked, _never_ran, needs_jobs, world  # noqa: F401 - shared fixture
+from test_d61_allowlist import WIN, _checked, _never_ran, world  # noqa: F401 - shared fixture
 from test_i2a_part_c import _decide, _fake_try
 from test_i2a_part_e import _app
 from toolsmith_fakes import make_venv, script
@@ -160,7 +160,6 @@ def _settings_in(venv: Path) -> list[str]:
 SPELLINGS = [".VENV", ".Venv", ".venv.", ".venv..", ".venv ", ".venv. ", ".venv"]
 
 
-@needs_jobs
 def test_toolsmith_cannot_write_into_the_venv_in_any_spelling(world):
     _b, link, try_id, rec = _checked(world)
     # Before the .venv exists: a .VENV folder written now would be the one python -m venv .venv fills.
@@ -198,20 +197,22 @@ def test_toolsmith_cannot_write_into_the_venv_in_any_spelling(world):
     assert _settings_in(venv) == [] and (rec.folder / "notes.txt").is_file()
     assert rec.broker.venv is not None
     # Only the whole of it may go, in any spelling, and the Core then forgets it.
-    assert link.try_fs(try_id, "delete", path=".VENV.")["ok"]
+    assert link.try_fs(try_id, "delete", path=".VENV." if os.path.exists(rec.folder / ".VENV") else ".venv")["ok"]
     assert not venv.exists() and rec.broker.venv is None
 
 
-@needs_jobs
 def test_a_junction_to_the_venv_does_not_let_toolsmith_write_into_it(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)
     venv = rec.folder / ".venv"
     junction = rec.folder / "sneaky"
-    made = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(venv)], capture_output=True,
-                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if made.returncode != 0:
-        pytest.skip("could not make a junction here")
+    if WIN:
+        made = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(venv)], capture_output=True,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if made.returncode != 0:
+            pytest.skip("could not make a junction here")
+    else:
+        os.symlink(venv, junction)                               # Linux and Mac have the plain link instead
     try:
         assert link.try_write(try_id, "notes.txt", "x")["ok"]
         for got in (link.try_write(try_id, "sneaky/pip.ini", "[global]\n"),
@@ -226,13 +227,13 @@ def test_a_junction_to_the_venv_does_not_let_toolsmith_write_into_it(world):
         assert not os.path.lexists(junction) and (venv / "pyvenv.cfg").is_file() and rec.broker.venv
     finally:
         if os.path.lexists(junction):
-            os.rmdir(junction)                                   # the junction only, never what it points at
+            os.rmdir(junction) if WIN else os.unlink(junction)   # the link only, never what it points at
 
 
 @pytest.mark.parametrize("name", ["pip.ini", "PIP.INI", "Pip.Conf", "pip.conf"])
 def test_the_trys_python_is_not_run_with_a_pip_settings_file_in_its_venv(tmp_path, name):
     place = _fake_try(tmp_path)
-    (place.folder / ".venv" / "Scripts" / "pip.exe").write_bytes(b"MZ not a real pip")
+    (A.venv_bin(place.folder) / ("pip.exe" if WIN else "pip")).write_bytes(b"MZ not a real pip")
     assert _decide(place, ["-m", "pip", "install", "flask"]).kind == "run"
     assert A.decide(A.Request("pip", ["install", "flask"]), place).kind == "run"
     (place.folder / ".venv" / name).write_text("[global]\nindex-url = https://example.org/simple\n")
@@ -251,7 +252,6 @@ def test_a_folder_named_pip_ini_counts_too_and_no_venv_holds_none(tmp_path):
     assert A.venv_pip_settings(tmp_path / "no-such-app") == ""
 
 
-@needs_jobs
 def test_a_pip_ini_a_try_script_writes_stops_the_next_run_and_start(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)

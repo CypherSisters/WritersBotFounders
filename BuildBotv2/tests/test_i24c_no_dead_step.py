@@ -7,6 +7,7 @@ asserted exactly as they were, because this lane only changes what is asked of h
 
 from __future__ import annotations
 
+import shlex
 import json
 import os
 import subprocess
@@ -174,16 +175,20 @@ def test_after_her_install_step_a_bare_name_gets_its_step_again(world, tmp_path,
     assert t.call("install_program", {"name": "puffpai-no-such-tool", "why": "It needs it."})["ok"]
     got = t.call("run", {"program": "puffpai-no-such-tool", "args": ["x"]})
     assert got["ok"] and tries.OWNER_RAN.format(line="puffpai-no-such-tool x") in got["said"], got
-    assert "& 'puffpai-no-such-tool' 'x'" in steps(world)[-1]["text"]
+    assert ("& 'puffpai-no-such-tool' 'x'" if WIN else "puffpai-no-such-tool x") in steps(world)[-1]["text"]
     t.close()
 
 
 # -- a program that can run keeps its step -------------------------------------------------------------------
 
-def _on_path(tmp_path, monkeypatch, name="go.exe"):
+GO = "go.exe" if WIN else "go"
+
+
+def _on_path(tmp_path, monkeypatch, name=GO):
     d = tmp_path / "on-path"
     d.mkdir(exist_ok=True)
     (d / name).write_text("", encoding="utf-8")                # never run: the check only looks
+    (d / name).chmod(0o755)
     monkeypatch.setenv("PATH", str(d) + os.pathsep + os.environ.get("PATH", ""))
 
 
@@ -194,7 +199,8 @@ def test_a_program_on_path_keeps_its_step_word_for_word(world, tmp_path, monkeyp
     got = t.call("run", {"program": "go", "args": ["build", "-o", "app.exe", "."]})
     assert got["ok"] and got["said"] == tries.OWNER_RAN.format(line="go build -o app.exe .")
     step = steps(world)[-1]
-    assert step["text"] == f"Set-Location -LiteralPath '{os.path.realpath(t.folder)}'\n& 'go' 'build' '-o' 'app.exe' '.'"
+    assert step["text"] == (f"Set-Location -LiteralPath '{os.path.realpath(t.folder)}'\n& 'go' 'build' '-o' 'app.exe' '.'" if WIN else
+                            f"cd {shlex.quote(os.path.realpath(t.folder))}\ngo build -o app.exe .")
     assert step["title"] == f"Run go for {name}"
     assert step["why"].startswith("BuildBot runs only the app's own Python, Node.js, docker compose and programs from "
                                   "its checked download, so this one is yours to run: go build -o app.exe .")
@@ -207,9 +213,9 @@ def test_a_name_on_path_is_never_swapped_for_a_file_in_the_folder(world, tmp_pat
     """Her step ran the program on PATH before; it must not start running an unchecked file instead."""
     _on_path(tmp_path, monkeypatch)
     t, _hooks = make_try(world, tmp_path, "garden-board", WEB)
-    file_at(t.folder, "go.exe")
+    file_at(t.folder, GO)
     t.call("run", {"program": "go", "args": ["build"]})
-    assert "& 'go' 'build'" in steps(world)[-1]["text"]
+    assert ("& 'go' 'build'" if WIN else "\ngo build") in steps(world)[-1]["text"]
     t.close()
 
 

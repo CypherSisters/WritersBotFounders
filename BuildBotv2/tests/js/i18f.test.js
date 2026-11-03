@@ -45,6 +45,11 @@ assert.strictEqual(D.folderPath("%USERPROFILE%\\Documents").ok, true);
 assert.strictEqual(D.folderPath("Recipes").ok, false);
 assert.strictEqual(D.folderPath("C:\\a\nC:\\b").ok, false);
 assert.strictEqual(D.folderPath("").ok, false);
+// V3-1: Vault's folders list keeps Unlink and from-setup, and links to Knowledge to add one. No second path box.
+const dev = require("fs").readFileSync(path.join(__dirname, "..", "..", "packages", "desktop", "web", "pages", "developer.js"), "utf8");
+assert.ok(dev.includes('goTo("#knowledge", "Add a folder on Knowledge"'));
+assert.ok(dev.includes('"/v1/folders/unlink"') && dev.includes('"/v1/folders/from-setup"'));
+assert.ok(!dev.includes('"/v1/folders/link"') && !dev.includes("Link this folder"));
 
 // Toolsmith: names only, and which cap change needs her Yes again
 const now = D.toolsmithNow({ where: "cloud", provider: "anthropic", company: "Anthropic", model: "m1", cost_cap_usd: 5 },

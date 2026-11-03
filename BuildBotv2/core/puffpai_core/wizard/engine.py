@@ -52,7 +52,7 @@ from .. import bot as bot_mod, jsonfile
 from ..zone2 import ollama
 from . import census as census_mod
 from . import lines as L
-from .fields import SECRET_TYPES, PathError, example, expand_path, synced_folder, this_platform, visible
+from .fields import SECRET_TYPES, PathError, default_data_folder, example, expand_path, synced_folder, this_platform, visible
 from .services import Services
 from .steps import load_steps
 
@@ -365,7 +365,7 @@ class Engine:
             self._publish(sid, status)
         out = {"status": status, "step": sid, "title": step["title"], "lines": result.get("lines", []),
                "answered": answered or [], "next": self.next_step(sid)}
-        for key in ("lane", "jobs", "field", "poll_s", "asked", "error", "summary", "alive", "repeat"):
+        for key in ("lane", "jobs", "field", "poll_s", "asked", "error", "summary", "alive", "repeat", "vault"):
             if key in result:
                 out[key] = result[key]
         if clear:
@@ -816,16 +816,7 @@ class VaultStep(StepHooks):
 
     def default(self, field, known):
         if field["id"] == "data_folder":
-            base = "%USERPROFILE%\\PuffPAI Data" if self.e.platform == "windows" else "~/PuffPAI Data"
-            sep = "\\" if self.e.platform == "windows" else "/"
-            # install.sh --data-dir, or a container: with no env given it is this process's own, as expand_path reads it.
-            moved = str((os.environ if self.e.env is None else self.e.env).get("PUFFPAI_HOME") or "").strip()
-            if self.e.platform != "windows" and moved.startswith("/"):
-                base = moved.rstrip("/").rsplit("/", 1)[0] + "/PuffPAI Data"
-            try:
-                return expand_path(base + sep + self.e.state.name, self.e.platform, self.e.env)
-            except PathError:
-                return None
+            return default_data_folder(self.e.state, self.e.platform, self.e.env)
         if field["id"] == "knowledge_folder":             # Enter keeps where they are: with the data folder at first
             from ..zone1 import fetched
             return fetched.chosen(self.e.state) or known.get("data_folder") or self.default({"id": "data_folder"}, known)
@@ -1345,7 +1336,6 @@ class PlanStep(_BuildStep):
     def __init__(self, engine: "Engine") -> None:
         super().__init__(engine)
         self.shown: dict[str, str] = {}
-        self.vault_told: set[str] = set()
 
     def live(self, step, incoming, renderer):
         """While Toolsmith plans (minutes: the search places, READMEs, the brain's order), show what it does now."""
@@ -1359,11 +1349,6 @@ class PlanStep(_BuildStep):
         got = start(build) or {}
         if got.get("ready", True):
             return None
-        if got.get("vault"):                           # D132: a plan made with no cloud key costs the whole build
-            first = build not in self.vault_told
-            self.vault_told.add(build)
-            from .terminal import vault_wait_line
-            return {"status": "working", "lines": [L.PLAN_NEEDS_KEY, vault_wait_line()] if first else [], "poll_s": 2.0}
         now = str(got.get("now") or "")
         lines = []
         if build not in self.shown:
@@ -1653,7 +1638,8 @@ class BuildStep(_BuildStep):
     def _alive(self, got: dict, renderer: str, lines: list[str]) -> dict:
         """D113. The Setup page gets the state on every screen, and draws it in one place (``setupAlive`` in the
         Desktop's logic.js), so a reload still shows it. The terminal gets one line per wait for the vault, and it
-        prints that line again after a new lock, though it never prints a line twice otherwise."""
+        prints that line again after a new lock, though it never prints a line twice otherwise. It also gets ``vault``
+        on every poll of that wait, so the setup window can ask for the PIN itself (D142). The PIN never comes here."""
         jobs = got.get("jobs") or []
         waiting = any(j.get("status") == "waiting_vault" for j in jobs)
         if renderer != "terminal":
@@ -1661,13 +1647,15 @@ class BuildStep(_BuildStep):
                                                          for j in jobs]}}
         said, self.vault_said = self.vault_said, waiting
         now = self.clock()
-        if not waiting or (said and now - self.vault_told < self.STILL_EVERY_S):    # silence read as a hang (D132)
+        if not waiting:
             return {}
+        if said and now - self.vault_told < self.STILL_EVERY_S:    # silence read as a hang (D132)
+            return {"vault": True}
         self.vault_told = now
         from .terminal import vault_wait_line
         line = vault_wait_line()
         lines.append(line)
-        return {"repeat": [line]}
+        return {"repeat": [line], "vault": True}
 
     def finish(self, step, known, renderer):
         result = self.e.services.toolsmith.start(self._build()) or {}

@@ -308,12 +308,15 @@ def test_the_route_stops_and_keeps_who_may_call_it(state):
 
 
 def test_the_stopped_lines_name_a_way_that_works_here(tmp_path, monkeypatch):
-    monkeypatch.setattr(term, "launcher", lambda: tmp_path / "Start BuildBot.cmd")
+    start = tmp_path / term.launcher_name("Start BuildBot.cmd")
+    monkeypatch.setattr(term, "launcher", lambda: start)
     said = term.setup_stopped_lines()
     assert said[0] == L.SETUP_STOPPED and said[1].startswith("To go on, run this in a terminal: ") and said[1].endswith("setup")
-    (tmp_path / "Start BuildBot.cmd").write_text("@echo off\n", encoding="ascii")
+    start.write_text("@echo off\n", encoding="ascii")
     said = term.setup_stopped_lines()
-    assert said[1] == f"To go on, double-click Start BuildBot.cmd in {tmp_path}, then open Setup."
+    assert said[1] == f"To go on, {term.how_to_run(start)}, then open Setup."
+    if os.name == "nt":
+        assert said[1] == f"To go on, double-click Start BuildBot.cmd in {tmp_path}, then open Setup."
     assert "\u2014" not in " ".join(said) + L.ANSWERED_ELSEWHERE
 
 

@@ -56,6 +56,7 @@ import os
 import re
 import secrets
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,18 @@ READ_SUBJECT = "toolsmith:read"
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _replace(tmp: Path, path: Path) -> None:
+    """``os.replace``, a few times: on Windows another program can hold a new file for a moment. A save cut short here
+    leaves the file ahead of its seal, and that reads as a rollback at the next unlock (D151)."""
+    for _ in range(10):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    os.replace(tmp, path)
 
 
 def _plan_yes_holds(rec: Any, field: str) -> bool:
@@ -185,6 +198,7 @@ class Policy:
         self.seal = seal
         self.on_damaged = on_damaged
         self._lock = threading.RLock()
+        self.write_lock = self._lock           # D151: held across a change and its seal; the unlock check reads under it
         self.damaged = False
         self._good: PolicyData | None = None
         self._stat: tuple | None = None
@@ -215,7 +229,7 @@ class Policy:
         text = json.dumps({"version": v, "mac": self.anchor.mac("policy_version", str(v))})
         tmp = self.high_path.with_name(self.high_path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, self.high_path)
+        _replace(tmp, self.high_path)
 
     # -- file ---------------------------------------------------------------
     def _file_stat(self) -> tuple | None:
@@ -254,18 +268,33 @@ class Policy:
 
     def fresh(self) -> PolicyData:
         """The current data; re-read (and re-checked) if the file changed on disk."""
-        tell = False
+        if self._reread():
+            self.say_damaged()
+        return self.data
+
+    def _reread(self) -> bool:
+        """Re-read if the file changed on disk. True when that is what made it read damaged."""
         with self._lock:
-            if self._file_stat() != self._stat:
-                was = self.damaged
-                self.data = self._load()
-                tell = self.damaged and not was
-        if tell and self.on_damaged is not None:
+            if self._file_stat() == self._stat:
+                return False
+            was = self.damaged
+            self.data = self._load()
+            return self.damaged and not was
+
+    def say_damaged(self) -> None:
+        if self.on_damaged is not None:
             try:
                 self.on_damaged()              # the card, at runtime (X24)
             except Exception:  # noqa: BLE001
                 pass
-        return self.data
+
+    def read_quietly(self) -> tuple[int, str, bool]:
+        """``(version, sha, turned damaged)``, as :attr:`version` and :meth:`sha` say, telling nobody. For the unlock check
+        (D151): it holds every writer's lock, and the card can start safe mode, which writes the audit log. So it calls
+        :meth:`say_damaged` itself after letting them go."""
+        with self._lock:
+            turned = self._reread()
+            return max(self.data.version, self.high), sha(self.data.body()), turned
 
     def sha(self) -> str:
         return sha(self.fresh().body())
@@ -290,7 +319,7 @@ class Policy:
         text = json.dumps({"body": body, "sha": body_sha, "mac": mac}, sort_keys=True, indent=1)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, self.path)
+        _replace(tmp, self.path)
         self._write_high(new_version)          # after the file: a crash between reads as "file ahead", accepted
         self.high = new_version
         self._stat = self._file_stat()

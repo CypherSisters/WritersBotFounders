@@ -9,7 +9,7 @@ that writes the policy (X24).
 
 from flask import Blueprint, current_app, jsonify, request
 
-from ...zone3.bridge import OpenRefused
+from ...zone3.bridge import OpenBusy, OpenRefused
 from ...zone3.service import for_app
 from ..auth import OWNER
 from ..routing import route
@@ -50,6 +50,8 @@ def bridge_open():
         bridge = for_app(current_app).bridge
         bridge.open(by="owner", pin=pin if isinstance(pin, str) else None)
         return jsonify(bridge.view(_names()))
+    except OpenBusy as exc:                    # no PIN would help, so no PIN card
+        return jsonify(error=exc.line, code="bridge_busy"), exc.status
     except OpenRefused as exc:
         return jsonify(error=exc.line, code="safe_mode_pin", safe_mode={"on": True, "reasons": exc.reasons},
                        needs_pin=True), exc.status

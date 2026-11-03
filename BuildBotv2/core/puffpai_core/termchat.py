@@ -129,6 +129,7 @@ RECOVER_BACK_TRIES = 3
 UNLOCK_FOR_YES = ("Your vault is locked. Type your PIN: your Yes opens it, and Toolsmith keeps the key it needs "
                   "until this build ends.")
 UNLOCK_WAITING = "Toolsmith is waiting for your vault. Press u, then type your PIN; it stays hidden."
+VAULT_LENT = "What already has its key goes on."
 PIN_NEVER = "Never type your PIN after a command; BuildBot asks for it hidden."
 ONLY_KEYS = "Only u or Enter work here. BuildBot did not use, show or send what you typed."
 UNLOCK_TYPE_PIN = "Type your PIN first. Nothing was answered yet."
@@ -229,7 +230,7 @@ NO_WINDOW = "The window is not on this bot yet."
 #: never names a goal or an app.
 TOOL_WORDS = {"list_installed": "Looking at what's installed", "open_package": "Looking at what an app can do",
               "search_knowledge": "Searching your knowledge", "read_pinned": "Reading your pinned document",
-              "show_passage": "Finding the passage in your document",
+              "show_passage": "Finding the passage in your document", "skill_view": "Reading a skill",
               "send_document": "Sending your document",
               "checklist_add": "Adding to Your turn",
               "ask_toolsmith": "Asking Toolsmith", "read_app": "Reading an app's page", "open_app": "Opening an app",
@@ -302,6 +303,12 @@ def _can_encode(encoding: str, text: str) -> bool:
         return True
     except (LookupError, UnicodeEncodeError):
         return False
+
+
+def idle_after(v: dict) -> str:
+    """D153: said after the idle time while a build or setup holds it at 60 minutes, as the Desktop says it."""
+    own, now = v.get("idle_own_minutes"), v.get("idle_lock_minutes")
+    return f" That is while a build or setup is going. After that, {own} minutes." if own and own != now else ""
 
 
 class Look:
@@ -1763,7 +1770,9 @@ class Chat:
         if isinstance(v.get("items"), int):
             self.say(f"It holds {v['items']} item{'s' if v['items'] != 1 else ''}.")
         if v.get("idle_lock_minutes"):
-            self.say(f"It locks itself after {v['idle_lock_minutes']} minutes with no use.")
+            self.say(f"It locks itself after {v['idle_lock_minutes']} minutes with no use." + idle_after(v))
+        if state == "locked" and v.get("leases"):
+            self.say(VAULT_LENT)
         self.say(PIN_NEVER)
         if state == "not_set_up":
             self.say("Setup makes it, with your PIN: puffpai setup, or Vault on the Desktop.", "dim")
@@ -1915,7 +1924,7 @@ class Chat:
         st, v = self.api.call("GET", "/v1/vault/status")
         idle = v.get("idle_lock_minutes") if st == 200 and isinstance(v, dict) else None
         self.say("Your vault is open." + (f" It locks again after {idle} minutes with no use, or with /lock."
-                                          if idle else " /lock locks it."), "ok")
+                                          + idle_after(v) if idle else " /lock locks it."), "ok")
         return True
 
     def cmd_lock(self, rest: str = "") -> int:

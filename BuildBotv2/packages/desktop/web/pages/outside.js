@@ -15,7 +15,7 @@
       if (btn) head.body.appendChild(el("div", { class: "row" }, [btn]));
     } else head.body.appendChild(el("p", { class: "fail", text: P.said(b) }));
 
-    const t = P.tile({ icon: "receipt_long", title: "Everything that tried to leave", wide: true });
+    const t = P.tile({ icon: "receipt_long", title: "What left your computer", wide: true });
     if (led.status !== 200 || !Array.isArray(led.data)) t.body.appendChild(el("p", { class: "fail", text: P.said(led) }));
     else {
       const all = led.data.map((x) => L.ledgerLine(x, P.names())).reverse();
@@ -33,5 +33,5 @@
 
   P.on("egress.observed", () => P.redraw("outside"));
   P.on("bridge.posture", () => P.redraw("outside"));
-  P.page("outside", { title: "What leaves your computer", draw });
+  P.page("outside", { title: "The Bridge", draw });
 })();

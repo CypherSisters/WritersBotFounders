@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   const P = window.Puff, L = P.L, el = P.el, clear = P.clear;
-  const TABS = [["installed", "Installed"], ["available", "PuffPAI store"], ["add", "Add"]];
+  const TABS = [["installed", "Installed"], ["available", "PuffPAI store"], ["add", "Ask Toolsmith"]];
 
   function tabs(sec, cur) {
     return el("div", { class: "tabs" }, TABS.map(([id, label]) =>
@@ -17,7 +17,7 @@
     const updates = L.updatesWaiting(pending.status === 200 ? pending.data : []);   // lane I13's "<App> has an update"
     const list = L.installedRows(rows, P.S.pages);
     const t = P.tile({ icon: "apps", title: "Your apps and parts", stat: list.length + " INSTALLED", wide: true });
-    if (!list.length) t.body.appendChild(el("p", { class: "empty", text: "Nothing installed yet. Add one from the PuffPAI store or Add." }));
+    if (!list.length) t.body.appendChild(el("p", { class: "empty", text: "Nothing installed yet. Add one from the PuffPAI store, or ask Toolsmith for one." }));
     const items = L.trayItems(rows, P.S.pages);
     const apps = L.homeApps(rows, P.S.pages);
     const onHome = layoutR.status === 200 ? L.appPageIds(apps, layoutR.data) : null;   // D82: its own page on Home

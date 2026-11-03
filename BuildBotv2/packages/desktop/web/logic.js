@@ -108,20 +108,58 @@
   const UPLOAD_TOO_BIG = "That file is too big to send. The most is 50 MB.";
   function uploadProblem(name, size) {
     const end = /\.[^.]+$/.exec(String(name || ""));
-    if (!end || UPLOAD_TYPES.split(",").indexOf(end[0].toLowerCase()) < 0) return "PuffPAI can pin .txt, .md, .docx and .pdf files.";
+    if (!end || UPLOAD_TYPES.split(",").indexOf(end[0].toLowerCase()) < 0) return "PuffPAI can read .txt, .md, .docx and .pdf files.";
     if (size > UPLOAD_MAX) return UPLOAD_TOO_BIG;
     return size === 0 ? "That file is empty, so nothing was saved." : "";
   }
+  /* V3-1: Your documents. The head count, as the tile's stat. */
+  function documentsHead(documents, folders) {
+    return documents + (documents === 1 ? " DOCUMENT, " : " DOCUMENTS, ") + folders + (folders === 1 ? " FOLDER" : " FOLDERS");
+  }
+  /* The rows of GET /v1/knowledge/documents, with the words only some rows have. */
+  function documentRows(list) {
+    return (Array.isArray(list) ? list : []).filter(function (d) { return d && typeof d.path === "string"; }).map(function (d) {
+      return { name: String(d.name || d.path), path: d.path, line: String(d.line || ""), ok: d.ok === true, waiting: d.waiting === true, named: d.named === true, copy: d.copy === true, fiction: d.fiction === true,
+               copyNote: d.copy === true ? "A copy on your bot. To bring in changes, send it again." : "" };
+    });
+  }
+  function fileNameOf(path) { return String(path || "").split(/[\\/]/).pop(); }
+  /* Many files, each in turn. *send* answers { said, ok } or { error }, and one that fails never stops the next. One line
+   * each, the Core's own words, or "<name>: <error>". A refused file and one added but not readable (ok false) both warn. */
+  async function addInTurn(items, send, going) {
+    const lines = [];
+    for (let i = 0; i < items.length; i++) {
+      going("Reading " + (i + 1) + " of " + items.length + ": " + items[i].name);
+      let got;
+      try { got = await send(items[i]); } catch (e) { got = { error: "That did not work." }; }
+      lines.push(got.error ? { text: items[i].name + ": " + got.error, fail: true } : { text: String(got.said || ""), fail: got.ok === false });
+    }
+    return lines;
+  }
   /* The Settings row for the home network (GET /v1/network). *here*: this page is on the bot's own computer. */
+  const NETWORK_PROGRAMS = " A program with a key you made can also chat with it, using your bot's tools, documents and vault.";     // D147
   function networkView(data, here) {
     const d = data && typeof data === "object" ? data : {};
     const on = d.on === true;
-    const line = !on ? "Off. Only this computer can open BuildBot. Turn it on and it listens on your home network: a device there gets a pair screen, and only a device you pair gets in."
+    const line = !on ? "Off. Only this computer can open BuildBot. Turn it on and it listens on your home network: a device there gets a pair screen, and only a device you pair gets in." + NETWORK_PROGRAMS
       : d.open === false ? String(d.line || "On, but not listening right now.")
-        : "On. BuildBot listens on your home network, and only a device you pair gets in. On another device, open one of these addresses and type a pairing code the first time. Adopted apps and what Toolsmith tries stay on this computer.";
-    return { on, note: on ? "On, paired devices only" : "Off, this computer only", line, urls: on && Array.isArray(d.urls) ? d.urls.map(String) : [],
+        : "On. BuildBot listens on your home network, and only a device you pair gets in." + NETWORK_PROGRAMS + " On another device, open one of these addresses and type a pairing code the first time. Adopted apps and what Toolsmith tries stay on this computer.";
+    return { on, note: on ? "On, paired devices and program keys" : "Off, this computer only", line, urls: on && Array.isArray(d.urls) ? d.urls.map(String) : [],
              worth: String(d.worth_knowing || ""), button: on ? "Turn it off" : "Turn it on",
              how: here ? "The first time BuildBot listens, Windows may ask whether to allow Python through its firewall. Choose Allow for private networks." : "Turning it off from here also cuts off this device. It stays off until someone turns it on at the bot's own computer." };
+  }
+
+  /* D147: the Developer page's words for a program on another computer, from GET /v1/network. An Ollama-style program adds
+   * /api/chat to its address itself, so its address stops at /ollama. */
+  const PROGRAM_KEY_COMMAND = 'puffpai apikey new --label "<which program>"';
+  function programWhere(data) {
+    const d = data && typeof data === "object" ? data : {};
+    if (d.on !== true) return { line: "BuildBot is closed to your home network right now, so a program on another computer can't reach it. Turn it on in Settings, Your home network.", rows: [] };
+    if (d.open === false) return { line: String(d.line || "On, but not listening right now."), rows: [] };
+    const urls = Array.isArray(d.urls) ? d.urls.map(String) : [];
+    if (!urls.length) return { line: "This computer has no home-network address right now.", rows: [] };
+    return { line: "Put the address on your home network in the program's server or base URL setting, the line for the way it talks, with the model name puffpai. The others here may not work from another computer. An Ollama-style program adds /api/chat itself, which makes /ollama/api/chat.",
+             rows: urls.map((u) => { const base = u.replace(/\/+$/, ""); return { openai: base + "/openai/v1", ollama: base + "/ollama" }; }) };
   }
 
   /* What an item's button says: only an outside app (adopted, origin adopted:) says "Open in a new tab"
@@ -556,7 +594,7 @@
     { id: "vault", label: "Vault", icon: "lock", group: "secondary" },
     { id: "people", label: "People", icon: "group", group: "secondary" },
     { id: "agents", label: "Agent Team", icon: "groups", group: "secondary" },
-    { id: "outside", label: "What leaves your computer", icon: "public", group: "secondary" },
+    { id: "outside", label: "The Bridge", icon: "public", group: "secondary" },
     { id: "setup", label: "Setup", icon: "rocket_launch", group: "settings", badge: "setup" },
     { id: "looks", label: "Looks", icon: "palette", group: "settings" },
     { id: "developer", label: "Developer", icon: "code", group: "settings" },
@@ -727,7 +765,7 @@
     const command = typeof w.chat_command === "string" ? w.chat_command.trim() : "";
     if (file && folder) return "To chat in a terminal: double-click " + file + " in " + folder + ". It is the same bot and the same main chat.";
     if (command) return "To chat in a terminal, run this there: " + command + ". It is the same bot and the same main chat.";
-    return "To chat in a terminal: double-click Chat with BuildBot.cmd in the folder BuildBot is installed in. It is the same bot and the same main chat.";
+    return "To chat in a terminal: in the folder BuildBot is installed in, open Chat with BuildBot.cmd on Windows, or run chat-buildbot.sh on Linux or a Mac. It is the same bot and the same main chat.";
   }
   function signInWords(where, why, other) {
     const w = where && typeof where === "object" ? where : {};
@@ -737,7 +775,7 @@
     const how = file && folder
       ? "To sign in " + who + ", double-click " + file + " in " + folder + ", then open the link it shows" + there + "."
       : command ? "To sign in " + who + ", run this in a terminal on this computer, then open the link it shows" + there + ": " + command
-      : "To sign in " + who + ", double-click Sign in a browser.cmd in the folder BuildBot is installed in, then open the link it shows" + there + ".";
+      : "To sign in " + who + ", in the folder BuildBot is installed in, open Sign in a browser.cmd on Windows, or run signin-buildbot.sh on Linux or a Mac, then open the link it shows" + there + ".";
     const lead = why === "expired" ? "That sign-in link was already used, or is older than 10 minutes. " : "";
     if (typeof w.pair === "string" && w.pair) {     // D130: on the home network, a code from the bot's computer
       return { title: SIGN_IN_TITLE, line: lead + (other ? "To pair another device, get a code on the computer running your bot, then type it on that device." : "To sign in this device, type a pairing code from the computer running your bot.") };
@@ -754,7 +792,7 @@
   }
   /* D92: Settings says what is not built yet in one plain line, never a nested box or a route name. */
   const NOT_BUILT = {
-    brain: "Pick a model that is on this computer. The next chat turn uses it. To download another, open Models for each job.",
+    brain: "Pick a model that is on this computer, or press Add to download one. The next chat turn uses it.",
     tile: "This is not built yet.",
     vaultMove: "Moving or backing up the vault from here is not built yet.",
     botSave: "Not saved: saving the name and theme is not built yet.",
@@ -826,8 +864,9 @@
       cost: b.cost && b.cost.calls ? "$" + Number(b.cost.usd || 0).toFixed(2) + " over " + b.cost.calls + " cloud calls" : "",
       jobs: jobs, active: active,
       store: storeProgress(b),            // the ticked store apps, added by the Core before the build (lane I16)
-      canAgain: !!b.yes && !active && unfinished > 0, unfinished: unfinished,
-      againAsking: again.state === "asking" && unfinished > 0 ? String(again.consent_id || "") : "",
+      canAgain: !!b.yes && !active && (unfinished > 0 || !!b.knowledge_missing), unfinished: unfinished,
+      missing: String(b.knowledge_missing || ""),     // D160: what its library fetch did not read
+      againAsking: again.state === "asking" && (unfinished > 0 || !!b.knowledge_missing) ? String(again.consent_id || "") : "",
       unlock: buildKeys(b).unlock,        // D68: a PIN here lets it go on (lane I19a)
     };
   }
@@ -889,6 +928,71 @@
     const what = String(j.now || j.trying || status.slice(10) || "").trim();
     const name = String(j.name || "");
     return stillWords(named || !what ? name + (what ? ": " + what : "") : what, j.since, nowMs);
+  }
+  /* D159: Building's first lines: what is happening now per job, or that nothing runs. *views* are buildView's, *status* is
+   * GET /v1/toolsmith, whose rows also cover a build whose view did not come back. */
+  function workNow(views, status, nowMs) {
+    const running = [], waiting = [];
+    const seen = {};
+    (views || []).forEach(function (v) {
+      seen[v.id] = true;
+      // WritersBot: a plan of books looks through the libraries and finds no apps, so it never says it does.
+      const doing = v.booksOnly ? "looking through the libraries for books" : "finding apps for each job";
+      if (v.planning) running.push(stillWords("Planning \"" + v.goal + "\", " + doing, v.nowAt, nowMs) || "Planning \"" + v.goal + "\": " + doing + ".");
+      if (v.store && v.store.adding) running.push("Adding store apps for \"" + v.goal + "\".");
+      (v.jobs || []).forEach(function (j) {
+        const s = String(j.status || "");
+        if (s.indexOf("building") === 0) running.push(stillWorking(j, nowMs, true) || j.name + ": " + (j.now || j.words) + ".");
+        else if (s === "planned" && v.yes) waiting.push(j.name + ": waiting its turn.");
+        else if (jobActive(s)) waiting.push(j.name + ": " + j.words + ".");
+      });
+    });
+    const builds = (status && status.builds) || [];
+    builds.forEach(function (b) {
+      if (seen[b.id]) return;
+      (b.jobs || []).forEach(function (j) {
+        if (String(j.status || "").indexOf("building") === 0) running.push(String(j.name || "") + ": " + jobWords(j.status, j.library) + ".");
+      });
+    });
+    const lib = builds.map(function (b) { return b && b.library && b.library.state === "fetching" ? libraryLine(b.library, b.goal, b.id) : null; }).filter(Boolean);
+    lib.forEach(function (k) { running.push(k.line + "."); });
+    return { running: running, waiting: waiting, head: running.length ? "Running now:" : "Nothing is running right now." };
+  }
+  /* "3 minutes ago", from seconds since 1970. */
+  function agoWords(seconds, nowMs) {
+    const n = Math.floor((nowMs / 1000 - Number(seconds)) / 60);
+    if (!(n >= 1)) return "just now";
+    if (n < 60) return n + (n === 1 ? " minute ago" : " minutes ago");
+    const h = Math.floor(n / 60);
+    if (h < 48) return h + (h === 1 ? " hour ago" : " hours ago");
+    return Math.floor(h / 24) + " days ago";
+  }
+  /* D159: the Knowledge page's first lines, from GET /v1/knowledge/index. */
+  function indexNow(v, nowMs) {
+    v = v || {};
+    const files = Number(v.files) || 0, pieces = Number(v.pieces) || 0, bad = Number(v.not_read) || 0;
+    const s = function (n, word) { return n.toLocaleString("en-US") + " " + word + (n === 1 ? "" : "s"); };
+    const more = [];
+    let line;
+    if (v.running) {
+      line = v.of === null || v.of === undefined ? "Indexing now: finding your files."
+        : "Indexing now: " + Number(v.done || 0).toLocaleString("en-US") + " of " + s(Number(v.of), "file") + " checked.";
+      more.push(s(files, "file") + " can be searched so far, in " + s(pieces, "piece") + " of text.");
+      if (v.now) more.push("Reading " + v.now + ".");
+      if (v.started_at) more.push("Started " + agoWords(v.started_at, nowMs) + ".");
+    } else {
+      line = "Not indexing right now.";
+      more.push(files ? s(files, "file") + " can be searched, in " + s(pieces, "piece") + " of text." : "Nothing can be searched yet.");
+      if (v.last_finished) {
+        const added = Number(v.last_new) || 0;
+        more.push("Last finished " + agoWords(v.last_finished, nowMs) + (added ? ", with " + s(added, "new or changed file") : ", with nothing new") + ".");
+      }
+      more.push("New files in your folders are read the next time you search. A document you add, or a folder you link, is read right away.");
+    }
+    if (bad) more.push(s(bad, "file") + " could not be read, so " + (bad === 1 ? "it can't" : "they can't") + " be searched.");
+    if (v.downloading) more.push("Toolsmith is downloading for your library. Your library, below, says how far.");
+    if (v.learning) more.push("Your bot is learning a library you added. Your library, below, says how far.");
+    return { running: !!v.running, line: line, more: more };
   }
   /* The Setup page's one place for how things stand now (the "alive" of a build screen). */
   function setupAlive(alive, nowMs) {
@@ -1324,6 +1428,9 @@
   /* The vault (GET /v1/vault/status) in plain words. Never a value: there is none in the reply. */
   const VAULT_STATE = { open: "Open", locked: "Locked", not_set_up: "Not set up yet", missing: "Can't find its store",
                         throttled: "Locked: too many tries, wait a moment", safe_mode: "In safe mode" };
+  const VAULT_LENT = "What already has its key goes on.";
+  /* What the window's locked-vault row says after "Your vault is locked." (D153): it redraws when this changes. */
+  function vaultRowWords(waits, vault) { return waits ? UNLOCK_WAITING : vault && vault.lent ? vault.lent : ""; }
   function vaultView(s) {
     s = s || {};
     const state = String(s.state || "");
@@ -1331,7 +1438,9 @@
              open: state === "open", setUp: state !== "not_set_up" && !!state,
              waysIn: (s.ways_in || []).map(String), items: typeof s.items === "number" ? s.items : null,
              inbox: Number(s.inbox_waiting || 0), conflicts: (s.inbox_conflicts || []).map(String),
-             idle: s.idle_lock_minutes ? "Locks itself after " + s.idle_lock_minutes + " minutes with no use." : "",
+             idle: s.idle_lock_minutes ? "Locks itself after " + s.idle_lock_minutes + " minutes with no use."
+               + (s.idle_own_minutes && s.idle_own_minutes !== s.idle_lock_minutes ? " That is while a build or setup is going. After that, " + s.idle_own_minutes + " minutes." : "") : "",
+             lent: state === "locked" && Number(s.leases || 0) > 0 ? VAULT_LENT : "",   // D153: is a locked vault in the way?
              where: s.store && s.store.location ? String(s.store.location) : "", why: s.why ? String(s.why) : "",
              retry: Number(s.retry_after || 0) };
   }
@@ -1564,13 +1673,15 @@
     const from = andList(k.sources) || "public sources";
     const n = Math.max(0, Number(k.done) || 0), of = Math.max(0, Number(k.of) || 0);
     const ofWords = (k.up_to ? "up to " : "") + of;
-    const state = k.state === "fetching" || k.state === "done" ? k.state : "waiting";
+    const state = k.state === "fetching" || k.state === "done" || k.state === "short" ? k.state : "waiting";
     const line = state === "fetching" ? "Library: fetching " + n + " of " + ofWords + " from " + from
       : state === "done" ? "Library: downloaded " + n + " of " + of + " from " + from
+        : state === "short" ? "Library: stopped short, " + n + " of " + ofWords + " from " + from
         : "Library: " + ofWords + " from " + from + ", after your Yes";
     return { id: String(id || ""), goal: String(goal || ""), state: state, fetching: state === "fetching", line: line,
-             now: state === "fetching" ? String(k.now || "") : "", end: state === "done" ? String(k.line || "") : "",
-             note: state === "fetching" ? LIBRARY_HERE : state === "done" ? LIBRARY_DONE : LIBRARY_LATER, href: "#knowledge" };
+             now: state === "fetching" ? String(k.now || "") : "", end: state === "done" || state === "short" ? String(k.line || "") : "",
+             note: state === "fetching" ? LIBRARY_HERE : state === "done" || state === "short" ? LIBRARY_DONE : LIBRARY_LATER,
+             href: state === "short" && id ? "#building/" + encodeURIComponent(String(id)) : "#knowledge" };
   }
   /* The one library line for Home and Knowledge: a build fetching now (newest first), else the newest build that
    * fetched. Null when no build reads any knowledge, or none has started reading yet. */
@@ -1579,7 +1690,7 @@
       return String(b.created_at || "").localeCompare(String(a.created_at || ""));
     });
     const pick = builds.find(function (b) { return b && b.library && b.library.state === "fetching"; })
-      || builds.find(function (b) { return b && b.library && b.library.state === "done"; });
+      || builds.find(function (b) { return b && b.library && (b.library.state === "done" || b.library.state === "short"); });
     return pick ? libraryLine(pick.library, pick.goal, pick.id) : null;
   }
 
@@ -1683,8 +1794,9 @@
     { name: "/add", args: "<folder|url|id>", what: "Add an app, a folder of your code, or a GitHub repo", words: "install package repo github link folder" },
     { name: "/open", args: "<app>", what: "Open an app in your browser", words: "browser tab launch" },
     { name: "/dashboard", args: "", what: "Open the full dashboard in your browser", words: "desktop tiles web page full" },
-    { name: "/know", args: "", what: "Search your knowledge and documents", words: "search documents files knowledge find" },
-    { name: "/link", args: "", what: "Link a folder in place (never copied)", words: "folder data index knowledge" },
+    { name: "/know", args: "", what: "Knowledge and documents, in the side pane", words: "search documents files knowledge find" },
+    { name: "/books", args: "<words>", what: "Find books to download about that, with a plan to say Yes to", words: "find library download knowledge read wikipedia gutenberg" },
+    { name: "/link", args: "", what: "Add a whole folder, read where it is, never copied", words: "folder data index knowledge" },
     { name: "/vault", args: "", what: "Vault status, open or locked", words: "password pin secret key recovery locked" },
     { name: "/unlock", args: "", what: "Open the vault", words: "password pin vault" },
     { name: "/lock", args: "", what: "Lock the vault", words: "password pin vault" },
@@ -1931,8 +2043,9 @@
     pageTarget: pageTarget, trayItems: trayItems, widgetsOf: widgetsOf, widgetModel: widgetModel,
     stepCard: stepCard, consentCard: consentCard, consentAnswer: consentAnswer, installedRows: installedRows,
     healthText: healthText, openLabel: openLabel, bridgeOpen: bridgeOpen, bridgeView: bridgeView, chatWords: chatWords, cardTicks: cardTicks, TickMemory: TickMemory, OFFER_NOTE: OFFER_NOTE, HOLD_NOTE: HOLD_NOTE, BRIDGE_PIN_LINE: BRIDGE_PIN_LINE, WizardTranscript: WizardTranscript, wizardInput: wizardInput, isAdopted: isAdopted,
-    isNetwork: isNetwork, networkBase: networkBase, networkOpen: networkOpen, networkView: networkView, ON_COMPUTER: ON_COMPUTER, onNetworkHost: onNetworkHost,
+    isNetwork: isNetwork, networkBase: networkBase, networkOpen: networkOpen, networkView: networkView, programWhere: programWhere, PROGRAM_KEY_COMMAND: PROGRAM_KEY_COMMAND, ON_COMPUTER: ON_COMPUTER, onNetworkHost: onNetworkHost,
     UPLOAD_MAX: UPLOAD_MAX, UPLOAD_TYPES: UPLOAD_TYPES, UPLOAD_TOO_BIG: UPLOAD_TOO_BIG, uploadProblem: uploadProblem,
+    documentsHead: documentsHead, documentRows: documentRows, fileNameOf: fileNameOf, addInTurn: addInTurn,
     BAD_WIDGET: BAD_WIDGET, OUTSIDE_PICTURE: OUTSIDE_PICTURE, ownPicture: ownPicture, raisedBy: raisedBy, adminAnswer: adminAnswer, onPages: onPages, pkgOrigin: pkgOrigin,
     PAGE_SANDBOX: PAGE_SANDBOX, WIDGET_SANDBOX: WIDGET_SANDBOX,
     APP_TILE: APP_TILE, homeApps: homeApps, stayers: stayers, appPageIds: appPageIds, frameSrcOk: frameSrcOk, frameSandbox: frameSandbox,
@@ -1947,14 +2060,14 @@
     drawbridgeChecks: drawbridgeChecks, arrangeTiles: arrangeTiles, movePosition: movePosition, seenTiles: seenTiles,
     addSource: addSource, booksWords: booksWords, planningWords: planningWords, BOOKS_CARD: BOOKS_CARD, buildTitle: buildTitle, findLive: findLive, availableApps: availableApps, appActions: appActions, ndjson: ndjson, ChatTurn: ChatTurn,
     stepWords: stepWords, ShellLog: ShellLog, SHELL_NOTE: SHELL_NOTE, AGENTS: AGENTS, agentRows: agentRows,
-    vaultView: vaultView, personId: personId, slotRows: slotRows,
+    vaultView: vaultView, VAULT_LENT: VAULT_LENT, vaultRowWords: vaultRowWords, personId: personId, slotRows: slotRows,
     faceFor: faceFor, FACE_SANDBOX: FACE_SANDBOX, OWN_FACE: OWN_FACE,
     shellSaid: shellSaid, ctrlcSaid: ctrlcSaid, shellLine: shellLine, SHELL_MAX_LINE: SHELL_MAX_LINE,
     shellState: shellState, SHELL_CLOSED: SHELL_CLOSED,
     // lane I19a
     SIGN_IN_TITLE: SIGN_IN_TITLE, signInWords: signInWords, signedOut: signedOut, NOT_BUILT: NOT_BUILT,
     VAULT_WAIT: VAULT_WAIT, VAULT_WAIT_HOME: VAULT_WAIT_HOME, VAULT_WAIT_WINDOW: VAULT_WAIT_WINDOW, vaultWaiting: vaultWaiting,
-    stillWords: stillWords, stillWorking: stillWorking, setupAlive: setupAlive, POLL_RETRY: POLL_RETRY, POLL_WAIT_MS: POLL_WAIT_MS, pollCanRetry: pollCanRetry,
+    workNow: workNow, indexNow: indexNow, agoWords: agoWords, stillWords: stillWords, stillWorking: stillWorking, setupAlive: setupAlive, POLL_RETRY: POLL_RETRY, POLL_WAIT_MS: POLL_WAIT_MS, pollCanRetry: pollCanRetry,
     buildKeys: buildKeys, UNLOCK_FOR_YES: UNLOCK_FOR_YES, UNLOCK_WAITING: UNLOCK_WAITING, UNLOCK_TYPE_PIN: UNLOCK_TYPE_PIN,
     // the PuffPAI window (D81)
     WINDOW_COMMANDS: WINDOW_COMMANDS, windowApps: windowApps, appCommands: appCommands, commandHits: commandHits, commandParse: commandParse,

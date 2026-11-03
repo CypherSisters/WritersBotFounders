@@ -1,4 +1,4 @@
-r"""The check for a pinned document (D125): ``folders.file_problem``, and Toolsmith's zone keeping off pinned files.
+r"""The check for a pinned document (D125): ``folders.file_problem``, and Toolsmith's zone keeping off the files on her list.
 
 Every test runs on a fake computer in its own tmp folder (the ``box`` fixture). Real junctions (``mklink /J``), removed
 with ``rmdir`` before the tree goes. No test reaches a host: anything about a share either stops before touching it,
@@ -140,7 +140,7 @@ def test_blank_is_refused(box, bad):
 
 @pytest.mark.parametrize("bad", ["novel.txt", "..\\novel.txt", ".\\novel.txt", "books/novel.txt"])
 def test_not_absolute_is_refused(box, bad):
-    assert file_problem(box.state, bad) == "Use the file's whole path, like C:\\Users\\you\\Documents\\My Novel.docx."
+    assert file_problem(box.state, bad) == folders.PIN_WHOLE_PATH
 
 
 @windows
@@ -261,7 +261,7 @@ def test_a_mapped_drive_that_leads_back_to_this_computer_is_refused(box, monkeyp
 
 # -- the vault -----------------------------------------------------------------------------------------------
 
-LINE_VAULT = "That file is part of your vault, so it can't be pinned."
+LINE_VAULT = "That file is part of your vault, so it can't be added."
 
 
 @pytest.mark.parametrize("place", ["vault", "vault.inbox"])
@@ -303,7 +303,7 @@ def test_case_dots_and_slashes_cant_dodge_the_vault(box):
                                   '{"folder": "relative\\\\path"}'])
 def test_a_vault_setting_that_cant_be_read_refuses_every_file(box, junk):
     write_json(box.settings / "vault.json", junk)
-    want = "PuffPAI can't read where your vault is kept, so no file can be pinned right now."
+    want = "PuffPAI can't read where your vault is kept, so no file can be added right now."
     assert file_problem(box.state, put(box.disk / "a.txt")) == want
 
 
@@ -395,7 +395,7 @@ def test_a_link_that_leads_nowhere_is_refused(box):
 
 # -- the bot's own folder ------------------------------------------------------------------------------------
 
-LINE_OWN = "That file is one of PuffPAI's own, so it can't be pinned."
+LINE_OWN = "That file is one of PuffPAI's own, so it can't be added."
 
 
 @pytest.mark.parametrize("rel", ["notes.txt", "settings/notes.md", "logs/toolsmith/x/run.txt", "index/a.pdf",
@@ -449,7 +449,7 @@ def test_a_path_through_a_file_is_refused(box):
 
 
 def test_a_folder_is_refused(box):
-    assert file_problem(box.state, box.disk) == "That is a folder. Pin one file."
+    assert file_problem(box.state, box.disk) == "That is a folder. Add one file, or add the whole folder."
     (box.disk / "looks-like.txt").mkdir()
     assert file_problem(box.state, box.disk / "looks-like.txt") == folders.PIN_FOLDER
     assert file_problem(box.state, box.data) == folders.PIN_FOLDER, "the data folder itself"
@@ -458,7 +458,7 @@ def test_a_folder_is_refused(box):
 @pytest.mark.parametrize("name", ["keys.pem", "run.exe", "noname", "macro.docm", "novel.txt.pem", ".txt", "novel.txtx",
                                   "book.txt.bak", "book.pdf.lnk"])
 def test_any_other_kind_is_refused(box, name):
-    assert file_problem(box.state, put(box.disk / name)) == "PuffPAI can pin .txt, .md, .docx and .pdf files."
+    assert file_problem(box.state, put(box.disk / name)) == "PuffPAI can read .txt, .md, .docx and .pdf files."
 
 
 @windows
@@ -506,7 +506,7 @@ def test_a_stat_that_fails_refuses(box, monkeypatch, error):
 
     with monkeypatch.context() as m:
         m.setattr(folders.os, "stat", denied)
-        assert file_problem(box.state, novel) == "PuffPAI can't check that file, so it can't be pinned."
+        assert file_problem(box.state, novel) == "PuffPAI can't check that file, so it can't be added."
 
 
 @pytest.mark.parametrize("error", [OSError(1, "bad"), ValueError("no"), RuntimeError("no")])
@@ -541,13 +541,14 @@ def _zone(box, **settings):
     return tz.zone_for("", state=str(box.state))
 
 
-def test_toolsmith_may_not_touch_a_pinned_file(box):
+@pytest.mark.parametrize("key", ["pinned", "added", "copies"])
+def test_toolsmith_may_not_touch_a_file_on_her_list(box, key):
     novel = put(box.disk / "books" / "novel.docx")
-    zone = _zone(box, pinned=[str(novel)])
+    zone = _zone(box, **{key: [str(novel)]})
     assert not zone.broken
     assert zone.classify(str(novel)) == (tz.DENY, tz.PINNED)
     assert zone.classify(str(novel), write=True) == (tz.DENY, tz.PINNED)
-    assert zone.refusal(str(novel)) == "That path is outside what Toolsmith may touch (a document you pinned)."
+    assert zone.refusal(str(novel)) == "That path is outside what Toolsmith may touch (a document on your list)."
     show = f'type "{novel}"' if os.name == "nt" else f'cat "{novel}"'
     assert tz.command_check(show, zone, str(box.disk))[0] == tz.refused_line(tz.PINNED)
     copy = f'copy other.txt "{novel}"' if os.name == "nt" else f'cp other.txt "{novel}"'
@@ -624,6 +625,29 @@ def test_no_pins_adds_no_place(box, none):
     assert not tz.zone_for("", state=str(box.state)).broken
 
 
+@pytest.mark.parametrize("key", ["added", "copies"])
+def test_a_folder_holding_an_added_file_is_refused_as_one_holding_a_pin_is(box, key):
+    books = box.disk / "books"
+    put(books / "novel.docx")
+    zone = _zone(box, **{key: [str(books / "novel.docx")]})
+    assert tz.folder_problem(str(books), zone) == tz.refused_line(tz.PINNED)
+    assert zone.classify(str(books / "other.docx")) == (tz.OUTSIDE, "")       # the file, not what is beside it
+
+
+def test_a_real_add_keeps_toolsmith_off_it_and_a_remove_gives_it_back(box):
+    """Through the Library itself: what it writes is what the zone reads."""
+    novel = put(box.disk / "novel.txt")
+    lib = folders.Library(None, box.state)
+    lib.add(novel)
+    assert tz.zone_for("", state=str(box.state)).classify(str(novel)) == (tz.DENY, tz.PINNED)
+    assert lib.set_named(novel, True) is True
+    assert tz.zone_for("", state=str(box.state)).classify(str(novel)) == (tz.DENY, tz.PINNED)
+    assert lib.set_named(novel, False) is True
+    assert tz.zone_for("", state=str(box.state)).classify(str(novel)) == (tz.DENY, tz.PINNED)
+    lib.remove_document(novel)
+    assert tz.zone_for("", state=str(box.state)).classify(str(novel)) == (tz.OUTSIDE, "")
+
+
 def test_each_pin_is_a_place_and_the_root_stays_first(box):
     one, two = box.disk / "a.txt", box.disk / "b.pdf"
     write_json(box.settings / "folders.json", {"pinned": [str(one), str(two)]})
@@ -641,6 +665,14 @@ def test_junk_pinned_makes_the_zone_refuse_everything(box, junk):
     assert zone.classify(str(box.disk / "anything")) == (tz.DENY, tz.UNREADABLE)
     with pytest.raises(tz.ZoneUnreadable):
         tz._internal(str(box.state))
+
+
+@pytest.mark.parametrize("key", ["added", "copies"])
+@pytest.mark.parametrize("junk", [5, True, "a whole string, not a list", {"path": "x"}, [5], [None], [""], ["relative.txt"], ["~\\novel.txt"]])
+def test_junk_added_or_copies_makes_the_zone_refuse_everything(box, key, junk):
+    zone = _zone(box, **{key: junk})
+    assert zone.broken
+    assert zone.classify(str(box.disk / "anything")) == (tz.DENY, tz.UNREADABLE)
 
 
 def test_one_junk_pin_among_good_ones_still_refuses_everything(box):

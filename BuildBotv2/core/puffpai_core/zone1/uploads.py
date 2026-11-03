@@ -8,6 +8,9 @@ name, and one that can't leave the folder, checked here and then by the same che
 The limit holds while reading: a declared size over it is refused before the body is touched, and a body with no
 declared size stops at the limit. A second upload of one name replaces the first, as v1 did, and the reply says so: that
 is how she gets saved changes back in. There is no sync.
+
+Each file saved is recorded (``Library.record_copy``), since in a data folder she chose an ``uploads`` folder may be her own.
+There an upload never replaces a file that wasn't recorded, so it can't turn her file into a copy Remove would delete.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ import secrets
 import unicodedata
 from typing import Any, BinaryIO
 
-from .folders import PIN_GONE, PIN_KIND, PIN_SUFFIXES, _inside, canon, file_problem
+from .folders import PIN_GONE, PIN_KIND, PIN_SUFFIXES, canon, file_problem
 
 UPLOAD_MAX = 50 * 1024 * 1024            # v1's own limit
 FOLDER = "uploads"
@@ -34,6 +37,8 @@ LONG_NAME = "That file name is too long. Rename the file and send it again."
 TOO_BIG = "That file is too big to send. The most is 50 MB."
 EMPTY = "That file is empty, so nothing was saved."
 NOT_SAVED = "That file could not be saved on your bot. It may be out of room."
+LINKED_PLACE = "The folder your bot keeps these in goes through a link to somewhere else, so nothing was saved. Remove the link first."
+HERS = "A file of yours with that name is already in that folder, so nothing was saved. Rename the file and send it again."
 
 
 class UploadRefused(Exception):
@@ -51,7 +56,8 @@ def clean_name(raw: Any) -> str:
     name = unicodedata.normalize("NFC", raw)
     if len(name) > MAX_NAME_CHARS:
         raise UploadRefused(LONG_NAME, "name")
-    if name != name.strip() or name.startswith(".") or name.endswith(".") \
+    # Word's own lock file is no document: it could never get a row.
+    if name != name.strip() or name.startswith((".", "~$")) or name.endswith(".") \
             or any(c in _NOT_IN_A_NAME or unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") for c in name):
         raise UploadRefused(BAD_NAME, "name")
     if len(name.encode("utf-8")) > MAX_NAME_BYTES:
@@ -75,9 +81,11 @@ def save(library: Any, raw_name: Any, stream: BinaryIO, declared: int | None) ->
     if problem and problem != PIN_GONE:
         raise UploadRefused(problem, "place")
     folder.mkdir(parents=True, exist_ok=True)
-    if not _inside(canon(folder), canon(data)) or canon(folder) == canon(data):   # a link planted in its place
-        raise UploadRefused(NOT_SAVED, "place")
+    if not library.uploads_place():                  # a link planted in its place, even one to a folder beside it
+        raise UploadRefused(LINKED_PLACE, "place")
     replaced = os.path.lexists(dest)
+    if replaced and not library.copy_place(canon(dest)):
+        raise UploadRefused(HERS, "hers", 409)
     part = folder / f"{secrets.token_hex(8)}.part"   # the bot's walk reads no .part, so a half file is never read
     got = 0
     try:
@@ -99,6 +107,12 @@ def save(library: Any, raw_name: Any, stream: BinaryIO, declared: int | None) ->
     if problem:
         dest.unlink(missing_ok=True)
         raise UploadRefused(problem, "place")
+    try:
+        library.record_copy(dest)
+    except OSError:                                  # not said to be saved, so it isn't left unrecorded
+        if not replaced:
+            dest.unlink(missing_ok=True)
+        raise
     pinned = canon(dest) in [canon(p) for p in library.pinned()]
     return {"name": name, "path": str(dest), "size": got, "replaced": replaced, "pinned": pinned,
             "line": f"{name} replaces your earlier copy on your bot." if replaced else f"{name} is saved on your bot."}

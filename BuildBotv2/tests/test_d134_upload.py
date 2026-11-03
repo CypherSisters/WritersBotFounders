@@ -111,7 +111,7 @@ def test_an_uploaded_copy_pins_and_sends_to_a_package(core, phone, monkeypatch):
     "../evil.txt", "..\\evil.txt", "a/../../evil.txt", "/etc/evil.txt", "C:\\Windows\\evil.txt", "C:evil.txt", "\\\\host\\share\\evil.txt",
     "nul\x00.txt", "a\x00b.txt", "a\nb.txt", "a\tb.txt", "a\u202eb.txt", "CON", "con.txt", "CON.txt", "Nul.md", "prn.pdf", "aux.docx", "COM1.txt", "lpt9.tar.txt",
     "a" * 200 + ".txt", "\u00e9" * 119 + ".txt", ".", "..", "...", "", "   ", " a.txt", "a.txt ", "a.txt.", ".hidden.txt", "a:b.txt", "a.txt:stream", "a*.txt", "a?.txt", 'a".txt', "a<.txt", "a|.txt",
-    "keys.pem", "novel", "a.exe", "a.txt.exe", "evil.PNG", ".env", "x.part",
+    "keys.pem", "novel", "a.exe", "a.txt.exe", "evil.PNG", ".env", "x.part", "~$novel.docx", "~$a.txt",
 ])
 def test_a_bad_name_saves_nothing(core, phone, name):
     r = send(phone, name)
@@ -365,7 +365,7 @@ def test_package_send_with_bytes_works_on_the_network_with_both_halves_only(core
     assert len(sent) == 1
 
 
-def test_a_typed_path_in_a_package_send_names_only_a_pinned_or_linked_file(core, phone, monkeypatch, tmp_path):
+def test_a_typed_path_in_a_package_send_names_only_a_listed_or_linked_file(core, phone, monkeypatch, tmp_path):
     monkeypatch.setattr(send_file, "hand", lambda *a: pytest.fail("a file went to a package"))
     secret = tmp_path / "private notes.txt"
     secret.write_text("the secret words", encoding="utf-8")
@@ -375,9 +375,9 @@ def test_a_typed_path_in_a_package_send_names_only_a_pinned_or_linked_file(core,
     for path in (str(secret), str(vault / "x.txt"), str(core.state / "tokens.db"), "/etc/passwd", "..\\..\\x.txt", str(folder(core) / "not-pinned.txt")):
         r = phone.open("POST", "/v1/packages/some-app/send", body={"path": path})
         assert r.status_code == 400 and "secret words" not in r.get_data(as_text=True), path
-    # An uploaded copy that isn't pinned is no exception to the rule.
-    got = send(phone, "not-pinned.txt").json
-    assert phone.open("POST", "/v1/packages/some-app/send", body={"path": got["path"]}).status_code == 400
+    # V3-1: an uploaded copy is on her list, pinned or not. Only a real copy: see tests/test_add_documents.py.
+    send(phone, "a-copy.txt")
+    assert phone.open("POST", "/v1/packages/some-app/send", body={"path": str(folder(core) / "not-a-copy.txt")}).status_code == 400
 
 
 def test_pin_and_link_by_a_typed_path_never_hand_back_contents(core, phone, tmp_path):

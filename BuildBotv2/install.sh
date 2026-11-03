@@ -17,6 +17,9 @@
 #      (on a Mac also "Start BuildBot.command" and "Stop BuildBot.command", to double-click),
 #   5. runs "puffpai setup".
 #
+# With --window-for ADDRESS it does only 1 and 2, then writes one launcher and opens the window for a bot on another
+# computer (D144, as install.ps1 -WindowFor): no bot here, no setup, no Node.js and no Ollama.
+#
 # Everything it prints is also kept in install-log.txt next to this file, up to setup: setup shows PINs and a recovery
 # code, which never go in a log.
 #
@@ -38,6 +41,7 @@ YES_TOOLS=0
 YES_OLLAMA=0
 NO_TOOLS=0
 DATA_DIR=""
+WINDOW_FOR=""
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$REPO_DIR/.venv"
@@ -54,7 +58,7 @@ usage() {
     cat <<EOF
 BuildBot setup for Linux and Mac.
 
-    ./install.sh [--bot NAME] [--data-dir FOLDER] [--python FILE] [--from FOLDER] [--no-setup] [--dry-run]
+    ./install.sh [--bot NAME] [--data-dir FOLDER] [--python FILE] [--from FOLDER] [--no-setup] [--window-for ADDRESS] [--dry-run]
 
   --bot NAME     your bot's name (default buildbot). A folder already there is
                  kept as it is; the new bot gets NAME-2 (or -3, ...).
@@ -65,6 +69,9 @@ BuildBot setup for Linux and Mac.
   --no-setup     do everything but "puffpai setup" (run it yourself later)
   --from FOLDER  a bot moved from another computer (puffpai export). Setup asks only
                  what can't travel.
+  --window-for ADDRESS
+                 only the PuffPAI window, for a bot on another computer: the address
+                 "puffpai pair" prints there. No bot on this computer.
   --dry-run      show every step and every file it would write, and change nothing
   --yes          download what is missing without asking
   --yes-ollama   on Linux, install Ollama with its official script without asking
@@ -79,6 +86,7 @@ while [ "$#" -gt 0 ]; do
         --python)     [ "$#" -ge 2 ] || fail "--python needs a file."; PYTHON="$2"; shift ;;
         --data-dir)   [ "$#" -ge 2 ] || fail "--data-dir needs a folder."; DATA_DIR="$2"; shift ;;
         --from)       [ "$#" -ge 2 ] || fail "--from needs a folder."; FROM_FOLDER="$2"; shift ;;
+        --window-for) [ "$#" -ge 2 ] || fail "--window-for needs the address puffpai pair prints on the bot's computer."; WINDOW_FOR="$2"; shift ;;
         --no-setup)   NO_SETUP=1 ;;
         --dry-run)    DRY_RUN=1 ;;
         --yes)        YES_TOOLS=1 ;;
@@ -93,6 +101,11 @@ done
 BOT_SHAPE='^[A-Za-z0-9][A-Za-z0-9 _.-]{0,59}$'
 if ! [[ "$BOT" =~ $BOT_SHAPE ]] || [[ "$BOT" == *..* ]]; then
     fail "'$BOT' can't be a bot name. Use letters, numbers, spaces, dots, dashes or underscores."
+fi
+
+ADDRESS_SHAPE='^[A-Za-z0-9.:/-]+$'
+if [ -n "$WINDOW_FOR" ] && ! [[ "$WINDOW_FOR" =~ $ADDRESS_SHAPE ]]; then
+    fail "That is not an address this window can use. Give the one puffpai pair prints on the bot's computer."
 fi
 
 # WritersBot's own copy of this code: the bot comes whole from its bundle, by its own installer. Inside its container,
@@ -194,6 +207,9 @@ if pretends ollama || { ! have ollama && ! ollama_answers; }; then
     [ -x "$OWN_OLLAMA" ] || NEED_OLLAMA=1
 fi
 
+# Only the window: the bot, with its apps and its brain, is on the other computer.
+if [ -n "$WINDOW_FOR" ]; then NEED_NODE=0; NEED_OLLAMA=0; fi
+
 # A try reads an app's page with a browser, since most apps draw theirs with JavaScript.
 BROWSER=0
 for cand in chromium chromium-browser google-chrome google-chrome-stable microsoft-edge brave-browser; do
@@ -201,9 +217,11 @@ for cand in chromium chromium-browser google-chrome google-chrome-stable microso
 done
 if [ "$IS_MAC" = "1" ] && [ -d "/Applications/Google Chrome.app" ]; then BROWSER=1; fi
 [ -n "$PYTHON" ] && say "  Found Python ($PYTHON)."
-[ "$NEED_NODE" = "0" ] && say "  Found Node.js."
-[ "$BROWSER" = "0" ] && say "  No Chromium or Chrome here. Toolsmith reads an app's page with one, so most apps can't be checked without it. Install Chromium or Chrome when you can."
-[ "$NEED_OLLAMA" = "0" ] && say "  Found Ollama."
+[ -z "$WINDOW_FOR" ] && [ "$NEED_NODE" = "0" ] && say "  Found Node.js."
+if [ "$BROWSER" = "0" ] && [ -z "$WINDOW_FOR" ]; then
+    say "  No Chromium or Chrome here. Toolsmith reads an app's page with one, so most apps can't be checked without it, and the PuffPAI window opens in one. Install Chromium or Chrome when you can."
+fi
+[ -z "$WINDOW_FOR" ] && [ "$NEED_OLLAMA" = "0" ] && say "  Found Ollama."
 
 OFFER_PY=0; OFFER_NODE=0; OFFER_OLLAMA=0
 if [ -z "$PYTHON" ] && tools_pin python "$PLATFORM" >/dev/null 2>&1; then OFFER_PY=1; fi
@@ -310,6 +328,49 @@ else
     say "  Done."
 fi
 
+# D144: only the window, for a bot on another computer. No bot folder, no setup. It pairs once, on the window's own screen.
+if [ -n "$WINDOW_FOR" ]; then
+    WINDOW_ONLY="$REPO_DIR/open-buildbot-window.sh"
+    if [ "$DRY_RUN" = "1" ]; then
+        say ""
+        say "  [dry-run] would write $WINDOW_ONLY, then open the window for the bot at $WINDOW_FOR."
+        say "  Practice run done. Nothing was changed."
+        exit 0
+    fi
+    WINDOW_HOME=""
+    if [ -n "$DATA_DIR" ]; then WINDOW_HOME="export PUFFPAI_HOME=$(printf '%q' "${DATA_DIR%/}/puffpai")"; fi
+    cat > "$WINDOW_ONLY" <<EOF
+#!/usr/bin/env bash
+# Opens the PuffPAI window for the bot at $WINDOW_FOR. Written by install.sh.
+$WINDOW_HOME
+HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec "\$HERE/.venv/bin/puffpai" app --remote $WINDOW_FOR
+EOF
+    chmod +x "$WINDOW_ONLY"
+    say ""
+    say "  Written: $WINDOW_ONLY"
+    if [ "$IS_MAC" = "1" ]; then
+        cat > "$REPO_DIR/Open BuildBot window.command" <<EOF
+#!/bin/bash
+# Made by install.sh: double-click this in Finder to open the PuffPAI window for the bot at $WINDOW_FOR.
+cd $(printf '%q' "$REPO_DIR") || { echo "BuildBot's folder has moved. Run its setup again."; exit 1; }
+./open-buildbot-window.sh
+EOF
+        chmod +x "$REPO_DIR/Open BuildBot window.command"
+        say "  Written: $REPO_DIR/Open BuildBot window.command"
+    fi
+    say "  Run it to open the window. The first time, it asks for a pairing code."
+    say "  To get the code, go to the computer your bot runs on and find the folder BuildBot was installed in."
+    say "  On Windows, double-click Sign in a browser.cmd there. On Linux or a Jetson, open a terminal there and type ./signin-buildbot.sh"
+    say "  If that file is not there, type this in a terminal on that computer: puffpai pair --running"
+    # The window outlives this script, and the temporary folders go when it ends.
+    exec 1>&3 2>&4
+    unset TMPDIR PIP_CACHE_DIR
+    code=0
+    "$PUFFPAI" app --remote "$WINDOW_FOR" || code=$?
+    exit "$code"
+fi
+
 # --- 3. Your bot's own folder ---------------------------------------------------
 step 3 "Your bot's own folder"
 # The same place as puffpai_core.paths.data_root.
@@ -404,7 +465,7 @@ echo "Open the link above in your browser on this computer. For a new link, run 
 if [ "$IS_MAC" = "1" ]; then
     tools_write_mac_launchers "$LAUNCH_DIR" "$LAUNCH_DIR" || say "  The Finder launchers could not be written. The .sh ones work."
 fi
-say "  Next time, run $LAUNCH_DIR/start-buildbot.sh: it starts your bot in the background and opens the chat here."
+say "  Next time, run $LAUNCH_DIR/start-buildbot.sh: it starts your bot in the background and opens the PuffPAI window, or the chat here if the window can't open."
 say "  stop-buildbot.sh next to it stops it. chat-buildbot.sh opens another chat while it runs."
 say "  signin-buildbot.sh makes a new link that signs a browser in to your Desktop."
 

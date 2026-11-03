@@ -5,8 +5,12 @@ v1's rule stays: a bundle carries the build's decisions, not model files, and im
 refuses the whole bundle on one bad one. No network at any point, either way.
 
 **It travels:** the bot's name and look, who your bot is, what opens first, its Home layout, which apps and their
-versions, the code of what Toolsmith built or you added from a folder, and, by name only, the books, linked folders and
-pinned documents.
+versions, the code of what Toolsmith built or you added from a folder, and, by name only, the books, linked folders,
+pinned documents and added documents (a copy in ``uploads`` goes by name only if it is pinned).
+
+**They come back from a list (D148):** :func:`apply` keeps what came as ``settings\moved_list.json``, and Knowledge shows it
+as "Recommended for this bot" (:func:`recommended`). She picks. Each row goes by the normal path and its normal Yes, and
+nothing downloads on its own.
 
 **They come back from a list (D148):** :func:`apply` keeps what came as ``settings\moved_list.json``, and Knowledge shows it
 as "Recommended for this bot" (:func:`recommended`). She picks. Each row goes by the normal path and its normal Yes, and
@@ -36,7 +40,7 @@ from typing import Any
 from . import bot, jsonfile, layout, opens
 from .packages import fsutil
 from .zone1 import fetched
-from .zone1.folders import _inside, _vault_places, canon, pinned_paths
+from .zone1.folders import _inside, _vault_places, added_paths, canon, pinned_paths
 
 SCHEMA = "puffpai-bot/1"
 MAIN = "puffpai-bot.json"
@@ -65,7 +69,7 @@ STAYS = (
     "Paired devices and phones.",
     "What is inside your apps. Each app starts empty there.",
     "People and You.",
-    "The documents themselves. Linked folders and pinned documents go by name only, to link and pin again.",
+    "The documents themselves. Linked folders, pinned documents and documents you added go by name only, to link, pin and add again. Other copies sent from a device aren't named, so send those again.",
     "Books and model files. Books come back from a list on Knowledge, and the brain is picked again in setup.",
     "Your Yes answers: the Bridge, Drawbridge's setting, and changing your documents start as a new bot does, and each app asks its own Yes.",
     "Tool servers and APIs you added, with their keys. They go by name only, to add again.",
@@ -270,7 +274,7 @@ def export(state: Path | str, registry: Any, packages: Any, folder: Path | str) 
     record = {"schema": SCHEMA, "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **settings,
               "apps": apps,
               "knowledge": {"books": books, "topics": _plan_topics(state), "linked": _names(Library(None, state).linked()),
-                            "pinned": _names(pinned_paths(state))},
+                            "pinned": _names(pinned_paths(state)), "documents": _names(added_paths(state))},
               "added": _added_names(state), "stays": list(STAYS)}
     body = json.dumps(record, indent=1, ensure_ascii=False, sort_keys=True)
     found = private_in(body)
@@ -383,10 +387,11 @@ def to_add(record: dict) -> list[dict]:
 
 
 def lines_for(record: dict) -> dict:
-    """What she is told before and after: ``{name, apps, not_here, books, linked, pinned, added, left_out, stays}``."""
+    """What she is told before and after: ``{name, apps, not_here, books, linked, pinned, documents, added, left_out, stays}``."""
     know = record.get("knowledge") if isinstance(record.get("knowledge"), dict) else {}
     apps = [a for a in record.get("apps") or [] if isinstance(a, dict)]
     here = [a for a in apps if a.get("source") and _runs_here(record, a)]
+    documents = know.get("documents")                  # a bundle from before there was such a list has none
     return {"name": str((record.get("bot") or {}).get("name") or ""),
             "topics": _clean_topics(know.get("topics")),
             "apps": [{"id": a.get("id"), "name": a.get("name"), "version": a.get("version"), "source": a.get("source")} for a in here],
@@ -394,6 +399,7 @@ def lines_for(record: dict) -> dict:
             "left_out": [{"name": a.get("name"), "why": a.get("left_out"), "from": a.get("from")} for a in apps if a.get("left_out")],
             "books": [str(b.get("title")) for b in know.get("books") or [] if isinstance(b, dict)],
             "linked": [str(x) for x in know.get("linked") or []], "pinned": [str(x) for x in know.get("pinned") or []],
+            "documents": [str(x) for x in documents] if isinstance(documents, list) else [],
             "added": [str(x) for x in record.get("added") or []], "stays": list(STAYS)}
 
 

@@ -54,14 +54,17 @@ Desktop, Windows and Mac get none of this). Three things differ from Docker Desk
   that came up after the Core (``proxy.py`` says what holds there and what doesn't).
 - An ``internal: true`` network still gives this computer an address on it, and an
   app can reach anything listening on every address of this computer through that
-  (seen on Docker 26.1.5: a page on 0.0.0.0 answered). So the inner network is made
-  with no address on this computer's side (``inhibit_ipv4``).
+  (seen on Docker 26.1.5 and 29.9.2: a page on 0.0.0.0 answered). So the inner network
+  is made with no address on this computer's side (``inhibit_ipv4``). Docker 26 still
+  names a gateway for it, one that is no address here. Docker 29 names none.
 A firewall such as ufw can stop containers reaching this computer. That is the
 owner's firewall and the Core does not change it: :func:`gate_problem` says so in
-plain words after the start: Steward's start takes the app down again, a Toolsmith
-try is told. While an app runs, a call the firewall drops ends after
-``GATE_CONNECT_S``. With the address not found or the bind refused, the Core runs on
-and the Docker app does not start.
+plain words after the start, and the app or Toolsmith's try comes down again. While
+an app runs, a call the firewall drops ends after ``GATE_CONNECT_S``. With the address
+not found or the bind refused, the Core runs on and the Docker app does not start.
+The same check after the start also takes the app down when the engine did not honour
+``inhibit_ipv4`` (the inner gateway is an address of this computer) or the network
+can't be read.
 Not checked on: Docker Desktop for Linux beyond its name, rootless Docker, Podman,
 and an engine on another computer (for those the bind or the start refuses).
 """
@@ -70,6 +73,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import shutil
 import socket
@@ -276,7 +280,7 @@ def override(manifest: dict, compose_path: Path | str, *, proxy_url: str | None 
     if problems:
         raise WallRefused(problems)
     if floor and not allow_floor:
-        raise WallRefused([f"{item} can get around the Bridge, so it needs your PIN or Windows Hello first."
+        raise WallRefused([f"{item} can get around the Bridge, so it needs your PIN{' or Windows Hello' if os.name == 'nt' else ''} first."
                            for item in floor])
     if proxy_url is None:
         from .service import current
@@ -291,17 +295,21 @@ def override(manifest: dict, compose_path: Path | str, *, proxy_url: str | None 
     return out
 
 
-def _gateways(network: str, runner: Runner) -> list[str]:
-    """The IPv4 gateway addresses Docker names for *network*. Empty when the engine gives no readable answer."""
+def _gateways(network: str, runner: Runner) -> list[str] | None:
+    """The IPv4 gateway addresses Docker names for *network*. Empty: it answered and names none, so there is no such
+    address on this computer. None: the engine gave no readable answer, which proves nothing."""
     r = runner(["docker", "network", "inspect", network, "--format", "{{json .IPAM.Config}}"], timeout=20)
-    if r.returncode != 0:
-        return []
+    if r.returncode != 0 or not (r.stdout or "").strip():
+        return None
     try:
-        config = json.loads(r.stdout or "null") or []
-        found = [str(c.get("Gateway") or "") for c in config if isinstance(c, dict)]
-    except (ValueError, AttributeError):
+        config = json.loads(r.stdout)
+    except ValueError:
+        return None
+    if config is None:
         return []
-    return [g for g in found if g and "." in g]
+    if not isinstance(config, list) or not all(isinstance(c, dict) for c in config):
+        return None
+    return [g for g in (str(c.get("Gateway") or "") for c in config) if g and "." in g]
 
 
 def bridge_gateway(*, runner: Runner = _run) -> str:
@@ -311,7 +319,7 @@ def bridge_gateway(*, runner: Runner = _run) -> str:
         found = _gateways("bridge", runner)
     except (OSError, subprocess.SubprocessError):
         return ""
-    for gateway in found:
+    for gateway in found or []:
         try:
             ip = ipaddress.ip_address(gateway)
         except ValueError:
@@ -361,10 +369,30 @@ def wall_kw(proxy: Any, *, runner: Runner = _run) -> dict:
     return {**kw, "host_gateway": True}
 
 
-def gate_problem(run: Callable[[list[str]], int], host_proxy_port: int, *, tries: int = 2, pause: float = 1.0) -> str:
-    """After a start on plain Linux Docker: can the app's gate reach the proxy? ``""``, or the plain reason.
-    *run* runs ``docker compose <args>`` for this app and gives the exit code. A bare connection: it opens
-    nothing and sends no credential, so the proxy writes no ledger line for it."""
+def _inner_problem(package_id: str, runner: Runner) -> str:
+    """Does this app's inner network leave a way to this computer? ``""`` when the engine answered and names no gateway
+    that is an address here. A failed read fails closed."""
+    try:
+        gateways = _gateways(inner_network(package_id), runner)
+    except (OSError, subprocess.SubprocessError):
+        gateways = None
+    if gateways is None:
+        return "The app's inner Docker network could not be read, so nothing shows the Docker wall holds."
+    if any(_is_here(g) for g in gateways):
+        return ("This Docker engine gave this computer an address on the app's inner network, so the app could reach "
+                "this computer and the Docker wall does not hold here.")
+    return ""
+
+
+def gate_problem(run: Callable[[list[str]], int], host_proxy_port: int, package_id: str, *, tries: int = 2,
+                 pause: float = 1.0, runner: Runner = _run) -> str:
+    """After a start on plain Linux Docker: did the wall hold, and can the app's gate reach the proxy? ``""``, or the
+    plain reason. No containers are started for it. *run* runs ``docker compose <args>`` for this app and gives the
+    exit code. The gate's try is a bare connection: it opens nothing and sends no credential, so the proxy writes no
+    ledger line for it."""
+    problem = _inner_problem(package_id, runner)
+    if problem:
+        return problem
     args = ["exec", "-T", GATE, "socat", "-u", "OPEN:/dev/null",
             f"TCP:{HOST_ALIAS}:{int(host_proxy_port)},connect-timeout={GATE_CONNECT_S}"]
     for attempt in range(max(1, tries)):
@@ -392,7 +420,8 @@ def probe(package_id: str, *, core_port: int = 8420, proxy_port: int | None = No
     Every try must fail. ``{"held": bool, "reached": [what got through]}``.
 
     On Linux this computer has other addresses than Docker Desktop's. A closed port looks the same as no way
-    there, so the inner network's gateway must also not be an address of this computer at all."""
+    there, so the inner network's gateway must also not be an address of this computer at all. An engine that
+    answers and names no gateway has none to try; only a failed read is ``probe_failed``."""
     net = inner_network(package_id)
     tries = {"internet_by_number": "https://1.1.1.1", "internet_by_name": "https://example.com",
              "this_computer_by_name": f"http://{HOST_ALIAS}:{core_port}",
@@ -402,8 +431,8 @@ def probe(package_id: str, *, core_port: int = 8420, proxy_port: int | None = No
         try:
             inner = _gateways(net, runner)
         except (OSError, subprocess.SubprocessError):
-            inner = []
-        if not inner:
+            inner = None
+        if inner is None:
             return {"held": False, "reached": ["probe_failed"]}
         if any(_is_here(g) for g in inner):
             reached.append("this_computer_by_inner_gateway")

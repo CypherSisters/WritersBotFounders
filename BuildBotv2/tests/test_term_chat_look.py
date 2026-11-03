@@ -203,7 +203,7 @@ def test_the_screenshot_turn_has_no_raw_tool_lines():
 
 def test_every_concierge_tool_has_plain_words_and_any_other_is_working():
     assert set(termchat.TOOL_WORDS) == {*concierge.CORE_TOOL_NAMES, concierge.READ_PINNED, concierge.SEND_DOCUMENT,
-                                      concierge.SHOW_PASSAGE, concierge.OPEN_IN_PROGRAM}
+                                      concierge.SHOW_PASSAGE, concierge.OPEN_IN_PROGRAM, concierge.SKILL_VIEW}
     for name in concierge.CORE_TOOL_NAMES:
         assert name not in termchat.tool_line({"tool": name})
     assert termchat.tool_line({"tool": "freshtable.add_shopping"}) == "Working..."

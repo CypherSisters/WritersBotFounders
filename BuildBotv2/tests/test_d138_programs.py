@@ -551,6 +551,33 @@ def test_a_linked_folder_and_a_pinned_file_open(state, tmp_path, monkeypatch):
     assert programs.open_question(state, {"file": "Novel.docx"}, CTX)["file"].endswith("Novel.docx")
 
 
+def test_an_added_file_opens_as_a_pinned_one_does_and_no_wider(state, tmp_path, monkeypatch):
+    _desktop(state, tmp_path, monkeypatch)
+    added, beside = tmp_path / "added" / "Novel.docx", tmp_path / "added" / "Beside.docx"
+    added.parent.mkdir()
+    added.write_text("x", encoding="utf-8")
+    beside.write_text("x", encoding="utf-8")
+    vault, own = state / "vault" / "kept.docx", state / "own.docx"
+    vault.parent.mkdir(parents=True)
+    vault.write_text("x", encoding="utf-8")
+    own.write_text("x", encoding="utf-8")
+    places = {"data": str(state / "data")}
+
+    def refusals(key):
+        (state / "settings").mkdir(parents=True, exist_ok=True)
+        (state / "settings" / "folders.json").write_text(json.dumps({**places, key: [str(added), str(vault), str(own)]}), encoding="utf-8")
+        return [programs.file_refusal(state, p) for p in (added, beside, vault, own)]
+    pinned_got, added_got = refusals("pinned"), refusals("added")
+    assert added_got == pinned_got == ["", programs.FILE_OUTSIDE, programs.FILE_OUTSIDE, programs.FILE_OUTSIDE]
+    assert programs.resolve_file(state, "Novel.docx") == str(added)            # by its name too
+    assert programs.open_question(state, {"file": "Novel.docx"}, CTX)["file"].endswith("Novel.docx")
+    keys = tmp_path / "added" / "keys.pem"                                     # the walk and handable refuse it: so does this
+    keys.write_text("x", encoding="utf-8")
+    for key in ("pinned", "added"):
+        (state / "settings" / "folders.json").write_text(json.dumps({**places, key: [str(keys)]}), encoding="utf-8")
+        assert programs.file_refusal(state, keys) == programs.FILE_OUTSIDE
+
+
 def test_open_in_a_program_that_is_not_hers_is_refused(state, tmp_path, monkeypatch):
     _desktop(state, tmp_path, monkeypatch)
     _doc(state)

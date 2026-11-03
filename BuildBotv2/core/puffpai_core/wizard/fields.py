@@ -11,6 +11,7 @@ import os
 import posixpath
 import re
 import sys
+from pathlib import Path
 from typing import Any, Mapping
 
 SECRET_TYPES = ("secret", "secret_confirm")
@@ -88,6 +89,23 @@ def expand_path(text: Any, platform: str | None = None, env: Mapping[str, str] |
 
     expanded = _VAR.sub(sub, raw)
     return pathmod.normpath(expanded)
+
+
+def default_data_folder(state: Any, platform: str | None = None, env: Mapping[str, str] | None = None) -> str | None:
+    """The data folder setup suggests for this bot, and uses on Enter. None when its variable isn't there. One rule:
+    ``zone1.folders.Library`` asks this too, so a folder setup made is never taken for one she chose."""
+    platform = platform or this_platform()
+    base = "%USERPROFILE%\\PuffPAI Data" if platform == "windows" else "~/PuffPAI Data"
+    sep = "\\" if platform == "windows" else "/"
+    # install.sh --data-dir (a small home disk), or a container (WritersBot): with no env given it is this process's
+    # own, as expand_path reads it, so the data folder lands on the mount.
+    moved = str((os.environ if env is None else env).get("PUFFPAI_HOME") or "").strip()
+    if platform != "windows" and moved.startswith("/"):
+        base = moved.rstrip("/").rsplit("/", 1)[0] + "/PuffPAI Data"
+    try:
+        return expand_path(base + sep + Path(state).name, platform, env)
+    except PathError:
+        return None
 
 
 SYNCED = ("onedrive", "dropbox", "google drive", "googledrive", "icloud drive", "icloud")

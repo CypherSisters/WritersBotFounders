@@ -39,6 +39,15 @@ At Core start (the vault usually locked) the files are compared with the
 pending values on disk; a damaged pending file, or a missing one on a bot that
 has run before, is a card at start (09 section 3).
 
+**One moment for all the anchors (D151).** The Core's own writers change a file
+and hand its new value here while holding that file's ``write_lock``. The check
+holds every one of those locks while it reads, compares and hands the vault its
+values, so a live write is never read as a rollback, and none lands in the middle
+of it. Writers that do not all finish in :data:`CHECK_WAIT_S` are "can't confirm",
+which closes. The locks bind only the Core's own writers, so a program outside the
+Core is still read as it is. Honest limit: a write can still land between the vault
+opening and these locks being held, and it replaces the vault's copy first.
+
 Honest limit (09 section 9): a program that rolls back the files AND the
 pending file together while the Core is stopped and the vault is locked is
 seen at the next unlock only if it went further back than the vault's own copy.
@@ -52,8 +61,10 @@ import json
 import logging
 import os
 import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +75,9 @@ MISMATCH_LINE = ("Your Bridge settings or its record don't match what your vault
                  "closed. An old copy may have been put back. Check and open it again.")
 CANT_CONFIRM_LINE = ("PuffPAI couldn't confirm your Bridge settings against your vault, so the Bridge is closed. "
                      "Check and open it again.")
+#: How long the check waits in all for the writers to finish their writes and seals, in seconds (a writer can wait for
+#: the vault while a PIN is checked, about a second). Longer than this: it can't confirm, and the Bridge closes (D151).
+CHECK_WAIT_S = 30.0
 
 #: The four Archivist calls this module uses, with lane L3's exact parameter names (936bcc5d).
 #: tests/floor/test_l4_verifier_fixes.py checks the test double, and the real Archivist when it is here.
@@ -111,21 +125,71 @@ def find_archivist(state: Path | str | None, bus: Any = None) -> Archivist | Non
     return fn(state, bus) if callable(fn) else None
 
 
+def _policy_value(policy: Any, turned: list | None = None) -> dict:
+    """With *turned*: read quietly, and note there if the policy just turned damaged (:meth:`.policy.Policy.read_quietly`)."""
+    if turned is None:
+        return {"version": int(policy.version), "sha": str(policy.sha())}
+    version, body_sha, damaged = policy.read_quietly()
+    if damaged:
+        turned.append(True)
+    return {"version": int(version), "sha": str(body_sha)}
+
+
+def _log_value(log: Any) -> dict:
+    from .chain import GENESIS, _last_line
+    try:
+        last = _last_line(Path(log.path))          # the file on disk, not the writer's memory
+    except (OSError, ValueError):
+        last = {"n": -1, "h": "unreadable"}
+    return {"n": int(last["n"]), "h": str(last["h"])} if last else {"n": 0, "h": GENESIS}
+
+
+def _generation_value(consents: Any) -> dict | None:
+    g = consents.generation()
+    return {"generation": int(g)} if g is not None else None
+
+
+def _anchors(policy: Any, logs: dict[str, Any], consents: Any = None,
+             turned: list | None = None) -> list[tuple[str, Any, Callable[[], dict | None]]]:
+    """Each anchor: its name, the lock its writer holds across a write and its seal, and how to read its file. Always
+    this order, the one the locks are taken in: a policy save can reach the audit log (a damaged policy's card can start
+    safe mode), and no log writer or revoke reaches the policy."""
+    out: list[tuple[str, Any, Callable[[], dict | None]]] = [(POLICY, policy.write_lock, lambda: _policy_value(policy, turned))]
+    if consents is not None:
+        out.append((GENERATION, consents.write_lock, lambda: _generation_value(consents)))
+    out += [(name, logs[name].write_lock, lambda log=logs[name]: _log_value(log)) for name in sorted(logs)]
+    return out
+
+
 def current_values(policy: Any, logs: dict[str, Any], consents: Any = None) -> dict[str, dict | None]:
     """What the files say now, in the anchors' own shapes. ``consent.generation`` is None when the store
     can't vouch for its generation (edited outside PuffPAI)."""
-    out: dict[str, dict | None] = {POLICY: {"version": int(policy.version), "sha": str(policy.sha())}}
-    from .chain import GENESIS, _last_line
-    for name, log in logs.items():
-        try:
-            last = _last_line(Path(log.path))      # the file on disk, not the writer's memory
-        except (OSError, ValueError):
-            last = {"n": -1, "h": "unreadable"}
-        out[name] = {"n": int(last["n"]), "h": str(last["h"])} if last else {"n": 0, "h": GENESIS}
-    if consents is not None:
-        g = consents.generation()
-        out[GENERATION] = {"generation": int(g)} if g is not None else None
-    return out
+    return {name: read() for name, _lock, read in _anchors(policy, logs, consents)}
+
+
+class WriterBusy(RuntimeError):
+    """The writers did not all finish in :data:`CHECK_WAIT_S`: nothing can be said. ``name``: the anchor still writing."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
+@contextmanager
+def _quiet(anchors: list[tuple[str, Any, Callable[[], dict | None]]]) -> Iterator[None]:
+    """No writer of any anchor is between a write and its seal while this is held. All the locks, in :func:`_anchors`'
+    one order, within one limit, and taken before the vault's as the writers do."""
+    ends = time.monotonic() + CHECK_WAIT_S
+    held: list[Any] = []
+    try:
+        for name, lock, _read in anchors:
+            if not lock.acquire(timeout=max(0.0, ends - time.monotonic())):
+                raise WriterBusy(name)
+            held.append(lock)
+        yield
+    finally:
+        for lock in reversed(held):
+            lock.release()
 
 
 class VaultCheck:
@@ -248,10 +312,19 @@ class VaultCheck:
         return lambda head, n: self._put(name, {"n": int(n), "h": str(head)})
 
     def accept(self, policy: Any, logs: dict[str, Any], consents: Any = None) -> None:
-        """The owner opened the Bridge after a mismatch card: the files as they are now become expected."""
-        for name, value in current_values(policy, logs, consents).items():
-            if value is not None:
-                self._put(name, value)
+        """The owner opened the Bridge after a mismatch card: the files as they are now become expected. A writer
+        that does not finish raises :class:`WriterBusy`: the mismatch stands and the Bridge stays closed."""
+        turned: list = []
+        anchors = _anchors(policy, logs, consents, turned)
+        try:
+            with _quiet(anchors):
+                for name, _lock, read in anchors:
+                    value = read()
+                    if value is not None:
+                        self._put(name, value)
+        finally:
+            if turned:
+                policy.say_damaged()
         self.mismatch = False
         self.problems = []
 
@@ -275,42 +348,52 @@ class VaultCheck:
         if a is None:
             return [{"what": "vault", "why": self.problem}] if self.problem else []
         problems: list[dict] = []
-        cur = current_values(policy, logs, consents)
-        expected: dict[str, dict] = {}
-        with self._lock:
-            pending = dict(self.pending)
-        for name in cur:
-            try:
-                kept = a.anchor_get(name)
-            except Exception:  # noqa: BLE001 - locked or tampered: can't confirm, never "no anchor"
-                problems.append({"what": name, "why": "cant_confirm"})
-                continue
-            if kept is not None and not isinstance(kept, dict):
-                problems.append({"what": name, "why": "cant_confirm"})
-                continue
-            exp = pending.get(name, kept)
-            if exp is None:
-                continue                          # nothing expected yet: the first value is taken below
-            expected[name] = exp
-            if cur[name] is None:
-                problems.append({"what": name, "why": "store_damaged"})
-            elif cur[name] != exp:
-                problems.append({"what": name, "why": "rolled_back", "kept": exp, "now": cur[name]})
-            elif kept is not None and name in (POLICY, GENERATION):
-                field = "version" if name == POLICY else "generation"
-                if isinstance(kept.get(field), int) and cur[name][field] < kept[field]:
-                    problems.append({"what": name, "why": "rolled_back", "kept": kept, "now": cur[name]})
+        turned: list = []
+        anchors = _anchors(policy, logs, consents, turned)
+        try:
+            with _quiet(anchors):                 # every file and what is expected, from one moment (D151)
+                cur: dict[str, dict | None] = {}
+                expected: dict[str, dict] = {}
+                with self._lock:
+                    pending = dict(self.pending)
+                for name, _lock, read in anchors:
+                    cur[name] = read()
+                    try:
+                        kept = a.anchor_get(name)
+                    except Exception:  # noqa: BLE001 - locked or tampered: can't confirm, never "no anchor"
+                        problems.append({"what": name, "why": "cant_confirm"})
+                        continue
+                    if kept is not None and not isinstance(kept, dict):
+                        problems.append({"what": name, "why": "cant_confirm"})
+                        continue
+                    exp = pending.get(name, kept)
+                    if exp is None:
+                        continue                  # nothing expected yet: the first value is taken below
+                    expected[name] = exp
+                    if cur[name] is None:
+                        problems.append({"what": name, "why": "store_damaged"})
+                    elif cur[name] != exp:
+                        problems.append({"what": name, "why": "rolled_back", "kept": exp, "now": cur[name]})
+                    elif kept is not None and name in (POLICY, GENERATION):
+                        field = "version" if name == POLICY else "generation"
+                        if isinstance(kept.get(field), int) and cur[name][field] < kept[field]:
+                            problems.append({"what": name, "why": "rolled_back", "kept": kept, "now": cur[name]})
+                # The vault keeps what should be here, or the values just agreed on. Still under the locks: no newer seal
+                # can be overwritten, and no change made after the compare can be taken in as agreed.
+                for name, value in (expected if problems else cur).items():
+                    if value is not None:
+                        self._put(name, value)
+        except WriterBusy as exc:                 # never a pass: it can't confirm, so the Bridge closes
+            problems = [{"what": exc.name, "why": "cant_confirm"}]
+        finally:
+            if turned:
+                policy.say_damaged()              # with the locks let go: its card can start safe mode
         self.problems = problems
         if problems:
             self.mismatch = True
-            for name, exp in expected.items():   # the vault keeps what should be here
-                self._put(name, exp)
-        else:
-            for name, value in cur.items():
-                if value is not None:
-                    self._put(name, value)
         return problems
 
 
 __all__ = ["ARCHIVIST_CONTRACT", "ARCHIVIST_FOR_STATE", "AUDIT", "Archivist", "CANT_CONFIRM_LINE", "GENERATION",
-           "LEDGER", "MISMATCH_LINE", "POLICY", "VaultCheck", "contract_problems", "current_values", "find_archivist"]
+           "LEDGER", "MISMATCH_LINE", "POLICY", "VaultCheck", "WriterBusy", "contract_problems", "current_values",
+           "find_archivist"]

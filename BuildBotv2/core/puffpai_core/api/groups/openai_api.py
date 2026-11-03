@@ -11,6 +11,12 @@ conversation agent and any OpenAI-style program. A port of v1's routes (``api_se
 One turn through the same Brain as ``/v1/chat`` (``chat.brain()``), never a second pipeline, and never her "You" notes
 (``personal`` is always False: see ``chat._her_device``). The answer is the brain's text as is. The message text is
 never logged.
+
+A turn here is a full turn of the bot: the model can use its tools, her pinned documents and knowledge, and real values
+while the vault is open. That holds on this computer and, for a program key, on the home network (D147, PROPOSED,
+``api.app._network_key``). What differs for a key there: its conversations are its own, so it can't name hers, as it can on
+this computer (:func:`_conversation`), and at most ``network.KEY_TURNS`` run at once (:func:`_capped`). A ``tools`` list in
+the body is not read on either: nothing a client sends can run anything. A paired browser there is as on this computer.
 """
 
 from __future__ import annotations
@@ -21,12 +27,14 @@ import queue
 import threading
 import time
 import uuid
+from functools import wraps
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 
 from ...zone2 import conversations
 from ...zone2.errors import BrainError
-from ..auth import PROGRAM
+from ..auth import PROGRAM, PROGRAM_LABEL
+from ..network import EXTENSION, KEY_TURNS_BUSY, NETWORK_LISTENER
 from ..routing import route
 from .chat import brain, refused
 
@@ -34,6 +42,7 @@ bp = Blueprint("openai_api", __name__)
 LANE = "api-tools"
 MODEL = "puffpai"
 FALLBACK_CONVERSATION = "api"
+LAN_CONVERSATION = "lan"
 NO_MESSAGES = "No messages provided"
 NO_USER_MESSAGE = "No user message found"
 
@@ -80,6 +89,52 @@ def conversation_of(body: dict) -> str:
     return "api" + hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def _asked_by() -> str:
+    """The label she gave the program key behind this call, for any Yes card its turn raises (D147); on both listeners.
+    Any other caller: nothing."""
+    caller = g.get("caller")
+    return caller.label[len(PROGRAM_LABEL):] if caller is not None and caller.program else ""
+
+
+def _key_on_network() -> bool:
+    """A program key on the home network (D147): the one test for everything that differs here. The stamp is the server's,
+    and the gate sets the caller."""
+    caller = g.get("caller")
+    return request.environ.get("puffpai.listener") == NETWORK_LISTENER and caller is not None and caller.program
+
+
+def _capped(view):
+    """D147: at most ``network.KEY_TURNS`` turns from program keys at once on the home network, never waiting: over that, a
+    plain busy answer. It keeps workers free for the pair screen and paired devices. The slot goes back when the response
+    closes, a stream's too (waitress closes it when it ends, or at the first write after its client has gone)."""
+    @wraps(view)
+    def wrapped():
+        if not _key_on_network():
+            return view()
+        slots = current_app.extensions[EXTENSION].key_turns
+        if not slots.acquire(blocking=False):
+            return jsonify(error=KEY_TURNS_BUSY, code="key_busy"), 429
+        try:
+            resp = current_app.make_response(view())
+        except BaseException:
+            slots.release()
+            raise
+        resp.call_on_close(slots.release)
+        return resp
+    return wrapped
+
+
+def _conversation(body: dict) -> str:
+    """This turn's conversation. D147: a program key on the home network can't name one of hers, or another key's. Its id is
+    hashed with the key, so each key has its own, and a new key sees nothing of an old one. Only the hash reaches a file's
+    name. The same key and id still mean the same conversation. On this computer, and for a paired browser, as
+    :func:`conversation_of`."""
+    name = conversation_of(body)
+    if _key_on_network():
+        return LAN_CONVERSATION + hashlib.sha256(f"{g.token}\0{name}".encode("utf-8", "surrogatepass")).hexdigest()[:32]
+    return name
+
+
 def _answer(got: dict) -> str:
     return str(got.get("text") or "") or str(got.get("notice") or "")
 
@@ -99,12 +154,13 @@ def _start(question: str, conversation: str):
     """Run one turn on a worker thread, its events on a queue (``chat.chat_stream``'s pattern). Returns the queue,
     the cancel flag and the first event, so a refusal before any word can still answer 503."""
     b = brain()
+    asked_by = _asked_by()                      # the thread below has no request
     events: "queue.Queue[dict | None]" = queue.Queue()
     cancelled = threading.Event()
 
     def work() -> None:
         try:
-            b.turn(question, conversation=conversation, emit=events.put, cancelled=cancelled, personal=False)
+            b.turn(question, conversation=conversation, emit=events.put, cancelled=cancelled, personal=False, asked_by=asked_by)
         except BrainError as exc:
             events.put({"type": "error", "error": exc.message, "state": exc.code, "refused": exc})
         except Exception as exc:  # noqa: BLE001 - the caller gets a plain line
@@ -140,6 +196,7 @@ def _openai_error(message: str, status: int = 400):
 
 
 @built("POST", "/openai/v1/chat/completions", PROGRAM)
+@_capped
 def openai_chat_completions():
     body = _body()
     messages = body.get("messages")
@@ -148,13 +205,13 @@ def openai_chat_completions():
     question = question_of(messages)
     if not question:
         return _openai_error(NO_USER_MESSAGE)
-    conversation = conversation_of(body)
+    conversation = _conversation(body)
     cmpl_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
 
     if not body.get("stream"):
         try:
-            got = brain().turn(question, conversation=conversation, personal=False)
+            got = brain().turn(question, conversation=conversation, personal=False, asked_by=_asked_by())
         except BrainError as exc:
             return refused(exc)
         except ValueError as exc:
@@ -215,6 +272,7 @@ def _ollama_done(content: str, created_at: str) -> dict:
 
 
 @built("POST", "/ollama/api/chat", PROGRAM)
+@_capped
 def ollama_chat():
     body = _body()
     messages = body.get("messages")
@@ -223,12 +281,12 @@ def ollama_chat():
     question = question_of(messages)
     if not question:
         return jsonify(error=NO_USER_MESSAGE), 400
-    conversation = conversation_of(body)
+    conversation = _conversation(body)
     created_at = _now_iso()
 
     if not body.get("stream"):                  # v1's rule: whole unless stream is asked for
         try:
-            got = brain().turn(question, conversation=conversation, personal=False)
+            got = brain().turn(question, conversation=conversation, personal=False, asked_by=_asked_by())
         except BrainError as exc:
             return refused(exc)
         except ValueError as exc:

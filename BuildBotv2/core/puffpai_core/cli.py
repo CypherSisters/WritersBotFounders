@@ -31,8 +31,9 @@
   signs a browser in to the Desktop) are lane L5's.
 - ``apikey new [--label <words>] | list | revoke <label>`` (lane D137): program keys (``ppk_``, label
   ``auth.PROGRAM_LABEL``) for Home Assistant and other programs, in ``tokens.db``, with the Core running or not.
-  A program key opens only the chat routes for programs (``/openai/v1``, ``/ollama/api``), never an owner route.
-  ``new`` prints the key once; ``list`` shows labels and dates, never a key; list and revoke see program keys only.
+  A program key opens only the chat routes for programs (``/openai/v1``, ``/ollama/api``), never an owner route, on this
+  computer and on the home network (D147, PROPOSED). ``new`` prints the key once, and the addresses a program uses;
+  ``list`` shows labels and dates, never a key; list and revoke see program keys only.
 - ``start`` with no id (D94, ``Start BuildBot.cmd``): BuildBot once, in its own window (never a second Core
   for one bot), then the chat here, or the dashboard or the window when she picked that
   (``--opens chat|dashboard|window``).
@@ -846,7 +847,7 @@ START_RUNS_LINE = "BuildBot runs in {where}. {stop} stops it."
 TERMINAL_TITLE = "BuildBot chat"
 TERMINAL_WAIT_S = 3.0
 TERMINAL_OPENING = "The terminal chat is opening, in this same chat."
-TERMINAL_NOT_HERE = "Opening a terminal from here is built for Windows only so far."
+TERMINAL_NOT_HERE = "A terminal of its own opens only on Windows so far, so this is the command line in the side pane."
 TERMINAL_FAILED = "The terminal chat did not open ({why}). Chat with BuildBot.cmd opens it."
 #: The console is this program with its own install, and its cwd is the bot folder: these could load code from there.
 TERMINAL_ENV_DROPPED = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")
@@ -1240,7 +1241,8 @@ def _cmd_network(args: argparse.Namespace) -> int:
         print(body["line"])
     if not body.get("open"):
         return 1
-    print("On: BuildBot listens on your home network, and only a device you pair gets in. Open one of these there:")
+    print("On: BuildBot listens on your home network, and only a device you pair gets in. A program with a key you made "
+          "can also chat with it, using your bot's tools, documents and vault. Open one of these there:")
     for url in body.get("urls") or []:
         print(f"  {url}")
     print("Get a code with: puffpai pair. Turn this off with: puffpai network off")
@@ -1252,10 +1254,24 @@ def _cmd_network(args: argparse.Namespace) -> int:
 
 #: The one line under a new program key (lane D137).
 APIKEY_KEEP = ("Keep it somewhere safe: it is shown only now. "
-               "Programs send it as Authorization: Bearer <key>. It opens only the chat routes for programs "
-               "(/openai/v1 and /ollama/api), nothing else.")
+               "Programs send it as Authorization: Bearer <key>. It can call only the chat routes for programs "
+               "(/openai/v1 and /ollama/api). A chat through them is a full turn of your bot, from this computer or "
+               "another: it can use your bot's tools, your pinned documents and knowledge, and real values from your vault "
+               "while it is open, and it can ask for your Yes. From another computer its conversations are its own, so it "
+               "can't name your chat. On this computer it can.")
 APIKEY_NONE = "No program keys yet."
 APIKEY_LABEL_MAX = 60
+#: Where a program uses the key (D147). An Ollama-style program adds /api/chat to its address itself, so its address stops at
+#: /ollama: the routes are under /ollama/api.
+APIKEY_HERE = "A program on this computer uses:"
+APIKEY_THERE = ("A program on another computer uses this computer's address on your home network. It is one of these, "
+                "and the others may not work from there (a virtual adapter's, for one):")
+APIKEY_NO_ADDRESS = "  This computer has no home-network address right now."
+APIKEY_THERE_OFF = ("BuildBot is closed to your home network right now, so a program on another computer can't reach it. "
+                    "To turn it on, use Settings, Your home network, or with BuildBot running: {on}")
+APIKEY_HOW = ("Put the address in the program's server or base URL setting, the line for the way it talks, with the model "
+              "name puffpai. An Ollama-style program adds /api/chat itself, which makes /ollama/api/chat. These answer "
+              "while BuildBot is running.")
 
 
 def apikey_label_problem(label: str) -> str | None:
@@ -1269,10 +1285,37 @@ def apikey_label_problem(label: str) -> str | None:
     return None
 
 
+def _program_addresses(base: str) -> list[str]:
+    return [f"  OpenAI-style: {base}openai/v1", f"  Ollama-style: {base}ollama"]
+
+
+def _apikey_where() -> list[str]:
+    """Where a program uses a new key (D147): on this computer, and on another computer unless the home network is off.
+    The running Core's own port when one runs for this bot, as ``puffpai pair`` finds it."""
+    from . import botports, corelock
+    from .api import network
+    from .api.app import HOST
+    from .paths import state_dir
+    from .wizard.terminal import cli_command
+
+    state = state_dir()
+    port = botports.read(state)["port"]
+    try:
+        port = int((corelock.holder(state) or {}).get("port") or port)
+    except (TypeError, ValueError):
+        pass
+    lines = [APIKEY_HERE, *_program_addresses(f"http://{HOST}:{port}/")]
+    if not network.saved_on(state):
+        return [*lines, APIKEY_THERE_OFF.format(on=cli_command("network", "on")), APIKEY_HOW]
+    urls = network.urls_of(network.network_ports(port)[0], network.own_addresses(), network.own_names())
+    there = [line for url in urls for line in _program_addresses(url)] or [APIKEY_NO_ADDRESS]
+    return [*lines, APIKEY_THERE, *there, APIKEY_HOW]
+
+
 def _cmd_apikey(args: argparse.Namespace) -> int:
     """``puffpai apikey``: make, see and take back program keys (lane D137). A program key opens only the chat
-    routes for programs; this never issues, lists or takes back any other key. The same ``tokens.db`` the Core
-    reads (sqlite), so it works with the Core running or stopped."""
+    routes for programs, on this computer and on the home network (D147); this never issues, lists or takes back any
+    other key. The same ``tokens.db`` the Core reads (sqlite), so it works with the Core running or stopped."""
     from datetime import date
     from .api.auth import TokenStore
     from .paths import state_dir
@@ -1294,6 +1337,8 @@ def _cmd_apikey(args: argparse.Namespace) -> int:
         print(f'New program key "{label}":')
         print(f"  {key}")
         print(APIKEY_KEEP)
+        for line in _apikey_where():
+            print(line)
         return 0
     if args.action == "list":
         keys = TokenStore(state_dir() / "tokens.db").program_keys()
@@ -1556,8 +1601,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("network", help="paired devices on your home network, on by default: status, off or on")
     s.add_argument("action", nargs="?", default="status", choices=("status", "on", "off"))
     s.set_defaults(fn=_cmd_network)
-    s = sub.add_parser("apikey", help="program keys for Home Assistant and other programs: new [--label <words>], "
-                                      "list, revoke <label>")
+    s = sub.add_parser("apikey", help="program keys for Home Assistant and other programs, on this computer or another "
+                                      "on your home network: new [--label <words>], list, revoke <label>")
     s.add_argument("action", choices=("new", "list", "revoke"))
     s.add_argument("label", nargs="?", help="for revoke: the label of the key(s) to take back")
     s.add_argument("--label", dest="new_label", metavar="WORDS",

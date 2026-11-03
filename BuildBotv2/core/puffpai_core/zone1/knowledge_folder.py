@@ -83,7 +83,7 @@ _LITERAL_SYSTEM = ("C:\\Windows", "C:\\Windows.old", "C:\\Program Files", "C:\\P
                    "C:\\ProgramData", "C:\\inetpub")
 _LITERAL_USERS = ("C:\\Users",)
 _POSIX_SYSTEM = ("/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/sbin", "/sys", "/usr", "/Library",
-                 "/System")
+                 "/System", "/private/etc")
 #: A stat or settings read that failed: the check refuses.
 _UNREADABLE = (OSError, ValueError, TypeError, AttributeError)
 #: (bot, store) pairs that passed the whole of :func:`problem` in this process.

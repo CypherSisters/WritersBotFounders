@@ -40,6 +40,10 @@ class GateClosed(Exception):
     """The privacy check could not run, so this was not sent or saved."""
 
 
+class OwnWords(str):
+    """A Core-made string from a document she marked "no vault" (D146): read as an ordinary file."""
+
+
 def bind(archivist: Any) -> None:
     """The Core binds its one Archivist at start (``archivist.for_state``)."""
     global _bound

@@ -548,7 +548,8 @@ def test_python_is_never_missing_while_the_core_runs_on_3_11():
 
 
 def test_a_python_app_plan_has_no_install_python_step(tmp_path, state, monkeypatch):
-    monkeypatch.setattr(programs.shutil, "which", lambda name: None)       # no python, no node on the PATH
+    # no python, no node on the PATH; Linux still has its package manager, or there is no step to ask for
+    monkeypatch.setattr(programs.shutil, "which", lambda name: "/usr/bin/apt-get" if name == "apt-get" else None)
     w = World(tmp_path, state)
     st = w.host.settings()
     job = {"name": "Flask web app", "does": "notes"}

@@ -1,5 +1,7 @@
 """Steward: ports, placeholders, environment, start, stop, start again after a Core restart."""
 
+import sys
+import os
 import json
 
 import pytest
@@ -43,7 +45,7 @@ def test_env_for_a_package_and_for_a_walled_reader(core, monkeypatch):
     core.steward.proxy_env = None                                    # a Steward with no Zone 3 wired
     assert core.steward.env("x", {"kind": "tool"}, 18500, "t", {})["HTTPS_PROXY"] == "http://127.0.0.1:9"   # nowhere
     core.steward.proxy_env = plain
-    assert env["PUFFPAI_API"] == "http://127.0.0.1:18419" and env["PUFFPAI_DATA"].endswith("data\\x")
+    assert env["PUFFPAI_API"] == "http://127.0.0.1:18419" and env["PUFFPAI_DATA"].endswith(os.path.join("data", "x"))
     raw = {"kind": "provider", "reads": "raw", "provides": [{"slot": "zone2.runtime", "contract": 1}]}
     assert walled(raw)
     env = core.steward.env("x", raw, 18500, "ppt_new", {"NASA_API_KEY": "k"})
@@ -82,10 +84,11 @@ def test_a_process_that_dies_at_once_is_broken(installed, state):
     assert "exit 4" in str(e.value) and installed.registry.get("hello-tool")["status"] == "broken"
 
 
-def test_docker_needs_the_wall(installed, state):
+@pytest.mark.parametrize("key", ["windows" if os.name == "nt" else "mac" if sys.platform == "darwin" else "linux", "default"])
+def test_docker_needs_the_wall(installed, state, key):
     folder = state / "packages" / "hello-tool"
     data = json.loads((folder / "puffpai.json").read_text())
-    data["run"] = {"windows": {"type": "docker_compose", "file": "compose.yaml"}}
+    data["run"] = {key: {"type": "docker_compose", "file": "compose.yaml"}}
     (folder / "puffpai.json").write_text(json.dumps(data))
     # as if she said Yes to this manifest (an update): a changed file is refused before the wall (part D)
     installed.registry.update("hello-tool", manifest_sha=manifest_sha(folder))

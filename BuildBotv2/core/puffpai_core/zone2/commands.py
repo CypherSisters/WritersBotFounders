@@ -49,6 +49,7 @@ from .. import devshell
 from ..steward import jobs
 from ..zone1 import folders as zone1_folders
 from ..zone1 import secret_detector
+from ..zone3.toolsmith_zone import _fold, _plain_device, _through_a_process
 from .gate import _HANDLE
 
 IS_WINDOWS = os.name == "nt"
@@ -68,7 +69,7 @@ HIDDEN = "[a secret, hidden]"
 
 _SECRET_NAME = re.compile(r"(?i)(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PIN|CREDENTIAL|AUTH|(?:^|_)PAT$)")
 #: File names a command may never name, wherever it says they are.
-_SECRET_FILES = ("anchor.key", "terminal.json", "tokens.db", "consent.db", "audit.jsonl", "outside.jsonl",
+_SECRET_FILES = ("anchor.key", "machine.key", "terminal.json", "tokens.db", "consent.db", "audit.jsonl", "outside.jsonl",
                  "vault.log", "vault.json", "keyring.json", "tombstones.json", "vault.inbox", "pairing.json",
                  # her own programs and their Always allow switch: changed only from a paired device, never by a command
                  "programs.json")
@@ -147,12 +148,16 @@ def _protected(state: Path | str) -> list[str]:
     except Exception:  # noqa: BLE001 - unsure where the vault is: nothing runs
         raise ValueError(NO_SECRETS_LINE) from None
     places += [os.path.join(str(state), name) for name in _CORE_PLACES]
-    return [os.path.normcase(os.path.abspath(p)) for p in places]
+    # Where each really is too (a Mac's /tmp is /private/tmp), but never looked up on a server (X28).
+    real = [os.path.realpath(p) for p in places if not p.startswith(("//", "\\\\"))]
+    return list(dict.fromkeys(_fold(os.path.abspath(p)) for p in [*places, *real]))
 
 
 def _reaches(path: str, protected: list[str]) -> bool:
     """Is *path* a protected one, inside one, or a folder that holds one?"""
-    path = os.path.normcase(os.path.abspath(path))
+    path = _fold(os.path.abspath(path))
+    if not IS_WINDOWS:
+        path = "/" + path.lstrip("/")          # the kernel reads //home as /home: there it names no server
     for p in protected:
         if path == p or p.startswith(path.rstrip("\\/") + os.sep) or path.startswith(p.rstrip("\\/") + os.sep):
             return True
@@ -174,6 +179,29 @@ def _as_path(word: str, folder: str) -> Optional[str]:
     return os.path.join(folder, word)
 
 
+def _climbs(word: str) -> str:
+    """*word* with each folder part a shell may read as ``..`` written so: bash before 5.2 lets ``.*`` and ``.?`` find
+    ``..`` (Ubuntu 22.04's and a Jetson's do). Only a part with a slash after it: a bare ``.*`` is far more often a pattern
+    for grep or find. The word itself when it has no such part."""
+    parts = word.split("/")
+    return "/".join(".." if n < len(parts) - 1 and part.startswith(".") and _GLOB_CHARS.search(part)
+                    and fnmatch.fnmatch("..", part) else part for n, part in enumerate(parts))
+
+
+def _proc_by_wildcard(path: str) -> bool:
+    """A wildcard that can spell ``/proc/self`` or ``/proc/<number>``, each a way into any folder. What it leads to is
+    only there for the program that runs it, so it is judged by its words. ``/proc/c*`` can't: it is no such place."""
+    parts = [p for p in os.path.normpath(path).split("/") if p]
+    return len(parts) > 1 and fnmatch.fnmatch("proc", parts[0]) and (parts[1].isdigit() or any(
+        fnmatch.fnmatch(name, parts[1]) for name in ("self", "thread-self", "1", "12", "123", "1234", "12345", "123456")))
+
+
+def _unreadable_place(path: str) -> bool:
+    """Linux and Mac: a path through a running program (``/proc/self/cwd/..``) leads where only that program knows, here
+    the folder commands run in, so no text check can read it. The devices every program uses are no such thing."""
+    return not IS_WINDOWS and not _plain_device(path) and (_through_a_process(path) or _proc_by_wildcard(path))
+
+
 def check_command(command: Any, state: Path | str) -> str:
     """The command, or ValueError when it may not run at all."""
     if not isinstance(command, str) or not command.strip():
@@ -186,22 +214,34 @@ def check_command(command: Any, state: Path | str) -> str:
     if any(name in low for name in _SECRET_FILES) or any(p.lower().replace("\\", "/") in low for p in protected):
         raise ValueError(NO_SECRETS_LINE)
     folder = workspace(state)
-    for word in _WORD_SPLIT.split(command.replace("\\", "/")):
-        word = word.strip("\"'")
+    for written in _WORD_SPLIT.split(command.replace("\\", "/")):
+        word = written.strip("\"'")
         wild = bool(_GLOB_CHARS.search(word))
         if wild:
             base = word.rsplit("/", 1)[-1].lower()
             literal = _GLOB_CHARS.sub("", base)
             if len(literal) >= 3 and any(fnmatch.fnmatch(n, base) for n in _SECRET_FILES):
                 raise ValueError(NO_SECRETS_LINE)      # tokens.d? and the like
-        path = _as_path(word, folder)
-        if path is None:
-            continue
-        # A wildcard is looked up on this computer only: a \\server\share one would reach out before her Yes (X28).
-        hits = glob.glob(path) if wild and not path.startswith(("//", "\\\\")) else []
-        for one in [path, *hits]:
-            if _reaches(one, protected):
-                raise ValueError(NO_SECRETS_LINE)
+        # A shell never spreads a quoted word: there ".*/" is a pattern for the program it goes to.
+        climbs = _climbs(word) if wild and written[:1] not in ("'", '"') else word
+        for said in dict.fromkeys((word, climbs)):
+            path = _as_path(said, folder)
+            if path is None:
+                # A bare name: only what is really in the folder, which may be a link out of it.
+                if not said or "/" in said or said.startswith("-") or os.path.splitdrive(said)[0]:
+                    continue
+                path = os.path.join(folder, said)
+                if not wild and not os.path.lexists(path):
+                    continue
+            # On Windows two slashes name a server, and looking it up would reach out before her Yes (X28).
+            server = IS_WINDOWS and path.startswith(("//", "\\\\"))
+            # Also tidied: the folder commands run in may not be made yet, and the kernel climbs out of nothing that is
+            # not there, but by the time the command runs it is.
+            hits = glob.glob(path) + glob.glob(os.path.normpath(path)) if wild and not server else []
+            for one in [path, *hits]:
+                if _unreadable_place(one) or _reaches(one, protected) or (
+                        not server and _reaches(os.path.realpath(one), protected)):
+                    raise ValueError(NO_SECRETS_LINE)
     text = command
     if text[:1] in ("{", "["):
         try:

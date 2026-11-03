@@ -214,8 +214,8 @@ def packages_sendable():
 
 @route(bp, "POST", "/v1/packages/<id>/send", access=OWNER_DEVICE)
 def packages_send(id: str):
-    """One file to one package (D127): ``{file_name, content_b64}`` from her picker, or ``{path}`` for a document she
-    pinned or a file in a folder she linked, and no other path. The same review as any package tool call."""
+    """One file to one package (D127): ``{file_name, content_b64}`` from her picker, or ``{path}`` for a document on her
+    list or a file in a folder she linked, and no other path. The same review as any package tool call."""
     import base64
     import binascii
     from ... import send_file
@@ -229,7 +229,7 @@ def packages_send(id: str):
             lib = Library(for_state(core.state, core.bus), core.state)
             path = lib.handable(body["path"].strip().strip('"'))
             if path is None:
-                return jsonify(error="Only a document you pinned or a file in a folder you linked can be sent this way."), 400
+                return jsonify(error="Only a document on your list or a file in a folder you linked can be sent this way."), 400
             if path.stat().st_size > send_file.MAX_SEND:
                 raise send_file.SendRefused("That file is too big to send.")
             name, data = path.name, path.read_bytes()

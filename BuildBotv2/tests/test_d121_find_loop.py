@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,7 +25,7 @@ from puffpai_core.packages import plan_cover
 from puffpai_core.wizard import lines
 from puffpai_core.zone2 import apps, page_reader
 from puffpai_core.zone3 import policy
-from puffpai_core.zone3.toolsmith import agent, find, scout, shelves, tries
+from puffpai_core.zone3.toolsmith import adopt, agent, find, scout, shelves, tries
 from puffpai_core.zone3.toolsmith.errors import CloudError, CloudHeld, CloudOffline, CloudWaitVault, JobHeld, Refused
 from puffpai_core.zone3.toolsmith.link import Link
 from puffpai_core.zone3.toolsmith_host import sender, service, settings as settings_mod, store as store_mod, trials as trials_mod
@@ -420,7 +421,7 @@ def test_an_api_ends_as_not_yet_and_says_add_it_yourself(tmp_path, state, monkey
     assert run["line"] == f"A free API can do this: Free Tool, {SITE}. To use it, add it yourself under Developer, Add an API."
 
 
-@pytest.mark.parametrize("kind", ["skill", "mcp"])
+@pytest.mark.parametrize("kind", ["mcp"])
 def test_a_skill_or_tool_server_ends_as_not_yet_with_a_plain_link(kind, tmp_path, state, monkeypatch):
     _w, run = _answer(tmp_path, state, monkeypatch, kind)
     assert run["state"] == "not_yet"
@@ -458,10 +459,10 @@ def test_a_made_app_is_a_real_try_with_no_download_and_goes_to_its_own_card(tmp_
         assert man["origin"] == "made" and man["description"].startswith("Built by Toolsmith:")
         assert man["author"] == "Toolsmith" and "homepage" not in man and "github.com" not in man["needs"]["install_hosts"]
         assert end["plan_sha"] == before["plan_sha"] and "made:" not in json.dumps(end["envelope"])
-        assert any("Toolsmith builds a small app itself" in x for x in run["lines"])
+        assert any("Toolsmith builds an app itself" in x for x in run["lines"])
         assert any("Toolsmith built it itself. It waits for your Yes on its card" in x for x in run["lines"])
         system = json.dumps(model.tries[0]["system"])
-        assert "no outside service" in system and "ready-made app running" not in system
+        assert "a real package" in system and "ready-made app running" not in system
         assert "plan" in plan_cover.difference(man, before["envelope"], w.ports.plans[-1]["candidate"])[0]
     finally:
         w.host.stop(timeout=10)
@@ -582,16 +583,16 @@ def test_winding_up_says_the_untried_ones_as_not_used_then_asks_about_the_set_as
     b = B()
     b.link.job_status = lambda jid, **kw: said.append(kw)
     plan = {"candidates": [{"name": "one", "ref": "github:ex/one"}, {"name": "two", "ref": "github:ex/two"}]}
-    s = scout.Search(b, {"id": "j", "n": 0, "name": "J", "does": "", "plan": plan}, _Hooks(None), {}, [], [plan["candidates"][0]])
+    s = scout.Search(b, [{"id": "j", "n": 0, "name": "J", "does": "", "plan": plan}], {"j": _Hooks(None)}, {})
+    s.set_aside["j"].append(plan["candidates"][0])
     s.refs.add("github:ex/one")
     s._wind_up("nothing else")
     assert said == [{"not_used": [{"name": "two", "ref": "github:ex/two", "why": scout.LEFT_WHY}]}] and asked == [["one"]]
 
 
 # -- the money ---------------------------------------------------------------------------------------------------------
-def test_a_cloud_job_with_no_candidates_takes_a_share(tmp_path, state):
-    """Cap $4, two jobs that find nothing on the plan: each may spend, so each has its share of $2. The conversation
-    stops at it before its next turn, with no step limit of its own."""
+def test_a_cloud_build_may_use_the_whole_cap_and_the_senders_cap_holds_it(tmp_path, state):
+    """D152, replaces D119's share: cap $4, two jobs, one conversation with no step limit of its own. It runs to $4."""
     endless = [_needs()] + [("read_page", {"url": "https://example.org/x"})] * 500
     model = Model(endless, usd=0.5)
     w = _world(tmp_path, state, model, cap=4)
@@ -600,30 +601,9 @@ def test_a_cloud_job_with_no_candidates_takes_a_share(tmp_path, state):
                                         {"name": "Two", "does": "does two", "sample_ask": ""}])
         w.ports.consent.say_yes(b["consent"]["id"])
         end = w.host.start(b["id"], b["consent"]["id"])
+        assert len(model.looks) == 8                                           # 8 x $0.50: all of it, with no share
         for j in end["jobs"]:
-            assert j["run"]["state"] == "not_yet"
-            assert j["run"]["line"].startswith("Toolsmith stopped trying apps for this job: it spent about $2.00, which "
-                                               "reached its $2 share of your $4 limit.")
-    finally:
-        w.host.stop(timeout=10)
-
-
-def test_a_running_try_stops_at_the_share(tmp_path, state):
-    """D119 let a try run past its share. Now its next turn does not start."""
-    def endless(req, turn):
-        return ("download", {}) if turn == 0 else ("list_files", {"path": ""})
-    look = [_needs(), ("try_app", {"url_or_ref": "github:ex/seeds-a"})]
-    model = Model({"Seeds": look, "Boxes": [_needs(), FINISH]}, a_try=endless, usd=0.5)
-    w = _world(tmp_path, state, model, cap=4, items=lambda url: [_item("seeds-a")] if "=seeds+" in url else [])
-    try:
-        b = w.host.plan("Two helpers", [{"name": "Seeds", "does": "keeps seeds", "sample_ask": ""},
-                                        {"name": "Boxes", "does": "keeps boxes", "sample_ask": ""}])
-        w.ports.consent.say_yes(b["consent"]["id"])
-        end = w.host.start(b["id"], b["consent"]["id"])
-        run = end["jobs"][0]["run"]
-        assert run["state"] == "not_yet" and "reached its $2 share" in run["line"]
-        assert [t["name"] for t in run["tried"]] == ["seeds-a"] and tries.SHARE_END in run["tried"][0]["why"]
-        assert len(model.tries) == 2                                           # $0.50 x 2 looks + 2 turns = $2: no third
+            assert j["run"]["state"] == "held" and "reached the $4 limit" in j["run"]["line"]
     finally:
         w.host.stop(timeout=10)
 
@@ -746,7 +726,7 @@ DONE = {"content": [{"type": "tool_use", "id": "1", "name": "finish", "input": {
 
 
 def _search(hooks):
-    return scout.Search(_Builder(), {"id": "j", "n": 0, "name": "J", "does": "", "plan": {"candidates": []}}, hooks, {}, [], [])
+    return scout.Search(_Builder(), [{"id": "j", "n": 0, "name": "J", "does": "", "plan": {"candidates": []}}], {"j": hooks}, {})
 
 
 @pytest.mark.parametrize("error,back", [(CloudOffline("offline", "gone"), False), (CloudError("busy", "busy"), False),
@@ -819,8 +799,45 @@ def test_a_job_the_plans_time_missed_still_gets_its_find_after_her_yes(tmp_path,
     settings_mod.path(state).write_text(json.dumps(got), encoding="utf-8")
     try:
         b, end = _go(w, *GOALS["recipe"][:3])
-        assert find.OUT_OF_TIME_LINE in b["jobs"][0]["plan"]["notes"] and b["consent"]["id"]
+        assert find.OUT_OF_TIME_CLOUD_LINE in b["jobs"][0]["plan"]["notes"] and b["consent"]["id"]
         assert len(model.looks) == 2 and end["jobs"][0]["run"]["state"] == "nothing_found"
+    finally:
+        w.host.stop(timeout=10)
+
+
+def test_every_job_the_plans_time_missed_gets_its_own_look_after_her_yes(tmp_path, state):
+    """D143: from the owner's build, where three of six jobs were never searched. Each one is still looked at."""
+    model = Model([_needs(), FINISH])
+    w = _world(tmp_path, state, model)
+    got = json.loads(settings_mod.path(state).read_text(encoding="utf-8"))
+    got["timing"] = {"plan_wait_s": 0.0001}
+    settings_mod.path(state).write_text(json.dumps(got), encoding="utf-8")
+    names = ["Recipe box", "Invoice sender", "Bird log", "Shopping list", "Repair tracker", "Photo frame"]
+    try:
+        b = w.host.plan("A home helper", [{"name": n, "does": f"does {n}", "sample_ask": ""} for n in names])
+        assert all(find.OUT_OF_TIME_CLOUD_LINE in j["plan"]["notes"] for j in b["jobs"])
+        w.ports.consent.say_yes(b["consent"]["id"])
+        end = w.host.start(b["id"], b["consent"]["id"])
+        task = model.looks[0]["messages"][0]["content"][0]["text"]              # one conversation for them all (D152)
+        assert len(model.looks) == 2 and all(f'"name": "{n}"' in task for n in names)
+        assert {j["run"]["state"] for j in end["jobs"]} == {"nothing_found"}
+    finally:
+        w.host.stop(timeout=10)
+
+
+def test_a_chat_build_on_a_cloud_model_with_no_app_keeps_its_card_and_looks(tmp_path, state):
+    """D143: chat closed this card as "found nothing", so a job with no app never reached its look."""
+    from test_i3a_proof_fixes import ChatConsent, Notices
+    from puffpai_core import wiring
+    model = Model([_needs(), FINISH])
+    w = _world(tmp_path, state, model)
+    try:
+        core = types.SimpleNamespace(consent=ChatConsent(w.ports, "no"), notices=Notices())
+        cards = []
+        got = wiring.chat_toolsmith(core, w.app, wait_s=1)("catalog the boxes in my basement", {"notify": cards.append})
+        b = w.host.store.all()[-1]
+        assert not (b.get("knowledge_plan") or {}).get("topics") and not b["jobs"][0]["plan"]["candidates"]    # only the look keeps it
+        assert cards and got["error"] == wiring.CHAT_SAID_NO
     finally:
         w.host.stop(timeout=10)
 
@@ -1059,11 +1076,10 @@ class _Turns:
 
 
 class _Lines(tries.Hooks):
-    def __init__(self, share_at=None, models=None):
-        self.lines, self.share_at, self.models = [], share_at, models
+    def __init__(self):
+        self.lines = []
 
     def now(self, line): self.lines.append(line)
-    def at_share(self): return self.share_at is not None and self.models.calls >= self.share_at
 
 
 @pytest.mark.parametrize("cloud,word", [(True, "step 1: "), (False, "step 1 of at most 20: ")])
@@ -1073,14 +1089,6 @@ def test_the_progress_line(cloud, word, tmp_path):
     tries._drive(t, _Turns([]), 3)
     assert hooks.lines[0].startswith(word)
     assert ("of at most" in " ".join(hooks.lines)) is not cloud
-
-
-def test_a_try_on_the_company_stops_at_the_jobs_share_before_its_next_turn(tmp_path):
-    models = _Turns([])
-    hooks = _Lines(share_at=1, models=models)
-    t = _try(tmp_path, True, hooks)
-    tries._drive(t, models, 3)
-    assert models.calls == 1 and t.ended == tries.SHARE_END
 
 
 def test_a_cloud_try_that_falls_back_to_this_computer_has_its_limits_again(tmp_path):
@@ -1137,7 +1145,7 @@ def test_tries_still_have_their_19_tools():
         "download", "read_docs", "run", "start_server", "stop_server", "read_file", "list_files", "copy_path", "move_path",
         "make_folder", "delete_path", "read_page", "wait_for_page", "server_log", "write_file", "install_program", "ask_owner",
         "done", "give_up"})
-    assert scout.TOOL_NAMES == {"state_needs", "ask_sources", "read_page", "try_app", "use_site", "build_app", "finish"}
+    assert scout.TOOL_NAMES == {"state_needs", "add_store_app", "ask_sources", "read_page", "try_app", "use_site", "build_app", "finish"}
 
 
 def test_the_companys_rank_is_gone():
@@ -1245,7 +1253,7 @@ def test_a_service_with_no_page_works_and_is_kept_as_a_tool_the_brain_is_offered
         man = w.ports.pm["pm_1"]["manifest"]
         assert man["kind"] == "tool" and "ui" not in man and "pages" not in json.dumps(man)      # never a page that opens nothing
         assert man["abilities"]["mcp"] == {"transport": "stdio", "command": ["{python}", "mcp_server.py", "{port}"]}
-        assert man["run"]["windows"]["python"] is True and man["run"]["windows"]["start"][0] == "{python}"
+        assert man["run"][adopt.run_key()]["python"] is True and man["run"][adopt.run_key()]["start"][0] == "{python}"
         assert run["state"] == "working"
         tool_does = SERVICES[which][3]
         assert run["line"].startswith(f"{which}-service runs as a service your bot can use, with no page: ")
@@ -1258,12 +1266,12 @@ def test_a_service_with_no_page_works_and_is_kept_as_a_tool_the_brain_is_offered
         w.host.stop(timeout=10)
 
 
-def test_a_service_the_brain_can_not_reach_is_not_said_to_work(tmp_path, state):
+def test_the_small_brain_has_no_veto_on_what_the_companys_model_chose(tmp_path, state):
+    """D152: "too strict". Its tools listed and its health are the proof, so a small brain's no does not undo it."""
     w, _m, name, does = _service_world(tmp_path, state, "units", lambda req, turn: _kept(req, turn, "units"), picked=False)
     try:
         _b, end = _go(w, "A unit helper", name, does)
-        run = end["jobs"][0]["run"]
-        assert run["state"] == "not_yet" and "so it is not counted as working" in run["line"]
+        assert end["jobs"][0]["run"]["state"] == "working"
     finally:
         w.host.stop(timeout=10)
 
@@ -1381,7 +1389,7 @@ def test_a_try_of_an_mcp_server_project_is_kept_with_only_its_setup(tmp_path, st
         from puffpai_core.packages import manifest as manifest_mod
         man = w.ports.pm["pm_1"]["manifest"]
         assert manifest_mod.validate(man) == []
-        assert man["run"]["windows"] == {"type": "command", "python": True, "setup": [{"venv": True}]}
+        assert man["run"][adopt.run_key()] == {"type": "command", "python": True, "setup": [{"venv": True}]}
         assert man["health"]["file"] == "{pkg}/.buildbot/puffpai.json" and "ui" not in man
     finally:
         w.host.stop(timeout=10)

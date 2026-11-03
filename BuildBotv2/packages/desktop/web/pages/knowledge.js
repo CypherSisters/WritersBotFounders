@@ -1,6 +1,6 @@
 /* Harvested from PuffPAIBuildBot@774e27a4:dashboard/app/dashboard/knowledge/page.tsx, knowledge/MyData.tsx and
  * knowledge/BuildSources.tsx (adapted). Knowledge: search what is indexed on this computer (the search_knowledge
- * tool, POST /v1/chat/tool), her documents (pin a file, link a folder, D125 and D126), and what your builds read (lane
+ * tool, POST /v1/chat/tool), her documents (Add documents, a whole folder, V3-1), and what your builds read (lane
  * I11: Wikipedia and Gutenberg after the plan Yes, listed from GET /v1/knowledge/sources, lane I16). */
 (function () {
   "use strict";
@@ -18,6 +18,9 @@
     const q = el("input", { placeholder: "What are you looking for?", "aria-label": "Search", autocomplete: "off" });
     const out = el("div");
     const f = el("form", { class: "row", autocomplete: "off" }, [q, el("button", { class: "primary", type: "submit" }, [P.icon("search"), "Search"])]);
+    const books = el("div");
+    const nowBox = el("div", { "data-library-box": "" });     // after her Yes: what is being read now, until it ends
+    const find = findBooks(books, (id) => watchRun(nowBox, id, drawAgain));
     q.classList.add("grow");
     f.addEventListener("submit", async (ev) => {
       ev.preventDefault();
@@ -27,11 +30,16 @@
       clear(out);
       if (r.status !== 200) { out.appendChild(el("p", { class: "fail", text: P.said(r, "The search did not run.") })); return; }
       const list = hits(r.data);
-      if (!list.length) { out.appendChild(el("p", { class: "empty", text: "Nothing found. Only your documents below and your bot's library are searched." })); return; }
+      if (!list.length) {
+        const words = q.value.trim();
+        out.append(el("p", { class: "empty", text: "Nothing found. Only your documents and your bot's library are searched." }),
+          el("button", { "data-find-these": "", text: "Find books about \u201c" + words + "\u201d", on: { click: () => find(words) } }));
+        return;
+      }
       out.appendChild(el("ul", { class: "lines" }, list.map((h) => el("li", {}, [el("div", {}, [el("b", { text: h.title }),
         h.where && h.where !== h.title ? el("div", { class: "faint small", text: h.where }) : null, h.text ? el("div", { class: "small", text: h.text }) : null])]))));
     });
-    t.body.append(f, out);
+    t.body.append(f, out, books, nowBox);
     return t.node;
   }
 
@@ -52,100 +60,204 @@
     return f.name + " is on its way to this device.";
   }
 
-  let carried = "";     // a line that outlives the tile being drawn again (D134: what an upload did)
+  /* What a batch is doing lives here, not in a tile: the page can be drawn again at any moment while one runs. */
+  let carried = [];     // what the last batch or Remove did, { text, fail }: every new tile shows it, until the page is drawn for her
+  let adding = false;   // one dialog or batch at a time
+  let ended = 0;        // batches ended: a tile begun before one ended has read an old list
+  let shown = null;     // the newest tile, which may not be the one a batch began on, or on the page yet
+  let library = null;   // the library tile: { node, seen, fetching, reader }
+  let watching = null;
 
-  /* Her documents, in one obvious place (D125, D126): one file pinned to the bot, for every chat, and whole folders
-   * linked, each with what it read and what it couldn't. Developer's Vault page has the same folders. */
-  function adder(kind, choose, label, placeholder, button, icon, check, said, send, uploaded) {
-    const here = !L.onNetworkHost(location.hostname);
-    const fromDevice = uploaded ? P.uploadInput(said, uploaded) : null;    // D134: a file on the device she is at
-    const path = el("input", { class: "grow", type: "text", placeholder: placeholder, autocomplete: "off", spellcheck: "false", "aria-label": label });
-    const go = el("button", { on: { click: () => {
-      const p = check(path.value);
-      if (p.ok) send(p.path); else said.textContent = p.line;
-    } } }, [button]);
-    const typed = el("details", {}, [el("summary", { class: "small faint", text: here ? "Or type its path" : "Or type a path on your bot" }), el("div", { class: "row" }, [path, go])]);
-    const pick = el("button", { class: "primary", "data-pick": kind, on: { click: async () => {
-      if (!here && fromDevice) { fromDevice.click(); return; }    // at once: a browser opens its picker only on a click
-      if (!here) { said.textContent = FOLDER_FROM_DEVICE; typed.open = true; return; }
-      const got = await P.pickPath(kind, said);
-      if (got && got.upload && fromDevice) { fromDevice.hidden = false; fromDevice.click(); return; }   // shown too, if it won't open by itself
-      if (got && !got.upload) send(got); else if (said.textContent) typed.open = true;
-    } } }, [P.icon(icon), choose]);
-    return el("div", {}, [el("div", { class: "row" }, [pick, fromDevice]), typed]);
+  /* The lines of the page, in place, so what she is typing or reading stays. A document added or removed elsewhere draws the
+   * tile again. True while something is being read, so it looks again soon; null when the page has gone, so it stops. */
+  async function refreshed() {
+    if (!shown || !shown.node.isConnected) return null;
+    if (adding) return true;
+    const [docs, folders] = await Promise.all([P.api("GET", "/v1/knowledge/documents"), P.api("GET", "/v1/folders")]);
+    if (!shown || !shown.node.isConnected) return null;
+    if (adding || docs.status !== 200 || folders.status !== 200) return false;
+    const rows = L.documentRows(docs.data.documents), f = D.foldersView(folders.data);
+    const all = rows.map((d) => d.path).concat(f.linked.map((x) => x.path));
+    if (all.length !== shown.rows.size || all.some((p) => !shown.rows.has(p))) {
+      if (!shown.typed()) { const old = shown.node; old.replaceWith(await documentsTile()); }
+    } else {
+      rows.forEach((d) => { const n = shown.rows.get(d.path); n.textContent = d.line; n.className = d.ok || d.waiting ? "small" : "small warn-t"; });
+      f.linked.forEach((x) => { shown.rows.get(x.path).textContent = x.line; });
+    }
+    let more = rows.some((d) => d.waiting) || f.linked.some((x) => x.waiting);
+    if (library && library.node.isConnected) {
+      const [r, tool] = await Promise.all([P.api("GET", "/v1/knowledge/sources"), P.api("GET", "/v1/toolsmith")]);
+      const now = tool.status === 200 ? L.libraryNow(tool.data) : null;
+      const fetching = !!(now && now.fetching), seen = r.status === 200 ? r.data.count : library.seen;
+      if ((seen !== library.seen || fetching !== library.fetching) && !library.reader.firstChild && !library.busy()) {
+        const old = library.node;
+        old.replaceWith(await sourcesTile());
+      }
+      more = more || fetching;
+    }
+    return more;
+  }
+  /* While she can see the page: soon while something is being read, else every 15 seconds. Coming back to it starts it again. */
+  function watch(ms) {
+    clearTimeout(watching);
+    watching = setTimeout(async () => {
+      const more = await refreshed().catch(() => false);
+      if (more !== null && !document.hidden && shown.node.offsetParent !== null) watch(more ? 3000 : 15000);
+    }, ms);
   }
 
+  /* While a dialog or batch runs, nothing in the tile can draw it again and lose the lines. */
+  const lock = (on) => shown.node.querySelectorAll("button, input").forEach((n) => { n.disabled = on; });
+
+  /* D146: no vault for one pinned document. Off until she turns it on, for this document only. */
+  function fictionSwitch(d, act) {
+    const box = el("input", { type: "checkbox", "data-fiction": d.path, "aria-label": "No vault for this document: " + d.name });
+    box.checked = d.fiction === true;
+    box.addEventListener("change", async () => {
+      if (await act("/v1/knowledge/pinned/fiction", { path: d.path, on: box.checked }, "") === false) box.checked = !box.checked;
+    });
+    return el("div", {}, [el("label", { class: "row small" }, [box, el("b", { text: "No vault for this document" })]),
+      d.fiction === true ? null : el("div", { class: "faint small", text: "When this is on, it is an ordinary file: nothing in it is checked or kept in your vault, and it reads the same with your vault open or locked." })]);
+  }
+
+  /* V3-1: named in every chat, or only found when she asks. */
+  function namedSwitch(d, act) {
+    const box = el("input", { type: "checkbox", "data-named": d.path, "aria-label": "Name it in every chat: " + d.name });
+    box.checked = d.named;
+    box.addEventListener("change", async () => {
+      if (await act("/v1/knowledge/documents/named", { path: d.path, on: box.checked }, "Reading it through your privacy check...") === false) box.checked = !box.checked;
+    });
+    return el("label", { class: "row small" }, [box, el("b", { text: "Name it in every chat" })]);
+  }
+
+  /* An original goes from the list at once. A copy's file is deleted, so that asks once more on the same button. */
+  function removeDocument(d, act) {
+    let sure = !d.copy;
+    const b = el("button", { class: "link", "data-remove-document": d.path, text: "Remove", on: { click: () => {
+      if (!sure) { sure = true; b.textContent = "Delete this copy from your bot?"; return; }
+      act("/v1/knowledge/documents/remove", { path: d.path }, "");
+    } } });
+    return b;
+  }
+
+  /* V3-1: her documents, in one obvious place. Add documents takes many files, from the bot's computer or the device
+   * she is at, and says what happened to each. Whole folders are read where they are (D126). */
   async function documentsTile() {
     const t = P.tile({ icon: "folder_open", title: "Your documents", id: "folders", wide: true });
-    const [pins, folders, targets] = await Promise.all([P.api("GET", "/v1/knowledge/pinned"), P.api("GET", "/v1/folders"), P.sendTargets()]);
-    const pinned = pins.status === 200 && pins.data && Array.isArray(pins.data.pinned) ? pins.data.pinned : [];
+    const began = ended;
+    const [docs, folders, targets] = await Promise.all([P.api("GET", "/v1/knowledge/documents"), P.api("GET", "/v1/folders"), P.sendTargets()]);
+    if (began !== ended) return documentsTile();
+    const rows = L.documentRows(docs.status === 200 && docs.data ? docs.data.documents : []);
     const f = D.foldersView(folders.status === 200 ? folders.data : {});
-    const said = el("p", { class: "small", "data-said": "documents", text: carried });
-    carried = "";
-    t.head.appendChild(el("span", { class: "stat", text: pinned.length + " PINNED, " + f.linked.length + " LINKED" }));
+    const here = !L.onNetworkHost(location.hostname);
+    const lineEls = new Map();
+    const rowLine = (p, cls, text) => { const n = el("div", { class: cls, text: text }); lineEls.set(p, n); return n; };
+    const said = el("div", { class: "small", "data-said": "documents" }, carried.map((l) => el("p", { class: l.fail ? "fail warn-t" : null, text: l.text })));
+    t.head.appendChild(el("span", { class: "stat", text: L.documentsHead(rows.length, f.linked.length) }));
 
-    async function act(path, body, busy, line) {
+    const redraw = async () => { const old = shown.node; old.replaceWith(await documentsTile()); };
+    async function act(path, body, busy) {
       said.textContent = busy;
       const x = await P.api("POST", path, body);
-      if (x.status !== 200) { said.textContent = P.said(x); return; }
-      carried = line || "";
-      t.node.replaceWith(await documentsTile());
+      if (x.status !== 200) { said.textContent = P.said(x); return false; }
+      carried = x.data && x.data.said ? [{ text: x.data.said, fail: false }] : [];
+      await redraw();
     }
-    /* D134: a sent file is pinned, as a picked one is. A new copy of a pinned file is read again by the Core: nothing to pin. */
-    async function uploaded(d) {
-      if (!d.pinned) { await act("/v1/knowledge/pinned", { path: d.path }, "Reading it through your privacy check...", d.line); return; }
-      carried = d.line || "";
-      t.node.replaceWith(await documentsTile());
+    /* Each in turn, then one line each. Drawn again only when all are done, so no line is lost. */
+    async function addAll(items, send) {
+      adding = true;
+      carried = [];
+      lock(true);
+      carried = await L.addInTurn(items, send, (line) => { shown.said.textContent = line; });
+      adding = false;
+      ended++;
+      await redraw();
+    }
+    async function addPath(d) {
+      const x = await P.api("POST", "/v1/knowledge/documents", { path: d.path });
+      return x.status === 200 ? { said: (x.data || {}).said, ok: (x.data || {}).ok } : { error: P.said(x) };
+    }
+    async function dialog(kind) {
+      adding = true;
+      carried = [];
+      lock(true);
+      const got = await P.pickPath(kind, said);
+      adding = false;
+      lock(false);
+      return got;
     }
 
-    t.body.append(el("h3", { class: "micro", text: "Pinned documents" }),
-      el("p", { class: "small muted", text: "One file your bot knows by name in every chat, so you never link it again. It is read where it is and never changed." }));
-    if (pinned.length) t.body.appendChild(el("ul", { class: "lines", "data-documents": "pinned" }, pinned.map((d) => el("li", { "data-pinned": d.path }, [
-      el("div", { class: "grow" }, [el("b", { text: d.name }), el("div", { class: "faint small", text: d.path }), el("div", { class: "small", text: d.line })]),
-      el("div", { class: "acts" }, [P.sendPathButton(d.path, d.name, targets, said), el("button", { class: "link", text: "Unpin", on: { click: () => act("/v1/knowledge/pinned/remove", { path: d.path }, "") } })])]))));
-    t.body.append(adder("file", "Pick a file", "A file to pin", "C:\\Users\\you\\Documents\\My Novel.docx", "Pin this file", "keep", D.filePath, said,
-      (p) => act("/v1/knowledge/pinned", { path: p }, "Reading it through your privacy check..."), uploaded),
-      el("p", { class: "faint small", text: "It can be a .txt, .md, .docx or .pdf file. A file sent from this device can be up to 50 MB. To bring back your changes, send it again." }),
-      el("h3", { class: "micro", text: "Linked folders" }),
-      el("p", { class: "small muted", text: "Every document in a folder, read where it is, never copied." }));
-    if (f.linked.length) t.body.appendChild(el("ul", { class: "lines", "data-documents": "linked" }, f.linked.map((x) => el("li", { "data-linked": x.path }, [
-      el("div", { class: "grow" }, [el("code", { text: x.path }), el("div", { class: "small", text: x.line }),
-        targets.length && x.files.length ? el("details", { "data-folder-files": x.path }, [el("summary", { class: "small", text: "See its files, and send one to an app" }),
+    const fromDevice = P.uploadInput(addAll);
+    const add = el("button", { class: "primary", "data-add": "documents", on: { click: async () => {
+      if (!here) { fromDevice.click(); return; }    // at once: a browser opens its picker only on a click
+      const got = await dialog("files");
+      if (got && got.upload) { fromDevice.hidden = false; fromDevice.click(); return; }   // shown too, if it won't open by itself
+      if (got) addAll(got.map((p) => ({ name: L.fileNameOf(p), path: p })), addPath);
+    } } }, [P.icon("add"), "Add documents"]);
+
+    const path = el("input", { class: "grow", type: "text", placeholder: "C:\\Users\\you\\Documents\\Recipes", autocomplete: "off", spellcheck: "false", "aria-label": "A folder to add" });
+    const link = el("button", { text: "Add this folder", on: { click: () => {
+      const p = D.folderPath(path.value);
+      if (p.ok) act("/v1/folders/link", { path: p.path }, "Adding it..."); else said.textContent = p.line;
+    } } });
+    const typed = el("details", { hidden: "hidden", "data-folder-typed": "" }, [el("summary", { class: "small faint", text: "Or type its path" }), el("div", { class: "row" }, [path, link])]);
+    const folder = el("button", { class: "link", "data-add": "folder", text: "Add a whole folder", on: { click: async () => {
+      typed.hidden = false;
+      if (!here) { said.textContent = FOLDER_FROM_DEVICE; typed.open = true; return; }
+      const got = await dialog("folder");
+      if (got) act("/v1/folders/link", { path: got }, "Adding it..."); else if (said.textContent) typed.open = true;
+    } } });
+
+    t.body.append(el("div", { class: "row" }, [add, fromDevice, folder]), said, typed,
+      el("p", { class: "faint small", "data-add-note": "", text: "Add documents: the files you pick. Add a whole folder: every document in it, read where it is, never copied, and new ones as they come." }),
+      el("p", { class: "faint small", text: "It can be a .txt, .md, .docx or .pdf file. A file sent from a device can be up to 50 MB." }));
+    if (docs.status !== 200) t.body.appendChild(el("p", { class: "fail", text: P.said(docs) }));
+    else if (!rows.length) t.body.appendChild(el("p", { class: "empty", text: "Nothing here yet. Add a document and your bot can find it." }));
+    else t.body.append(el("p", { class: "faint small", "data-named-note": "", text: "Name it in every chat: your bot keeps its name in mind and can read it start to finish." }),
+      el("ul", { class: "lines docs", "data-documents": "list" }, rows.map((d) => el("li", { "data-document": d.path }, [
+      el("div", { class: "grow" }, [el("b", { text: d.name }), el("div", { class: "faint small", text: d.path }), rowLine(d.path, d.ok || d.waiting ? "small" : "small warn-t", d.line),
+        d.copyNote ? el("div", { class: "faint small", text: d.copyNote }) : null, namedSwitch(d, act), d.named ? fictionSwitch(d, act) : null]),
+      el("div", { class: "acts" }, [P.sendPathButton(d.path, d.name, targets, said), removeDocument(d, act)])]))));
+    if (f.linked.length) t.body.append(el("h3", { class: "micro", text: "Folders" }), el("ul", { class: "lines docs", "data-documents": "linked" }, f.linked.map((x) => el("li", { "data-linked": x.path }, [
+      el("div", { class: "grow" }, [el("code", { text: x.path }), rowLine(x.path, "small", x.line),
+        x.files.length ? el("details", { "data-folder-files": x.path }, [el("summary", { class: "small", text: targets.length ? "See its files, and send one to an app" : "See its files" }),
           el("ul", { class: "lines" }, x.files.map((d) => el("li", {}, [el("span", { class: "grow small", text: d.name }), P.sendPathButton(d.path, d.name, targets, said)])))]) : null]),
-      el("button", { class: "link", text: "Unlink", on: { click: () => act("/v1/folders/unlink", { path: x.path }, "") } })]))));
-    t.body.append(adder("folder", "Pick a folder", "A folder to link", "C:\\Users\\you\\Documents\\Recipes", "Link this folder", "add_link", D.folderPath, said,
-      (p) => act("/v1/folders/link", { path: p }, "Linking it...")), said);
+      el("button", { class: "link", text: "Remove", on: { click: () => act("/v1/folders/unlink", { path: x.path }, "") } })]))));
+    shown = { node: t.node, said: said, lines: carried, rows: lineEls, typed: () => !!path.value.trim() };
+    if (adding) lock(true);
+    if (rows.some((d) => d.waiting) || f.linked.some((x) => x.waiting)) watch(3000);
     return t.node;
   }
 
   /* The newest files in My files (D136), each with Open: what Office files made, and anything she keeps there.
    * A folder an app marked as its own (.app-files, WB2) never shows here. */
   async function filesTile() {
-    const t = P.tile({ icon: "description", title: "Your files", wide: true, id: "my-files" });
+    const t = P.tile({ icon: "description", title: "Made by your bot", wide: true, id: "my-files" });
     const r = await P.api("GET", "/v1/knowledge/files");
     const files = r.status === 200 && r.data && Array.isArray(r.data.files) ? r.data.files : [];
     const said = el("p", { class: "small", "data-said": "files" });
+    const redraw = async () => t.node.replaceWith(await filesTile());
     if (!files.length) { t.body.appendChild(el("p", { class: "empty", text: "Nothing in My files yet. What your bot makes for you lands here." })); return t.node; }
     t.body.append(el("ul", { class: "lines", "data-documents": "files" }, files.map((f) => el("li", { "data-file": f.path }, [
       el("div", { class: "grow" }, [el("b", { text: f.name }), f.folder ? el("div", { class: "faint small", text: f.folder }) : null]),
-      el("button", { class: "link", text: "Open", on: { click: async () => {
+      el("div", { class: "acts" }, [el("button", { class: "link", text: "Open", on: { click: async () => {
         said.textContent = "";
         if (L.onNetworkHost(location.hostname)) { said.textContent = await fileToDevice(f); return; }   // D130: to this device
         const x = await P.api("POST", "/v1/knowledge/files/open", { path: f.path });
         said.textContent = x.status === 200 ? "Opened on the bot's computer." : P.said(x);
-      } } })]))), said);
+      } } }), removeButton(f.name, { path: f.path }, said, redraw, "/v1/knowledge/files/remove")])]))), said);
     return t.node;
   }
 
   /* What the builds read (lane I11's GET /v1/knowledge/sources), grouped by source, each with its title,
    * link, license, size and date, and its source's credit (Wikipedia's CC BY-SA). */
   /* Remove asks once more on the same button, as v1's dialog did: it is deleted from this computer. */
-  function removeButton(label, body, said, redraw) {
+  function removeButton(label, body, said, redraw, route) {
     let sure = false;
-    const b = el("button", { class: "link", "data-remove": body.file || body.source, text: "Remove", on: { click: async () => {
+    const b = el("button", { class: "link", "data-remove": body.file || body.source || body.path, text: "Remove", on: { click: async () => {
       if (!sure) { sure = true; b.textContent = "Delete it from this computer?"; said.textContent = label; return; }
       said.textContent = "Removing...";
-      const x = await P.api("POST", "/v1/knowledge/books/remove", body);
+      const x = await P.api("POST", route || "/v1/knowledge/books/remove", body);
       if (x.status !== 200) { said.textContent = P.said(x); return; }
       said.textContent = "";
       redraw();
@@ -231,7 +343,7 @@
       if (r.status === 200) {
         const b = (r.data.builds || []).find((x) => x.id === id);
         const k = b ? L.libraryLine(b.library, b.goal, b.id) : null;
-        if (k && k.state === "done") { done(); return; }
+        if (k && (k.state === "done" || k.state === "short")) { done(); return; }      // short: D160, Building says what is missing
         if (k && k.fetching) { head.firstChild.textContent = k.line + "."; now.textContent = k.now; }
         else if (Date.now() > starts) { head.firstChild.textContent = "It did not start. Building says why."; return; }
       } else if (L.pollCanRetry(r.status)) now.textContent = L.POLL_RETRY;
@@ -336,7 +448,7 @@
   function findBooks(box, onYes) {
     const q = el("input", { class: "grow", placeholder: "A subject, or a book's title", "aria-label": "What to find books about", autocomplete: "off" });
     const out = el("div", { "data-find-books": "" });
-    const go = el("button", { class: "primary", type: "submit" }, [P.icon("search"), "Find books"]);
+    const go = el("button", { type: "submit" }, [P.icon("search"), "Find books"]);
     async function look() {
       const words = q.value.trim();
       if (!words) return;
@@ -344,12 +456,14 @@
       await plan(out, "/v1/knowledge/find", { words }, words, onYes);
       go.disabled = false;
     }
+    const fill = (words) => { q.value = words; look(); };      // D161: a search that found nothing offers it with her words
     box.append(el("form", { class: "row", autocomplete: "off", on: { submit: (ev) => { ev.preventDefault(); look(); } } }, [q, go]),
       el("p", { class: "small muted", "data-find-what": "", text: "These libraries hold free books in the public domain and reference articles, not new novels. Nothing downloads before your Yes." }), out);
-    if (asked) { q.value = asked; asked = ""; look(); return; }
+    if (asked) { const words = asked; asked = ""; fill(words); return fill; }
     P.api("GET", "/v1/knowledge/find").then((r) => {
       if (r.status === 200 && r.data.can !== "ok" && !out.childElementCount) cantLook(out, r.data, drawAgain);
     });
+    return fill;
   }
 
   async function sourcesTile() {
@@ -357,13 +471,14 @@
     const redraw = async () => t.node.replaceWith(await sourcesTile());
     const said = el("p", { class: "small", "data-said": "books" });
     const reader = el("div", { "data-reader": "" });
-    const nowBox = el("div", { "data-library-box": "" });
-    findBooks(t.body, (id) => watchRun(nowBox, id, drawAgain));
-    t.body.appendChild(nowBox);
     const [r, tool] = await Promise.all([P.api("GET", "/v1/knowledge/sources"), P.api("GET", "/v1/toolsmith")]);
     const lib = tool.status === 200 ? L.libraryNow(tool.data) : null;     // lane I19b: fetching now, said plainly
-    if (lib && lib.fetching) watchRun(nowBox, lib.id, drawAgain);
-    else if (lib) nowBox.append(el("p", { "data-library": lib.id }, [el("b", { text: lib.line + "." })]), el("p", { class: "small", "data-library-end": lib.id, text: lib.end }));
+    library = { node: t.node, seen: r.status === 200 ? r.data.count : 0, fetching: !!(lib && lib.fetching), reader: reader,
+                busy: () => !!said.textContent };
+    if (library.fetching) watch(3000);
+    if (lib) [el("p", { "data-library": lib.id }, [el("b", { text: lib.line + "." })]), lib.now ? el("p", { class: "now", text: lib.now }) : null,
+      lib.end ? el("p", { class: "small", "data-library-end": lib.id, text: lib.end }) : null]
+      .forEach((n) => n && t.body.appendChild(n));
     if (P.missing(r)) { t.body.appendChild(P.later("the list of what your builds read (GET /v1/knowledge/sources)")); return t.node; }
     if (r.status !== 200) { t.body.appendChild(el("p", { class: "fail", text: P.said(r) })); return t.node; }
     const k = L.knowledgeGroups(r.data);
@@ -375,7 +490,7 @@
       .concat(left.map((w) => el("p", { "data-waiting": w.name, text: w.name + ": " + w.line }))));
     if (k.empty && !lib && !libs.length) { t.body.append(el("p", { class: "empty", "data-said": "sources-empty", text: L.KNOWLEDGE_EMPTY }), dropTo, said); return t.node; }
     t.body.appendChild(el("p", { class: "small muted", "data-said": "library-here", text: lib ? lib.note : L.LIBRARY_DONE }));
-    if (!k.empty) t.head.appendChild(el("span", { class: "stat", text: k.count + " READ, " + k.size.toUpperCase() }));
+    if (!k.empty) t.head.appendChild(el("span", { class: "stat", text: k.count + (k.count === 1 ? " ITEM, " : " ITEMS, ") + k.size.toUpperCase() }));
     // A whole library: one row, Browse and Remove. A .zim she dropped has only this row; a download's articles follow it.
     if (libs.length) t.body.appendChild(el("ul", { class: "lines", "data-libraries": "" }, libs.map((b) => el("li", { "data-library-row": b.source }, [
       el("div", { class: "grow" }, [el("b", { text: b.title }), el("div", { class: "faint small", text: "On this computer, " + L.sizeWords(b.size) }), b.line ? el("div", { class: "small", text: b.line }) : null]),
@@ -398,16 +513,37 @@
     return t.node;
   }
 
+  /* D159: is it indexing now, how far along, and when it last finished. It asks again by itself while it is on the page. */
+  function indexTile() {
+    const t = P.tile({ icon: "manage_search", title: "Indexing", wide: true, id: "indexing" });
+    const box = el("div", { "data-index": "" });
+    t.body.appendChild(box);
+    async function look() {
+      const r = await P.api("GET", "/v1/knowledge/index", undefined, L.POLL_WAIT_MS);
+      const v = r.status === 200 ? L.indexNow(r.data, Date.now()) : null;
+      if (v) clear(box).append(el("p", { "data-index-now": v.running ? "running" : "idle" }, [el("b", { text: v.line })]),
+        ...v.more.map((line) => el("p", { class: "small muted", text: line })));
+      else if (!box.childElementCount) box.appendChild(el("p", { class: "muted", text: P.said(r, "BuildBot did not say how indexing is going.") }));
+      setTimeout(() => { if (t.node.isConnected) look(); }, v && v.running ? 3000 : 20000);
+    }
+    look();
+    return t.node;
+  }
+
   P.page("knowledge", {
     title: "Knowledge",
     async draw(sec, arg, live) {
-      if (live && !wholeAgain) return;
-      wholeAgain = false;
-      const box = el("div", { class: "tiles" }, [searchTile()]);
+      if (live && !wholeAgain) { watch(1000); return; }      // the Core said something changed: look soon
+      wholeAgain = false;                                     // a reading ended: the whole page again (drawAgain)
+      const search = searchTile();
+      const box = el("div", { class: "tiles" }, [indexTile(), search]);
       clear(sec).appendChild(box);
-      const [moved, docs, files, lib] = await Promise.all([recommendedTile(), documentsTile(), filesTile(), sourcesTile()]);
+      const [moved, , files, lib] = await Promise.all([recommendedTile(), documentsTile(), filesTile(), sourcesTile()]);
+      box.insertBefore(shown.node, search);       // the newest: a batch may have ended while this waited on another tile
+      if (shown.lines === carried) carried = [];  // she has them now
       if (moved) box.appendChild(moved);
-      box.append(docs, files, P.knowledgePlaceTile(), lib);
+      box.append(files, P.knowledgePlaceTile(), lib);
+      if (!watching) watch(15000);
     },
   });
 })();

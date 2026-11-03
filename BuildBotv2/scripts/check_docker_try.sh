@@ -7,7 +7,7 @@ PY=.venv/bin/python
 [ -x "$PY" ] || { echo "Run ./install.sh first."; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo "No: Docker is not installed here."; exit 1; }
 docker info --format '{{.ServerVersion}}' >/dev/null 2>&1 || { echo "No: Docker is installed, but this account can't reach it, or it isn't running."; exit 1; }
-"$PY" -m pip install -q --disable-pip-version-check pytest pyyaml || exit 1
+"$PY" -m pip install -q --disable-pip-version-check pytest || exit 1
 OUT="$(PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring "$PY" -m pytest -q -p no:cacheprovider tests/test_i2b_docker_live.py 2>&1)"
 CODE=$?
 printf '%s\n' "$OUT" | tail -5

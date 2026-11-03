@@ -1,12 +1,15 @@
 # Harvested from PuffPAIBuildBot@63c8a037:src/puffpai/security/data_classifier.py (patterns and validators
-# :50-663 as-is; scanning adapted: spans instead of values, one engine, health always on, no size cut)
+# :50-663 as-is but for D156 below; scanning adapted: spans instead of values, one engine, health always on, no size cut)
 """The built-in personal-data detectors (Z1C sections 6 and 7), as spans.
 
 Each ``*_spans(text)`` returns ``(start, end, label, confidence)`` over the
 exact text given. The Core recomputes values from offsets; a detector never
 returns text. The patterns below are v1's, kept word for word, including the
 false-negative classes v1 declares (first names alone, relatives without a cue,
-a plate or id typed with no word naming it, most non-English text).
+a plate or id typed with no word naming it, most non-English text). Two changes
+for time, with the same matches (D156): ``_GPS_PATTERN`` is rewritten so spaces
+can't be split many ways, and ``_EMAIL_PATTERN`` is tried once per ``@``
+(:func:`_emails`).
 
 The key detector (``secret_detector``) is the other floor detector; the engine
 in ``classify`` runs both on every path.
@@ -23,6 +26,27 @@ import re
 _EMAIL_PATTERN = re.compile(
     r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
 )
+_EMAIL_LOCAL = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-")
+_EMAIL_START = re.compile(r"\b[A-Za-z0-9._%+\-]")
+
+
+def _emails(text: str):
+    """The same matches as ``_EMAIL_PATTERN.finditer`` in linear time (D156). A match needs the whole run of name
+    characters before an ``@``, so every start in one run ends the same way: only the first is tried."""
+    done = 0
+    sign = text.find("@")
+    while sign >= 0:
+        start = sign
+        while start > done and text[start - 1] in _EMAIL_LOCAL:
+            start -= 1
+        first = _EMAIL_START.search(text, start, sign)
+        m = _EMAIL_PATTERN.match(text, first.start()) if first else None
+        if m:
+            yield m
+            done = m.end()
+        sign = text.find("@", done if m else sign + 1)
+
+
 # A phone number WITH separators or brackets ("555-867-5309", "(415) 555-0132",
 # "+1 415 555 0132", "555-0132" is too short and is not matched).
 _PHONE_SEPARATED = re.compile(
@@ -284,7 +308,7 @@ _NOT_SCHOOL_NAMES = frozenset({
 # Sky coordinates (right ascension / declination, altitude / azimuth) share the
 # shape, so a sky word just in front vetoes the match.
 _GPS_PATTERN = re.compile(
-    r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*°?\s*[NS]?\s*[,;\s]\s*"
+    r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*+°?\s*+[NS]?\s*+(?:[,;]\s*+|(?<=\s))"
     r"(-?\d{1,3}\.\d{3,})\s*°?\s*[EW]?(?![\d.])"
 )
 _SKY_COORD_CUE = re.compile(
@@ -649,7 +673,7 @@ def pii_spans(text: str) -> list[Span]:
     out: list[Span] = []
     add = out.append
 
-    for m in _EMAIL_PATTERN.finditer(text):
+    for m in _emails(text):
         add((m.start(), m.end(), "person.email", 0.95))
 
     ssn: list[tuple[int, int]] = []
@@ -831,15 +855,21 @@ def _otp_qualifier_ok(text: str, cue_start: int) -> bool:
 
 def code_spans(text: str) -> list[Span]:
     out: list[Span] = []
+    starts: set[int] = set()
+
+    def add(m: re.Match, label: str, confidence: float) -> None:
+        starts.add(m.start(1))
+        out.append((m.start(1), m.end(1), label, confidence))
+
     for m in _CVV_RE.finditer(text):
-        out.append((m.start(1), m.end(1), "financial.card_cvv", 0.9))
+        add(m, "financial.card_cvv", 0.9)
     for m in _OTP_RE.finditer(text):
-        if not any(s == m.start(1) for s, _, _, _ in out):
-            out.append((m.start(1), m.end(1), "secret.one_time_code", 0.85))
+        if m.start(1) not in starts:
+            add(m, "secret.one_time_code", 0.85)
     for m in _CODE_CUE_RE.finditer(text):
-        if _otp_qualifier_ok(text, m.start()) and not any(s == m.start(1) for s, _, _, _ in out):
-            out.append((m.start(1), m.end(1), "secret.one_time_code", 0.8))
+        if _otp_qualifier_ok(text, m.start()) and m.start(1) not in starts:
+            add(m, "secret.one_time_code", 0.8)
     for m in _CODE_FIRST_RE.finditer(text):
-        if not any(s == m.start(1) for s, _, _, _ in out):
-            out.append((m.start(1), m.end(1), "secret.one_time_code", 0.8))
+        if m.start(1) not in starts:
+            add(m, "secret.one_time_code", 0.8)
     return out

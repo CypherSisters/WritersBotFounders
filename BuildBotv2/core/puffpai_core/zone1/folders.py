@@ -9,10 +9,16 @@
   linked folders are her own folders, registered by path in
   ``<state>/settings/folders.json``.
 - A document pinned to the bot (D125, ``zone1.pinned``) is one more file for ``scan()``, listed in that same file.
+- PROPOSED for v3, built, not yet tested by her: the one list on Knowledge is the pinned documents, the ones she added
+  (``added``, in that same file, not named in chats) and the copies. A copy is a file ``uploads.save`` recorded
+  (``copies``, by its whole real path), or any file in the data folder's ``uploads`` while that folder is one BuildBot set up
+  (under the bot folder, or setup's own default). In a data folder she chose, an ``uploads`` folder may be her own, so an
+  unrecorded file there is only an ordinary file the walk reads. ``Library.remove_document`` deletes a copy's file. Nothing
+  else here deletes anything of hers.
 - ``scan()`` reads every text, Word and PDF file whole (D126), runs the gate (``path: files``), holds
   every private find in the vault automatically (or the sealed inbox while
   locked), and indexes only the gated text (handles and kinds, never values).
-- Originals are never modified, moved or renamed: the Library only reads them.
+- Originals are never modified, moved, renamed or deleted: the Library only reads them.
 - A file the floor check can't finish is not indexed at all, never half indexed
   (F3, F9). Too big, binary-looking, not text, or text that doesn't decode
   cleanly (``Garbled``, see ``classify.decode_file``): not indexed, with a plain
@@ -25,6 +31,7 @@
   (``fetched.written_by_fetch``, the Core's record in ``<state>/index``), is public reference text, not her
   data: it is indexed whole and nothing of it is held or sealed into the vault inbox. Every other file,
   including one she put in the knowledge folder or a fetched file she changed, gets the gate as above.
+- One more (D146): a pinned document she marked "no vault" (``fiction``) is an ordinary file: indexed whole, nothing held.
 
 Indexing is minimal this week: one FTS5 table of 2,000-character chunks.
 Archivist is the one writer of this index (01 Zone 2).
@@ -38,11 +45,14 @@ import os
 import re
 import sqlite3
 import stat
+import sys
 import threading
-from contextlib import closing
+import time
+from contextlib import closing, contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
+from .. import jsonfile
 from . import pinned
 from .classify import CHUNK, Binary, Garbled, TooBig, Unsupported
 from .gate import GateClosed, prepare
@@ -57,6 +67,12 @@ GATE_CLOSED_LINE = "The privacy check couldn't finish, so it isn't searchable."
 CANT_READ_LINE = "It can't be read."
 #: One background scan or search scan at a time (D126).
 SCAN_LOCK = threading.Lock()
+#: D159: what a scan is doing now, by bot folder. Only in memory, so a stop can't leave it saying "indexing".
+_SCANS: dict[str, dict] = {}
+LAST_SCAN = "last_scan.json"
+#: How long a change to her list waits for a scan to end, in seconds, as removing a book does.
+SCAN_WAIT = 30
+BUSY_LINE = "Your bot is reading your documents right now. Try again in a moment."
 #: A folder's row names this many files it couldn't read, and walks this many.
 REPORT_NAMES = 3
 REPORT_MAX = 20000
@@ -66,6 +82,15 @@ REPORT_FILES = 100
 _NOT_DOCUMENTS = {"desktop.ini", "thumbs.db"}
 #: A folder holding a file of this name belongs to an app (WB2): lists and the index leave it out, with all below it.
 APP_FILES = ".app-files"
+
+
+def _storable(text: str) -> bool:
+    """Text the index can hold. A lone surrogate is a name Windows and Linux both allow, and sqlite can't take it."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _reads(name: str) -> bool:
@@ -78,12 +103,48 @@ def _reads(name: str) -> bool:
 
 def _files_said(n: int, one: str, many: str) -> str:
     return f"{n} {one if n == 1 else many}"
+
+
+def _row_line(row: tuple | None, fiction: bool) -> str:
+    """One plain line on what a file that is there gave, from its row in the index."""
+    if row is None:
+        return "Being read now." if SCAN_LOCK.locked() else "Waiting to be read."
+    if row[0] != "indexed":
+        return row[1]
+    if fiction:
+        return FICTION_LINE
+    if row[2]:
+        return (f"{FOUND} {_files_said(row[2], 'detail looks', 'details look')} private, so your vault keeps "
+                f"{'it' if row[2] == 1 else 'them'}. Your bot sees {'it' if row[2] == 1 else 'them'} only "
+                "while your vault is open.")
+    return FOUND
 #: The index's note on a file the Core's own knowledge fetch wrote, indexed whole (lane I18d).
 PUBLIC_REASON = "Public reference text this bot fetched, indexed whole; none of it is your data."
+#: The index's note on a document she marked "no vault" (D146).
+FICTION_REASON = "No vault for this document, by her choice: indexed as an ordinary file."
+FOUND = "Your bot can find this."
+FICTION_LINE = FOUND + " No vault for this document: your bot reads it as an ordinary file."
+GONE_PINNED = "It isn't there right now. It stays pinned, and your bot reads it again when it's back."
+GONE_LISTED = "It isn't there right now. It stays on your list, and your bot reads it again when it's back."
 
 
 class FolderRefused(Exception):
     pass
+
+
+class LibraryBusy(FolderRefused):
+    """A plain line for her: a scan is running or a file is held open, and nothing on her list changed."""
+
+
+@contextmanager
+def _no_scan() -> Iterator[None]:
+    """No scan while her list changes: one reading a document now would put back the words that just went."""
+    if not SCAN_LOCK.acquire(timeout=SCAN_WAIT):
+        raise LibraryBusy(BUSY_LINE)                   # refused, not gone ahead: D146's plain words must not stay
+    try:
+        yield
+    finally:
+        SCAN_LOCK.release()
 
 
 # -- the one folder check (lane I18f): Library.link, the wizard's vault step and the Developer routes ---------
@@ -107,8 +168,18 @@ def canon(path: Path | str) -> str:
     return os.path.normcase(os.path.normpath(real))
 
 
+#: A Mac's disk reads ``~/.SSH`` as ``~/.ssh``, and ``normcase`` leaves the letters alone there. Only these two rules
+#: fold: :func:`canon` keeps the spelling, since a path it gives may be saved and shown.
+_FOLD_CASE = sys.platform == "darwin"
+
+
+def _same_case(path: str) -> str:
+    return path.casefold() if _FOLD_CASE else path
+
+
 def _overlap(a: str, b: str) -> bool:
     """*a* and *b* are the same folder, or one holds the other (both from :func:`canon`)."""
+    a, b = _same_case(a), _same_case(b)
     if a == b:
         return True
     a_, b_ = a.rstrip("\\/") + os.sep, b.rstrip("\\/") + os.sep
@@ -175,13 +246,13 @@ PIN_BLANK = "No file was given."
 PIN_WHOLE_PATH = ("Use the file's whole path, like C:\\Users\\you\\Documents\\My Novel.docx." if os.name == "nt"
                   else "Use the file's whole path, like /home/you/Documents/My Novel.docx.")
 PIN_ODD_PATH = "That path is written in a way PuffPAI can't check. Use the file's normal path."
-PIN_VAULT_UNREADABLE = "PuffPAI can't read where your vault is kept, so no file can be pinned right now."
-PIN_VAULT = "That file is part of your vault, so it can't be pinned."
-PIN_OWN = "That file is one of PuffPAI's own, so it can't be pinned."
+PIN_VAULT_UNREADABLE = "PuffPAI can't read where your vault is kept, so no file can be added right now."
+PIN_VAULT = "That file is part of your vault, so it can't be added."
+PIN_OWN = "That file is one of PuffPAI's own, so it can't be added."
 PIN_GONE = "That file isn't there."
-PIN_FOLDER = "That is a folder. Pin one file."
-PIN_KIND = "PuffPAI can pin .txt, .md, .docx and .pdf files."
-PIN_CANT_CHECK = "PuffPAI can't check that file, so it can't be pinned."
+PIN_FOLDER = "That is a folder. Add one file, or add the whole folder."
+PIN_KIND = "PuffPAI can read .txt, .md, .docx and .pdf files."
+PIN_CANT_CHECK = "PuffPAI can't check that file, so it can't be added."
 
 #: ``\\?\`` and ``\\.\`` (after any slash is made a backslash, with any number of them), the same thing in NT's own
 #: names (``\??\``, ``\Device\``), and a path that starts with three slashes or more, which names no plain place.
@@ -190,7 +261,7 @@ _DEVICE_PATH = re.compile(r"(?i)^(?:\\{2,}[?.]+(?:\\|$)|\\+\?\?(?:\\|$)|\\+devic
 
 def _inside(path: str, place: str) -> bool:
     """*path* is *place* or below it (both from :func:`canon`). A file holds nothing, so this is one way only."""
-    return (path.rstrip("\\/") + os.sep).startswith(place.rstrip("\\/") + os.sep)
+    return (_same_case(path).rstrip("\\/") + os.sep).startswith(_same_case(place).rstrip("\\/") + os.sep)
 
 
 def _pin_odd_path(path: str) -> bool:
@@ -210,12 +281,12 @@ def _pin_problem(state: Path, raw: str, data: Path | str | None) -> str:
     from .fetched import root
     from .knowledge_folder import _vaults
     text = os.path.expandvars(os.path.expanduser(raw))
-    if _pin_odd_path(text):                            # before canon: a share on this computer is not even touched
+    if not _storable(text) or _pin_odd_path(text):     # before canon: a share on this computer is not even touched
         return PIN_ODD_PATH
     if not os.path.isabs(text) or (os.name == "nt" and not os.path.splitdrive(text)[0]):
         return PIN_WHOLE_PATH                          # "\x.txt" is on whichever drive this runs from
     p = canon(raw)
-    if _pin_odd_path(p):
+    if not _storable(p) or _pin_odd_path(p):
         return PIN_ODD_PATH
     try:
         vaults = _vaults(state)                        # _vault_places, and refuses a shape it would read as no place
@@ -260,14 +331,74 @@ def file_problem(state: Path | str, file: Path | str, *, data: Path | str | None
         return PIN_CANT_CHECK
 
 
-def pinned_paths(state: Path | str) -> list[Path]:
-    """The documents pinned to this bot (``settings\\folders.json`` ``pinned``). Runs every turn: one small file."""
+def _strings(data: Any, key: str) -> list[str]:
+    """The paths under *key* in ``folders.json``. Any other shape is none: a hand-edited file never stops a turn or a page."""
+    got = data.get(key) if isinstance(data, dict) else None
+    return [p for p in got if _plain_text(p)] if isinstance(got, list) else []
+
+
+def _plain_text(p: Any) -> bool:
+    return isinstance(p, str) and bool(p.strip()) and "\x00" not in p and _storable(p)
+
+
+def _saved_paths(state: Path | str, key: str) -> list[Path]:
     try:
         data = json.loads((Path(state) / "settings" / "folders.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return []
-    got = data.get("pinned") if isinstance(data, dict) else None
-    return [Path(p) for p in got if isinstance(p, str) and p.strip()] if isinstance(got, list) else []
+    return [Path(p) for p in _strings(data, key)]
+
+
+def pinned_paths(state: Path | str) -> list[Path]:
+    """The documents pinned to this bot (``settings\\folders.json`` ``pinned``). Runs every turn: one small file."""
+    return _saved_paths(state, "pinned")
+
+
+def fiction_paths(state: Path | str) -> list[Path]:
+    """The pinned documents she marked "no vault" (``settings\\folders.json`` ``fiction``, D146)."""
+    return _saved_paths(state, "fiction")
+
+
+def added_paths(state: Path | str) -> list[Path]:
+    """The documents she added and didn't pin (``settings\\folders.json`` ``added``): searched, not named in chats."""
+    return _saved_paths(state, "added")
+
+
+def _key(path: Path) -> str:
+    """What the index calls this file. A link that leads back to itself can't be resolved: as it is listed."""
+    try:
+        return str(path.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return str(path)
+
+
+def _forget_rows(db: sqlite3.Connection, keys: set[str]) -> None:
+    for key in keys:
+        db.execute("DELETE FROM chunks WHERE path = ?", (key,))
+        db.execute("DELETE FROM files WHERE path = ?", (key,))
+
+
+def index_view(state: Path | str) -> dict:
+    """D159: is it indexing now, how far along, and when it last finished. Counts and one file's name. Only reads, and needs
+    no vault. ``files`` and ``pieces`` are what can be searched now; ``of`` is None while it is still listing the files."""
+    state = Path(state)
+    run = _SCANS.get(str(state))
+    view = {"running": run is not None, "done": 0, "of": None, "now": "", "started_at": 0, "files": 0, "pieces": 0, "not_read": 0}
+    if run is not None:
+        view.update({k: run[k] for k in ("done", "of", "now", "started_at")})
+    db_path = state / "index" / "knowledge.db"
+    if db_path.is_file():
+        try:
+            with closing(sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True, timeout=2)) as db:
+                for status, n in db.execute("SELECT status, COUNT(*) FROM files GROUP BY status"):
+                    view["files" if status == "indexed" else "not_read"] += n
+                view["pieces"] = db.execute("SELECT COUNT(*) FROM chunks_docsize").fetchone()[0]
+        except sqlite3.Error:                          # busy for a moment: the page asks again soon
+            pass
+    last = jsonfile.read(state / "index" / LAST_SCAN, {})
+    last = last if isinstance(last, dict) else {}
+    view.update(last_finished=last.get("finished_at") or 0, last_took_s=last.get("took_s") or 0, last_new=last.get("new") or 0)
+    return view
 
 
 class Library:
@@ -285,9 +416,10 @@ class Library:
     # -- settings ------------------------------------------------------------------
     def _settings(self) -> dict:
         try:
-            return json.loads(self.settings_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            got = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError):
             return {}
+        return got if isinstance(got, dict) else {}
 
     def _save(self, data: dict) -> None:
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,10 +429,11 @@ class Library:
 
     @property
     def data_folder(self) -> Path:
-        return Path(self._settings().get("data") or (self.state / "data"))
+        got = self._settings().get("data")
+        return Path(got) if _plain_text(got) else self.state / "data"
 
     def linked(self) -> list[Path]:
-        return [Path(p) for p in self._settings().get("linked", [])]
+        return [Path(p) for p in _strings(self._settings(), "linked")]
 
     # -- pinned documents (D125, zone1.pinned) ------------------------------------------
     def pinned(self) -> list[Path]:
@@ -312,10 +445,12 @@ class Library:
             raise FolderRefused(problem)
         p = Path(os.path.expandvars(os.path.expanduser(str(file)))).resolve()
         data = self._settings()
-        pins = data.setdefault("pinned", [])
+        pins = data["pinned"] = _strings(data, "pinned")
         if canon(p) in [canon(x) for x in pins]:
             raise FolderRefused("That file is pinned already.")
         pins.append(str(p))
+        if "added" in data:                            # one list only
+            data["added"] = [x for x in _strings(data, "added") if canon(x) != canon(p)]
         self._save(data)
         return p
 
@@ -323,20 +458,54 @@ class Library:
         """Takes the pin off. Its words leave the index unless a linked folder reads the file anyway. The file and
         what the vault holds are not touched."""
         data = self._settings()
-        want = canon(file)
-        before = [str(x) for x in data.get("pinned", [])]
-        data["pinned"] = [x for x in before if canon(x) != want]
-        if len(data["pinned"]) == len(before):
+        gone, plain = self._off_pinned(data, canon(file))
+        if not gone:
             return False
         self._save(data)
-        gone = [Path(x) for x in before if canon(x) == want]
+        self._leave_index(gone, plain)
+        return True
+
+    def _off_pinned(self, data: dict, want: str) -> tuple[list[Path], bool]:
+        """Out of ``pinned`` and ``fiction`` in *data*, not saved yet: ``(the paths that came off, was it "no vault")``."""
+        before = _strings(data, "pinned")
+        marked = [str(x) for x in fiction_paths(self.state)]
+        plain = any(canon(x) == want for x in marked)
+        data["pinned"] = [x for x in before if canon(x) != want]
+        if plain:
+            data["fiction"] = [x for x in marked if canon(x) != want]
+        return [Path(x) for x in before if canon(x) == want], plain
+
+    def _leave_index(self, gone: list[Path], plain: bool) -> None:
+        """Their words leave the index unless a walk reads the file anyway. Plain words never stay: that walk gates it again."""
         walked = {canon(p) for p in self._files()}
         with closing(sqlite3.connect(self.db_path)) as db, db:
             for p in gone:
-                if canon(p) not in walked:
-                    key = str(p.resolve())
-                    db.execute("DELETE FROM chunks WHERE path = ?", (key,))
-                    db.execute("DELETE FROM files WHERE path = ?", (key,))
+                if plain or canon(p) not in walked:
+                    _forget_rows(db, {str(p), _key(p)})
+
+    def is_fiction(self, path: Path | str) -> bool:
+        """She marked this pinned document "no vault" (D146), and only a pinned one is. Runs in scans and searches: no
+        ``canon`` while none is marked."""
+        marked = fiction_paths(self.state)
+        if not marked:
+            return False
+        want = canon(path)
+        return want in {canon(x) for x in marked} and want in {canon(x) for x in self.pinned()}
+
+    def set_fiction(self, path: Path | str, on: bool) -> bool:
+        """The "no vault" switch on a pinned document (D146). False when it isn't pinned. On any change the file's rows
+        go, so no old form stays and the next ``scan_file`` reads it again."""
+        want = canon(path)
+        pin = next((p for p in self.pinned() if canon(p) == want), None)
+        if pin is None:
+            return False
+        marked = [str(x) for x in fiction_paths(self.state)]
+        if any(canon(x) == want for x in marked) == bool(on):
+            return True
+        data = self._settings()
+        data["fiction"] = [x for x in marked if canon(x) != want] + ([str(pin)] if on else [])
+        self._save(data)
+        self.forget(pin)
         return True
 
     def indexed_text(self, file: Path | str) -> str:
@@ -356,20 +525,242 @@ class Library:
         for name, p in pinned.names(self.pinned()).items():
             row = self._row(str(p.resolve()))
             there = p.is_file()
-            if not there:
-                line = "It isn't there right now. It stays pinned, and your bot reads it again when it's back."
-            elif row is None:
-                line = "Waiting to be read."
-            elif row[0] != "indexed":
-                line = row[1]
-            elif row[2]:
-                line = (f"Ready. {_files_said(row[2], 'detail looks', 'details look')} private, so your vault keeps "
-                        f"{'it' if row[2] == 1 else 'them'}. Your bot sees {'it' if row[2] == 1 else 'them'} only "
-                        "while your vault is open.")
-            else:
-                line = "Ready."
-            out.append({"name": name, "path": str(p), "there": there, "line": line})
+            fiction = self.is_fiction(p)
+            line = _row_line(row, fiction) if there else GONE_PINNED
+            out.append({"name": name, "path": str(p), "there": there, "line": line, "fiction": fiction})
         return out
+
+    # -- the one list on Knowledge: pinned, added, and the copies in uploads ----------------------------------
+    def added(self) -> list[Path]:
+        return added_paths(self.state)
+
+    def add(self, file: Path | str) -> Path:
+        """On her list, not named in chats. The same one check as a pin. Already on the list is no error, and a copy is
+        never written to ``added``: the folder is its list."""
+        problem = file_problem(self.state, file, data=self.data_folder)
+        if problem:
+            raise FolderRefused(problem)
+        p = Path(os.path.expandvars(os.path.expanduser(str(file)))).resolve()
+        want = canon(p)
+        have = next((x for x in self._documents() if canon(x) == want), None)
+        if have is not None:
+            return have
+        if self.copy_place(want):                      # where a copy goes, and no copy: Word's own lock file
+            raise FolderRefused(PIN_KIND)
+        data = self._settings()
+        data["added"] = _strings(data, "added") + [str(p)]
+        self._save(data)
+        return p
+
+    def uploads_place(self) -> str:
+        """Where the copies are, from :func:`canon`. "" when that is a link, or not really in the data folder: then
+        nothing in it is a copy, so nothing in it can ever be deleted."""
+        from .knowledge_folder import is_link
+        from .uploads import FOLDER
+        data = self.data_folder
+        if not os.path.isabs(str(data)) or is_link(data / FOLDER):
+            return ""
+        place = canon(data / FOLDER)
+        return place if os.path.dirname(place) == canon(data) else ""
+
+    def _default_data(self) -> bool:
+        """The data folder is one BuildBot set up: under the bot folder, or setup's own default for this bot. A link there
+        leads to a place of hers."""
+        from ..wizard.fields import default_data_folder
+        from .knowledge_folder import is_link
+        real = canon(self.data_folder)
+        return any(own and not is_link(own) and real == canon(own) for own in (self.state / "data", default_data_folder(self.state)))
+
+    def counts_as_copy(self, real: str) -> bool:
+        """*real* (from :func:`canon`), if it is in ``uploads``, is BuildBot's own: everything there in a data folder BuildBot
+        set up, and only what ``uploads.save`` recorded in one she chose. By whole path, so a moved folder matches nothing."""
+        return self._default_data() or real in {canon(x) for x in _strings(self._settings(), "copies")}
+
+    def record_copy(self, file: Path | str) -> None:
+        """``uploads.save`` put this file here."""
+        real = canon(file)
+        data = self._settings()
+        have = _strings(data, "copies")
+        if real not in [canon(x) for x in have]:
+            data["copies"] = have + [real]
+            self._save(data)
+
+    def copy_place(self, real: str) -> bool:
+        """*real* is right in a real ``uploads`` folder and BuildBot's own. Not when that folder is a link: it holds no copies."""
+        place = self.uploads_place()
+        return bool(place) and os.path.dirname(real) == place and self.counts_as_copy(real)
+
+    def _is_copy(self, p: Path, place: str) -> bool:
+        """One regular file right in *place*, BuildBot's own, with an ending a pin takes, by its own name and by where it
+        leads, past the one check. Never a link, a ``.part`` or Word's ``~$`` lock file. Asked again just before a copy is
+        deleted."""
+        from .knowledge_folder import is_link
+        if not _reads(p.name) or p.suffix.lower() not in PIN_SUFFIXES:
+            return False
+        try:
+            regular = stat.S_ISREG(os.lstat(p).st_mode)
+        except OSError:
+            return False
+        real = canon(p)
+        return (regular and not is_link(p) and os.path.dirname(real) == place and self.counts_as_copy(real)
+                and not file_problem(self.state, p, data=self.data_folder))
+
+    def copies(self) -> list[Path]:
+        """What was sent from a device, as it is on the disk, so a copy from an earlier build nobody pinned has a row in
+        a data folder BuildBot set up. In one she chose, only what was recorded: the rest of that folder is hers."""
+        from .uploads import FOLDER
+        place = self.uploads_place()
+        if not place:
+            return []
+        folder = self.data_folder / FOLDER
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            return []
+        return [folder / n for n in names if self._is_copy(folder / n, place)]
+
+    def _documents(self) -> list[Path]:
+        """Her list, each document once: pinned, then added, then the copies."""
+        seen: dict[str, Path] = {}
+        for p in [*self.pinned(), *self.added(), *self.copies()]:
+            seen.setdefault(canon(p), p)
+        return list(seen.values())
+
+    def documents_view(self) -> list[dict]:
+        """Her one list: each document, whether it is there, one plain line on what it gave, and what it is."""
+        paths = self._documents()
+        called = {canon(p): name for name, p in pinned.names(paths).items()}
+        named = {canon(p) for p in self.pinned()}
+        copies = {canon(p) for p in self.copies()}
+        out = []
+        for p in paths:
+            real = canon(p)
+            row = self._row(_key(p))
+            there = os.path.isfile(p)
+            fiction = self.is_fiction(p)
+            problem = file_problem(self.state, p, data=self.data_folder) if there else ""   # the walk leaves this one out
+            if problem:
+                line = problem
+            elif not there:
+                line = GONE_PINNED if real in named else GONE_LISTED
+            else:
+                line = _row_line(row, fiction)
+            out.append({"name": called.get(real, str(p)), "path": str(p), "there": there, "line": line,   # names can share one
+                        "ok": there and not problem and row is not None and row[0] == "indexed",
+                        "waiting": there and not problem and row is None,
+                        "named": real in named, "copy": real in copies or (not there and self.copy_place(real)),
+                        "fiction": fiction})
+        return out
+
+    def set_named(self, file: Path | str, on: bool) -> bool:
+        """"Name it in every chat". On, a pin. Off, out of ``pinned`` and into ``added`` unless it is a copy, "no vault"
+        cleared, and read again through the gate. False when it is not on her list."""
+        want = canon(file)
+        with _no_scan():
+            data = self._settings()
+            copy = next((c for c in self.copies() if canon(c) == want), None)
+            listed = next((x for x in _strings(data, "added") if canon(x) == want), None)
+            pin = next((x for x in _strings(data, "pinned") if canon(x) == want), None)
+            if pin is None and listed is None and copy is None:
+                return False
+            if on:
+                if pin is None:
+                    self.pin(copy or listed)           # the one check, and out of ``added``
+                elif listed is not None:               # hand-edited into both: one list only
+                    data["added"] = [x for x in _strings(data, "added") if canon(x) != want]
+                    self._save(data)
+                return True
+            if pin is None:
+                return True
+            gone, plain = self._off_pinned(data, want)
+            if listed is None and copy is None and not self.copy_place(want):
+                data["added"] = _strings(data, "added") + [str(gone[0])]
+            self._save(data)                           # before the index: the walk then knows it still reads this one
+            self._leave_index(gone, plain)
+            for p in gone:
+                if os.path.isfile(p) and not file_problem(self.state, p, data=self.data_folder):
+                    self.scan_file(p)                  # through the gate, so no old form stays and its line is right
+        return True
+
+    def remove_document(self, file: Path | str) -> str | None:
+        """Off every list, and what the page says about that; None when it is not on her list. Its words leave the index
+        unless a walk still reads the file. Only a copy's file is deleted, found on the disk here and never by the path
+        given: an original never is. What the vault holds is not touched. :class:`LibraryBusy`, with nothing changed,
+        when a scan is running or the copy is held open."""
+        want = canon(file)
+        with _no_scan():
+            data = self._settings()
+            listed = [x for key in ("pinned", "added") for x in _strings(data, key) if canon(x) == want]
+            # A device path or a stream can reach a copy too: it may take a listing off, and never deletes a file.
+            odd = _pin_odd_path(os.path.expandvars(os.path.expanduser(str(file))))
+            copy = None if odd else next((c for c in self.copies() if canon(c) == want), None)
+            if not listed and copy is None:
+                return None
+            p = copy if copy is not None else Path(listed[0])
+            kept = (self._row(_key(p)) or (None, None, 0))[2]
+            if copy is not None:
+                self._delete_copy(copy)
+            lost = copy is None and self.copy_place(want) and not os.path.lexists(p)    # a pinned copy, already gone
+            _, plain = self._off_pinned(data, want)
+            data["added"] = [x for x in _strings(data, "added") if canon(x) != want]
+            if "copies" in data:
+                data["copies"] = [x for x in _strings(data, "copies") if canon(x) != want]
+            self._save(data)
+            self._leave_index([Path(x) for x in listed], plain)
+            walked = want in {canon(x) for x in self._files()}
+        said = f"{p.name} is deleted from your bot." if copy is not None or lost \
+            else f"{p.name} is off your list. The file itself stays where it is."
+        if walked:
+            said += f" Your bot still reads it, because it is inside {self._walk_place(want)}. Move it out of there to stop that."
+        if kept:
+            said += " What your vault kept from it stays in your vault."
+        return said
+
+    def _walk_place(self, real: str) -> str:
+        """Which walk reads this file, in her words."""
+        from .fetched import chosen, root
+        for x in self.linked():
+            if _inside(real, canon(x)):
+                return f"a folder you added, {x}"
+        if chosen(self.state) and _inside(real, canon(root(self.state))):
+            return "your books and downloads folder"
+        return f"your data folder, {self.data_folder}"
+
+    def _delete_copy(self, copy: Path) -> None:
+        """Its words first, so a crash leaves a file the next walk reads again, never words of a file that is gone. Then
+        the file itself. Held open: read again, and nothing else changes."""
+        place = self.uploads_place()
+        if not place or not self._is_copy(copy, place):
+            raise LibraryBusy(f"{copy.name} could not be deleted.")
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            _forget_rows(db, {str(copy), _key(copy)})
+        try:
+            os.unlink(copy)                            # never follows a last link: it can take only that one name
+        except FileNotFoundError:
+            pass
+        except OSError:
+            self.scan_file(copy)
+            raise LibraryBusy(f"{copy.name} could not be deleted. If it is open somewhere, close it and try again.") from None
+
+    def read_now(self, p: Path) -> tuple[bool, str]:
+        """Through the gate for a route: ``(ok, what the page says)``. A route doesn't wait out a long scan, so this holds
+        no lock: if she removed the document while it was being read, its words go again."""
+        try:
+            got = self.scan_file(p)
+        except Exception:  # noqa: BLE001 - it is on her list; the bot's next walk reads it
+            logger.exception("a document could not be read now")
+            got = {"status": "not_indexed", "reason": CANT_READ_LINE, "held": 0}
+        if canon(p) not in {canon(x) for x in self._documents()}:
+            self.forget(p)
+        row = self._row(_key(p))
+        if got["status"] == "not_indexed" or row is None or row[0] != "indexed":
+            return False, f"{p.name} was added, but your bot can't read it. {got['reason'] or CANT_READ_LINE}"
+        if self.is_fiction(p):
+            return True, f"{p.name} is ready."
+        if row[2]:
+            return True, (f"{p.name} is ready. {_files_said(row[2], 'detail looks', 'details look')} private, so your vault "
+                          f"keeps {'it' if row[2] == 1 else 'them'}.")
+        return True, f"{p.name} is ready. Your bot can find it now."
 
     def folder_report(self, folder: Path | str) -> dict:
         """What a linked folder gave (D126): how many files were read, how many wait, and which it couldn't read,
@@ -405,9 +796,9 @@ class Library:
                 else:
                     missed.append(name)
                     reasons.append(got[1])
-        parts = [f"{_files_said(read, 'file', 'files')} read."] if read or not (waiting or missed) else []
+        parts = [f"Your bot can find {_files_said(read, 'file', 'files')} here."] if read or not (waiting or missed) else []
         if waiting:
-            parts.append(f"{_files_said(waiting, 'file is', 'files are')} waiting to be read.")
+            parts.append(f"{_files_said(waiting, 'file is', 'files are')} {'being read now' if SCAN_LOCK.locked() else 'waiting to be read'}.")
         if missed:
             shown = ", ".join(missed[:REPORT_NAMES]) + (f" and {len(missed) - REPORT_NAMES} more"
                                                         if len(missed) > REPORT_NAMES else "")
@@ -416,8 +807,9 @@ class Library:
         return {"read": read, "waiting": waiting, "not_read": len(missed), "line": " ".join(parts), "files": files}
 
     def handable(self, file: Path | str) -> Path | None:
-        """The file, when it is one she pinned or one inside a folder she linked (D127), else None. Followed through
-        any link first, and never in a vault. Only such a file is ever sent by its path."""
+        """The file, when it is on her list or inside a folder she linked (D127), else None. Followed through any link
+        first, and never in a vault. Only such a file is ever sent by its path. An added path is checked again, as it is
+        before each read: it can lead somewhere else now."""
         want = canon(file)
         try:
             vaults = [canon(v) for v in _vault_places(self.state)]
@@ -427,11 +819,14 @@ class Library:
             return None
         if want in [canon(p) for p in self.pinned()] or any(_inside(want, canon(p)) for p in self.linked()):
             return Path(file)
+        if want in [canon(p) for p in self.added() if not file_problem(self.state, p, data=self.data_folder)] \
+                or want in [canon(p) for p in self.copies()]:
+            return Path(file)
         return None
 
     def known_documents(self) -> list[Path]:
-        """What chat can name: the pinned documents and the files in linked folders (a row's first few)."""
-        found = list(self.pinned())
+        """What chat can name: the documents on her list and the files in linked folders (a row's first few)."""
+        found = self._documents()
         for folder in self.linked():
             if folder.is_dir():
                 found += [Path(f["path"]) for f in self.folder_report(folder)["files"]]
@@ -453,7 +848,7 @@ class Library:
         if problem:
             raise FolderRefused(problem)
         data = self._settings()
-        links = data.setdefault("linked", [])
+        links = data["linked"] = _strings(data, "linked")
         if str(p) not in links:
             links.append(str(p))
         self._save(data)
@@ -462,7 +857,7 @@ class Library:
     def unlink(self, folder: Path | str) -> bool:
         data = self._settings()
         p = str(Path(folder).resolve())
-        before = list(data.get("linked", []))
+        before = _strings(data, "linked")
         data["linked"] = [x for x in before if x != p]
         self._save(data)
         with closing(sqlite3.connect(self.db_path)) as db, db:
@@ -504,27 +899,49 @@ class Library:
                     if inside and is_link(p):
                         continue                       # a link there is never followed out of that folder
                     # A fetched PDF is public, with its text beside it: only her own Word and PDF files are hers (D126).
-                    if _reads(name) and not (inside and p.suffix.lower() in DOCUMENT_SUFFIXES):
+                    if _reads(name) and not (inside and p.suffix.lower() in DOCUMENT_SUFFIXES) and _storable(str(p)):
                         out.append(p)
-        for p in self.pinned():                        # checked again each time: a path can change after the pin
-            if p.is_file() and not file_problem(self.state, p, data=data):
+        for p in [*self.pinned(), *self.added()]:      # checked again each time: a path can change after the pin
+            if os.path.isfile(p) and not file_problem(self.state, p, data=data):
                 out.append(p)
         return out
 
+    def _sweep_plain_words(self) -> None:
+        """X6: plain words of a document that is no longer "no vault" go, whatever left them there: a crash between saving
+        her list and clearing the index, or a read that held no lock. If a walk reads it, it is gated again after this."""
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            for path in [r[0] for r in db.execute("SELECT path FROM files WHERE reason = ?", (FICTION_REASON,))]:
+                if not self.is_fiction(path):
+                    _forget_rows(db, {path})
+
     def scan(self) -> dict:
+        self._sweep_plain_words()
         report = {"indexed": 0, "held": 0, "unchanged": 0, "not_indexed": []}
-        app_folders: list[Path] = []
-        files = self._files(app_folders)
-        self._forget_app_files(app_folders)
-        for p in files:
-            r = self.scan_file(p)
-            if r["status"] == "indexed":
-                report["indexed"] += 1
-                report["held"] += r["held"]
-            elif r["status"] == "unchanged":
-                report["unchanged"] += 1
-            else:
-                report["not_indexed"].append({"path": str(p), "reason": r["reason"]})
+        run = {"done": 0, "of": None, "now": "", "started_at": time.time()}
+        _SCANS[str(self.state)] = run
+        try:
+            app_folders: list[Path] = []
+            files = self._files(app_folders)
+            self._forget_app_files(app_folders)
+            run["of"] = len(files)
+            for p in files:
+                run["now"] = p.name
+                r = self.scan_file(p)
+                run["done"] += 1
+                if r["status"] == "indexed":
+                    report["indexed"] += 1
+                    report["held"] += r["held"]
+                elif r["status"] == "unchanged":
+                    report["unchanged"] += 1
+                else:
+                    report["not_indexed"].append({"path": str(p), "reason": r["reason"]})
+        finally:
+            _SCANS.pop(str(self.state), None)
+        try:
+            jsonfile.write(self.state / "index" / LAST_SCAN, {"finished_at": time.time(), "took_s": round(time.time() - run["started_at"]),
+                                                              "new": report["indexed"]})
+        except OSError:                                # only what the Knowledge page says about the last one
+            logger.info("the last scan's time could not be kept")
         return report
 
     def _forget_app_files(self, folders: list[Path]) -> None:
@@ -537,9 +954,7 @@ class Library:
             for folder in folders:
                 inside = str(folder.resolve()) + os.sep
                 rows = db.execute("SELECT path FROM files WHERE substr(path, 1, ?) = ?", (len(inside), inside)).fetchall()
-                for key in (r[0] for r in rows if r[0] not in pins):
-                    db.execute("DELETE FROM chunks WHERE path = ?", (key,))
-                    db.execute("DELETE FROM files WHERE path = ?", (key,))
+                _forget_rows(db, {r[0] for r in rows if r[0] not in pins})
 
     def scan_file(self, p: Path) -> dict:
         try:
@@ -549,7 +964,9 @@ class Library:
         key = str(p.resolve())
         with closing(sqlite3.connect(self.db_path)) as db:
             row = db.execute("SELECT size, mtime, status, reason FROM files WHERE path = ?", (key,)).fetchone()
-        if row and row[0] == st.st_size and row[1] == st.st_mtime:
+        # Plain words of a document that is no longer "no vault" (a crash, or a read that held no lock): read it again.
+        stale = bool(row) and row[3] == FICTION_REASON and not self.is_fiction(p)
+        if row and row[0] == st.st_size and row[1] == st.st_mtime and not stale:
             if row[2] == "indexed":
                 return {"status": "unchanged", "reason": "", "held": 0}
             # A scan or a Word file with a password stays that way until she changes it: a big PDF isn't opened
@@ -561,6 +978,8 @@ class Library:
             return self._index(key, st, public, held=0, top="P0", reason=PUBLIC_REASON)
         try:
             decoded = pinned.read_document(p)              # one reader: linked folders and pinned documents (D126)
+            if self.is_fiction(p):                         # D146: an ordinary file, nothing held or published
+                return self._index(key, st, decoded.text, held=0, top="P0", reason=FICTION_REASON)
             _, handles = prepare(decoded.text, False, archivist=self.archivist, path="files", source_ref=None)
             store = handles.store_text
             held = len([h for h in handles if h.ref])

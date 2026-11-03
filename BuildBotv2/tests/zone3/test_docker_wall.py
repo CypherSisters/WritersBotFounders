@@ -54,7 +54,7 @@ def test_ways_around_the_wall_are_refused(tmp_path, svc, word):
 def test_floor_items_need_a_floor_level_yes(tmp_path, svc):
     with pytest.raises(dw.WallRefused) as e:
         dw.override(manifest("l4walltest"), tmp_path / "compose.yaml", proxy_url=URL, model=_model(**svc))
-    assert "PIN or Windows Hello" in str(e.value)
+    assert ("PIN or Windows Hello" if os.name == "nt" else "your PIN first") in str(e.value)
     out = dw.override(manifest("l4walltest"), tmp_path / "compose.yaml", proxy_url=URL, model=_model(**svc),
                       allow_floor=True)
     assert out.name == "compose.puffpai.yml"
@@ -67,6 +67,13 @@ def test_without_docker_an_include_is_refused(tmp_path):
     fail = lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "no docker")   # noqa: E731
     with pytest.raises(dw.WallRefused):
         dw.load_model(tmp_path / "compose.yaml", runner=fail)
+
+
+def test_when_docker_cant_read_a_compose_file_the_wall_reads_it_itself(tmp_path):
+    """D157: a required setting that isn't set yet, or a missing env file, makes ``docker compose config`` fail."""
+    (tmp_path / "compose.yaml").write_text("services:\n  app:\n    image: x\n    env_file: .env\n", encoding="utf-8")
+    fail = lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "env file .env not found")   # noqa: E731
+    assert dw.load_model(tmp_path / "compose.yaml", runner=fail)["services"]["app"]["image"] == "x"
 
 
 def test_a_missing_credential_is_refused():

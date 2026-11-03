@@ -191,7 +191,7 @@ def test_text_that_only_looks_like_json_is_not_refused_for_that(state):
     assert commands.check_command("{ echo a; echo b; }", state)
 
 
-@pytest.mark.parametrize("name", ["settings/anchor.key", "settings/terminal.json", "tokens.db", "consent.db",
+@pytest.mark.parametrize("name", ["settings/anchor.key", "machine.key", "MACHINE.KEY", "settings/terminal.json", "tokens.db", "consent.db",
                                   "logs/audit.jsonl", "logs/outside.jsonl", "logs/vault.log", "pairing.json",
                                   "vault/keyring.json", "SETTINGS/TERMINAL.JSON"])
 def test_a_protected_name_is_refused_wherever_it_is_said_to_be(state, name):
@@ -226,6 +226,89 @@ def test_a_wildcard_that_finds_a_protected_place_is_refused(state):
     assert _refused(state, "ls ../set*") == commands.NO_SECRETS_LINE
 
 
+@pytest.mark.parametrize("words", ["ls ../*", "ls ../v*", "ls ../vault*/x", "ls .*/set*", "ls .?/set*",
+                                   "ls */../../set*", "ls ./../set*", "cat ../set*/*", "cat .*/set*/*"])
+def test_a_wildcard_that_climbs_is_refused_before_the_folder_is_made_and_after(state, words):
+    """The first command runs in a folder not made yet, and on Linux nothing climbs out of what is not there."""
+    (state / "settings").mkdir(parents=True, exist_ok=True)
+    (state / "settings" / "scratch-made-up.json").write_text("{}", encoding="utf-8")
+    (state / "vault").mkdir(parents=True, exist_ok=True)
+    (state / "vault" / "x").write_text("made up", encoding="utf-8")
+    assert not os.path.exists(commands.workspace(state))
+    assert _refused(state, words) == commands.NO_SECRETS_LINE
+    commands.folder_for(state)
+    os.makedirs(os.path.join(commands.workspace(state), "sub"), exist_ok=True)
+    assert _refused(state, words) == commands.NO_SECRETS_LINE
+
+
+def test_an_everyday_dot_wildcard_is_not_refused(state):
+    for words in ("ls .git*", "cat .env*", "ls .[a-z]*", "grep '.*' README.md", "find . -name '.*'", "grep '.*/x' a.txt"):
+        assert commands.check_command(words, state) == words
+
+
+posix_only = pytest.mark.skipif(os.name == "nt", reason="Linux and Mac places; Windows has its own cases")
+
+
+@posix_only
+@pytest.mark.parametrize("words", ["ls /proc/self/cwd/..", "ls /proc/self/cwd/../set*", "cat /proc/thread-self/cwd/../vault/x",
+                                   "ls /proc/1/cwd", "ls /proc/*/cwd/../set*", "ls /proc/[0-9]*/root", "ls /dev/fd/3/../..",
+                                   "cat /pr*/self/cwd/../settings/x", "cat /[p]roc/self/cwd/../settings/x",
+                                   "cat /./proc/*/cwd/../settings/x", "cat /proc/./*/cwd/../settings/x",
+                                   "cat /pr*/[1-9][0-9]*/cwd/x", "ls ../../../../../../../../pr*/self/cwd"])
+def test_a_path_through_a_running_program_is_refused(state, words):
+    assert _refused(state, words) == commands.NO_SECRETS_LINE
+
+
+@posix_only
+def test_plain_proc_and_device_words_still_run(state):
+    for words in ("cat /proc/cpuinfo", "cat /proc/c*", "cat /*/*.conf", "echo hi > /dev/null", "cat /dev/stdin",
+                  "echo hi > /dev/stderr", "ls /dev/tty"):
+        assert commands.check_command(words, state) == words
+
+
+@posix_only
+def test_two_slashes_and_a_link_are_the_place_they_open(state):
+    (state / "settings").mkdir(parents=True, exist_ok=True)
+    (state / "vault").mkdir(parents=True, exist_ok=True)
+    tidy = str(state).lstrip("/")
+    head, _, rest = tidy.partition("/")
+    for words in (f"ls //{head}/./{rest}/settings", f"ls //{head}/./{rest}/set*", f"ls ///{head}/./{rest}/vault"):
+        assert _refused(state, words) == commands.NO_SECRETS_LINE, words
+    folder = commands.folder_for(state)
+    os.symlink(state / "vault", os.path.join(folder, "plain"))
+    assert _refused(state, "ls plain/") == commands.NO_SECRETS_LINE
+    assert _refused(state, "ls ./pl*/") == commands.NO_SECRETS_LINE
+
+
+@posix_only
+@pytest.mark.parametrize("words", ["cat fl", "cat f*", "cd vl && cat y", "cat ./fl", "ls v?"])
+def test_a_bare_word_that_is_a_link_out_is_the_place_it_opens(state, words):
+    (state / "settings").mkdir(parents=True, exist_ok=True)
+    (state / "vault").mkdir(parents=True, exist_ok=True)
+    folder = commands.folder_for(state)
+    os.symlink(state / "settings" / "bot.json", os.path.join(folder, "fl"))
+    os.symlink(state / "vault", os.path.join(folder, "vl"))
+    assert _refused(state, words) == commands.NO_SECRETS_LINE
+
+
+def test_a_bare_word_that_is_its_own_stays_fine(state):
+    folder = commands.folder_for(state)
+    with open(os.path.join(folder, "notes.txt"), "w", encoding="utf-8") as fh:
+        fh.write("soup")
+    for words in ("cat notes.txt", "cat no*", "cat not-there-yet", "echo / 2"):
+        assert commands.check_command(words, state) == words
+
+
+@posix_only
+def test_a_mac_disk_ignores_case_and_so_does_this_check(state, monkeypatch):
+    """Not run on a real Mac: this turns on the same fold the zone uses."""
+    from puffpai_core.zone3 import toolsmith_zone
+    monkeypatch.setattr(toolsmith_zone, "_FOLD_CASE", True)
+    (state / "vault").mkdir(parents=True, exist_ok=True)
+    assert _refused(state, "ls ../VAULT") == commands.NO_SECRETS_LINE
+
+
+@pytest.mark.skipif(os.name != "nt", reason="two slashes name a server only on Windows; on Linux they are one slash")
 def test_a_wildcard_on_a_server_is_never_looked_up(state, monkeypatch):
     """Looking it up would reach that server, as her, before her Yes."""
     def nope(_p):
@@ -627,7 +710,8 @@ def test_puffpai_bash_names_a_program_but_never_the_one_that_starts_linux(monkey
     mine = _bash_at(tmp_path, "tools", "bash.exe")
     monkeypatch.setenv("PUFFPAI_BASH", str(mine))
     assert commands.git_bash() == str(mine)
-    linux = _bash_at(tmp_path, "Windows", "System32", "bash.exe")
+    # This check runs on Windows only, where normcase lowers a path: elsewhere the double gets the lowered spelling.
+    linux = _bash_at(tmp_path, *(("Windows", "System32") if os.name == "nt" else ("windows", "system32")), "bash.exe")
     monkeypatch.setenv("PUFFPAI_BASH", str(linux))
     assert commands.git_bash() is None
     monkeypatch.setenv("PUFFPAI_BASH", str(tmp_path / "missing.exe"))
@@ -656,7 +740,7 @@ def test_off_windows_a_command_line_is_never_passed_to_popen(monkeypatch, tmp_pa
         def __init__(self, args, **kw):
             seen.update(args=args, kw=kw)
     monkeypatch.setattr(jobs, "IS_WINDOWS", False)
-    monkeypatch.setattr(jobs.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(jobs, "_Leader", FakePopen)      # off Windows the job starts its own Popen, which is this
     job = jobs.Job.spawn_piped(["/bin/bash", "-c", "ls"], tmp_path, {}, stdin=subprocess.DEVNULL, line="ignored")
     assert seen["args"] == ["/bin/bash", "-c", "ls"] and seen["kw"]["start_new_session"] is True
     assert seen["kw"]["stdin"] == subprocess.DEVNULL and job.contained

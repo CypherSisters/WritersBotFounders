@@ -76,7 +76,8 @@ class Zone3:
         has_run = self.bridge.policy.high > 0 or self.bridge.ledger.chain.head()[1] > 0 or self.audit.head()[1] > 0
         self.bridge.vault_at_start(has_run)                         # pending on disk against the files
         self.vault.register(self.vault_unlocked)                   # Archivist.on_unlock (lane L3)
-        self.bus.subscribe("vault.unlocked", lambda _m: self.vault_unlocked(), "core")   # and the Bus event
+        if not self.vault.wired:                                    # the check runs once per unlock (D151)
+            self.bus.subscribe("vault.unlocked", lambda _m: self.vault_unlocked(), "core")   # no Archivist here: closes
         # D95: the owner's setting for files Drawbridge can't read, read at every check (missing: Normal).
         self.drawbridge = Drawbridge(self.audit, files_mode=lambda: files_mode.read(self.state))
         self.consents.on_granted(self._address_yes)

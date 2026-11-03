@@ -26,8 +26,17 @@ def _git_show(path: str) -> bytes:
     return subprocess.run(["git", "show", f"{MAIN}:{path}"], cwd=str(REPO), capture_output=True, check=True).stdout
 
 
+def _has_main() -> bool:
+    try:
+        return subprocess.run(["git", "cat-file", "-e", MAIN + "^{commit}"], cwd=str(REPO), capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
+    if not _has_main():
+        pytest.skip(f"commit {MAIN} is not here (an export with no history), so main's old wizard can't be read")
     base = tmp_path / "builtin"
     (base / "wizard").mkdir(parents=True)
     for name in ("puffpai.json", "README.md"):

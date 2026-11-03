@@ -45,8 +45,8 @@
     const unlockBox = el("div", { "data-unlock-for": v.id });
     const n = v.unfinished;
     box.append(el("div", { class: "row" }, [
-      el("span", { class: "grow", text: n + (n === 1 ? " job" : " jobs") + " did not get a working app. Toolsmith can try "
-                                         + (n === 1 ? "it" : "them") + " again. Jobs that work stay as they are." + L.againMore(v) }),
+      el("span", { class: "grow", text: [n ? n + (n === 1 ? " job" : " jobs") + " did not get a working app. Toolsmith can try "
+                                         + (n === 1 ? "it" : "them") + " again. Jobs that work stay as they are." + L.againMore(v) : "", v.missing].filter(Boolean).join(" ") }),
       el("button", { class: "primary", on: { click: async () => {
         if (!(await P.keysReady(v.id, unlockBox, said, null, null))) return;   // D68: a locked vault asks here
         said.textContent = "Asking Toolsmith to check again.";
@@ -152,18 +152,24 @@
     const reading = now.live.length ? null : L.buildReading(r.data);   // D123
     if (reading) box.appendChild(el("p", { "data-build-reading": reading.id, text: reading.head + " " + reading.next }));
     const builds = (r.data.builds || []).slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 12);
-    if (!builds.length) box.appendChild(el("p", { class: "empty", text: "Nothing built yet. Tell Toolsmith what you want from Apps, Add, or in chat." }));
+    if (!builds.length) box.appendChild(el("p", { class: "empty", text: "Nothing built yet. Tell Toolsmith what you want from Apps, Ask Toolsmith, or in chat." }));
     let live = false;
+    const views = [];
     const used = await P.api("GET", "/v1/models/used", undefined, L.POLL_WAIT_MS);   // what the picture model has read (lane I19b)
     for (const [i, b] of builds.entries()) {
       const full = await P.api("GET", "/v1/toolsmith/builds/" + encodeURIComponent(b.id), undefined, L.POLL_WAIT_MS);
       if (full.status !== 200) { live = live || L.pollCanRetry(full.status); continue; }   // D113: the poll goes on
       const v = L.buildView(full.data);
+      views.push(v);
       live = live || v.active || !!(b.library && b.library.state === "fetching");
       box.appendChild(buildEl(v, i === 0, L.libraryLine(b.library, b.goal, b.id), L.pictureModel(full.data, used.status === 200 ? used.data : null)));
     }
     head.classList.add("lede");
-    clear(sec).append(head, box);
+    const work = L.workNow(views, r.data, Date.now());            // D159: what is happening now, first
+    clear(sec).append(head, el("div", { "data-work-now": work.running.length ? "running" : "idle" }, [el("p", {}, [el("b", { text: work.head })]),
+      ...work.running.map((line) => el("p", { text: line })),
+      work.waiting.length ? el("p", { class: "muted", text: "Waiting:" }) : null,
+      ...work.waiting.map((line) => el("p", { class: "small muted", text: line }))].filter(Boolean)), box);
     const want = arg && !redraw ? sec.querySelector('[data-check-again="' + String(arg).replace(/[^0-9a-f-]/g, "") + '"]') : null;
     if (want) want.scrollIntoView({ block: "center" });      // from Home's "stopped" line (lane I18e)
     clearTimeout(poll);

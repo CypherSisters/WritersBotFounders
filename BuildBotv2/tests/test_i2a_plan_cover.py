@@ -3,6 +3,8 @@ Manager and consent store. Inside the plan: installed with no card for her, reco
 Yes. Outside it: one card that shows only what was not on the plan first."""
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +12,7 @@ from conftest import yes
 from puffpai_core.consent import card_view
 from puffpai_core.packages import plan_cover
 from puffpai_core.packages.manager import AddError
+from puffpai_core.zone3.toolsmith_host import allowlist
 
 URL = "https://github.com/example/hello-tool"
 ENVELOPE = {"goal": "a simple notes app", "jobs": [{"name": "Notes", "reuse": None,
@@ -37,13 +40,13 @@ def _plan(core, envelope=None, answer=True, build="20261022-120000-abcdef"):
 
 
 #: Where the try of hello-tool ran (only compared as words: the record holds the try's own paths).
-TRY = r"C:\bb\packages\hello-tool"
+TRY = os.path.abspath(os.path.join(os.sep, "bb", "packages", "hello-tool"))
 RUN = {"type": "command", "python": True, "start": ["{python}", "server.py"]}
 
 
 def ran_record(*more):
     """The broker's record of a try that started hello-tool with its own .venv Python (Broker.record's shape)."""
-    return {"folder": TRY, "python": TRY + r"\.venv\Scripts\python.exe", "node": "", "port": 18555,
+    return {"folder": TRY, "python": str(allowlist.venv_python(Path(TRY))), "node": "", "port": 18555,
             "commands": [{"kind": "start", "program": "{python}", "args": ["server.py"], "cwd": ""}, *more]}
 
 

@@ -4,11 +4,11 @@ For any AI assistant (or person) working in this repo.
 
 ## What BuildBotv2 is
 
-PuffPAI BuildBot is an AI OS: "the AI bot that builds itself". Every bot has the same small **Core** (three zones: Vault, Brain, Bridge; seven fixed agents: Concierge, Steward, Drawbridge, Archivist, Majordomo, Caretaker, Toolsmith; plus the Registry, Bus, Package Manager, Checklist and Core API). Everything else is a **package**: one folder with one `puffpai.json`, its abilities reaching the brain over MCP. A wizard scans the computer, helps the owner pick a local model, asks what the bot should do, and Toolsmith finds ready-made apps and knowledge, adopts them as packages, and proves they work. Like Linux: a bare base, and anyone can add apps, tools, UIs, avatars and agents, by code, by GUI or by chat. BuildBotv2 is a new local repo that will replace today's BuildBot only after it passes the owner's live test (D1, D2).
+PuffPAI BuildBot is an AI OS: "the AI bot that builds itself". Every bot has the same small **Core** (three zones: Vault, Brain, Bridge; seven fixed agents: Concierge, Steward, Drawbridge, Archivist, Majordomo, Caretaker, Toolsmith; plus the Registry, Bus, Package Manager, Checklist and Core API). Everything else is a **package**: one folder with one `puffpai.json`, its abilities reaching the brain over MCP. A wizard scans the computer, helps the owner pick a local model, asks what the bot should do, and Toolsmith finds ready-made apps and knowledge, adopts them as packages, and proves they work. Like Linux: a bare base, and anyone can add apps, tools, UIs, avatars and agents, by code, by GUI or by chat. BuildBotv2 is the rebuild that replaces v1 (D1, D2).
 
 ## Current phase
 
-**Design only. No code until the owner approves the design documents (D9).** Today's code is a read-only parts bin. Nothing goes to GitHub until the owner says so (D1).
+**Built.** Version 2.0.0, the developer release. A change to a decision still goes in `docs/00_INTENT_AND_DECISIONS.md` first. v1's code is a read-only parts bin.
 
 ## The one rule
 
@@ -34,6 +34,9 @@ If adding one specific app needs a Core edit, the design is wrong. Stop and say 
 | `docs/zones/Z1_CLASSIFY_AND_LABEL.md` | Zone 1: detectors, labels, tiers P0-P4, label packs, retention |
 | `docs/zones/Z1_VAULT_PROVIDERS.md` | Zone 1: the Core's key scheme; vault store, unlock and backup providers |
 | `docs/zones/Z3_BRIDGE_PROVIDERS.md` | Zone 3: the Bridge decision; enforcers, network devices (watch first), monitors, feeds |
+| `docs/10_BUILD_PLAN.md` | How the first build was split into lanes, and the rules lanes work by |
+| `docs/11_TEST_STEPS.md` | The steps for a live test of a build |
+| `docs/12_CLI_FIRST_STUDY.md` | The study behind the terminal chat and the window |
 | `docs/recon/` | Evidence about today's code. Line numbers are pointers, not promises. |
 
 When docs disagree: 00 wins, then 01, then 02, then the rest (among the zone docs, `ZONES_TOGETHER.md` wins on the seams).
@@ -55,7 +58,7 @@ To add or replace part of a zone (a vault store, an unlock factor, a detector or
 - **Delete layers, don't add.**
 - **The LLM sees everything installed, automatically.**
 - **One data folder.** Linked folders are indexed in place, never copied. Personal data and keys found go to the vault.
-- **Linux, Mac, Jetson and Windows are all required for the v2 release** (D128, replaces D7 and D38). No Windows-only code. BuildBotv2 stays private until Linux works.
+- **Linux, Mac, Jetson and Windows are all required for the v2 release** (D128, replaces D7 and D38). No Windows-only code.
 
 ## Writing rules (all docs, UI text and code comments)
 
@@ -73,11 +76,11 @@ To add or replace part of a zone (a vault store, an unlock factor, a detector or
 1. A new or changed decision goes in `docs/00_INTENT_AND_DECISIONS.md` **first**, as a new row with the date (D10, D11, ...). Never rewrite an old row silently; add a row that replaces it.
 2. Then update the docs that follow from it (01 to 06) and cite the decision number.
 3. Found a contradiction between docs? Don't paper over it. Write it down and ask the owner.
-4. Do not commit or push unless the owner asks.
+4. Commit on your own branch with explicit paths. Do not push unless the owner asks.
 
 ## Never touch
 
-- **The owner's own HomeBot** (D8): the live Orin, `/opt/puffpai`, and the `orin-build*` trees. Never ssh anywhere.
-- **Today's BuildBot trees** (`bb-next`, `puffpai-public-build`, `the earlier BuildBot trees`, other worktrees): read only. Other sessions edit them live. No edits, no checkout, no stash, no servers.
-- **The owner's test installs** (`C:\bbtest*`) and her running services and ports.
+- **The owner's own HomeBot** (D8): its machine and its code. Never ssh anywhere.
+- **v1 checkouts and other worktrees:** read only. Other sessions edit them live. No edits, no checkout, no stash, no servers.
+- **The owner's test installs** and her running services and ports.
 - Anything outside this repo, unless the owner asks.

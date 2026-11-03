@@ -42,7 +42,7 @@ from . import hosts, policy as rules
 from .ledger import Ledger
 from .policy import (READ_SUBJECT, SEARCH_HOSTS, WEB_KEY_HOSTS, Decision, GrantRefused, Policy, decide, default_share,
                      grants_from_record, reads_public_yes)
-from .vault_anchor import CANT_CONFIRM_LINE, LEDGER, MISMATCH_LINE, VaultCheck
+from .vault_anchor import CANT_CONFIRM_LINE, LEDGER, MISMATCH_LINE, VaultCheck, WriterBusy
 
 logger = logging.getLogger(__name__)
 DRAWBRIDGE = Source("agent", "agent:drawbridge")
@@ -69,6 +69,7 @@ TOOLSMITH_SUBJECTS = ("toolsmith:search", "toolsmith:cloud", READ_SUBJECT)
 #: while that is all it allows, it reads as closed with that one exception.
 SEARCH_SUBJECT = "toolsmith:search"
 CLOSED_LINE = "The Bridge is closed. Nothing leaves your computer without your consent."
+OPEN_BUSY_LINE = "The Bridge stays closed, because PuffPAI could not finish checking its records in time. Try again in a moment."
 #: Each host Toolsmith's search may name, as she reads it. The Bridge says only the places her Yes names: a bot's
 #: older search Yes names GitHub alone, and its line says GitHub alone.
 PLACE_OF = {"api.github.com": "GitHub", "raw.githubusercontent.com": "GitHub", "github.com": "GitHub",
@@ -246,6 +247,10 @@ class OpenRefused(PermissionError):
         self.status, self.line, self.reasons = int(status), line, list(reasons)
 
 
+class OpenBusy(OpenRefused):
+    """Opening after a mismatch card needs the records to hold still, and a write did not finish. No PIN would help."""
+
+
 class Bridge:
     def __init__(self, state: Path | str, bus: Bus | None = None, *, consents: ConsentStore | None = None,
                  anchor: _anchor.Anchor | None = None, share_of: Callable[[str], str] = default_share,
@@ -417,7 +422,10 @@ class Bridge:
                 raise OpenRefused(*refused)
         if self.vault.mismatch:
             # She checked after a "doesn't match your vault" card and opens again: what is here now is expected.
-            self.vault.accept(self.policy, dict({LEDGER: self.ledger.chain}, **self.extra_logs), self.consents)
+            try:
+                self.vault.accept(self.policy, dict({LEDGER: self.ledger.chain}, **self.extra_logs), self.consents)
+            except WriterBusy:
+                raise OpenBusy(503, OPEN_BUSY_LINE, []) from None
         try:
             self.policy.set_state("open")
         except _anchor.AnchorUnavailable:

@@ -39,8 +39,8 @@ v2 changes (09 section 5, X23):
   ``settings``, ``checklist.json``, ``tokens.db``, ``logs``), the vault,
   ``packages`` (other apps), the owner's data folder and linked folders (lane
   L3's ``settings/folders.json``: ``data``, a path, default ``<state>/data``;
-  ``linked``, a list of paths; ``pinned``, a list of whole paths to single
-  files, D125), and the Core's code. A ``folders.json`` that is there but can't
+  ``linked``, a list of paths; ``pinned``, ``added`` and ``copies``, lists of whole
+  paths to single files, D125), and the Core's code. A ``folders.json`` that is there but can't
   be read, or holds anything but those shapes, makes the zone refuse everything.
 * Python's start-up hooks are never touched: a ``.pth`` file, ``sitecustomize.py``
   or ``usercustomize.py`` in any ``site-packages`` (or ``dist-packages``) folder
@@ -78,6 +78,7 @@ import os
 import re
 import shutil
 import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -88,7 +89,7 @@ STATE = "BuildBot's own files"
 VAULT = "your vault"
 DATA = "your data folder"
 LINKED = "a folder you linked"
-PINNED = "a document you pinned"
+PINNED = "a document on your list"                   # pinned, added or sent from a device: one rule for all three
 CODE = "BuildBot's own code"
 OTHER_APP = "another app's folder"
 KEYS = "your sign-in keys and passwords"
@@ -300,14 +301,16 @@ def _internal(state: Optional[str] = None) -> list[tuple[str, str]]:
                 if not isinstance(chosen, str) or not chosen.strip() or not os.path.isabs(chosen):
                     raise ValueError("knowledge is not a whole path")
                 places.append((j(chosen, "knowledge"), DATA))
-            # Each document she pinned (D125): one file. A folder that holds it is refused as one holding a data
+            # Each document on her list (D125): one file. A folder that holds it is refused as one holding a data
             # place is. Not in _INSIDE_OK: that lets a folder of her code sit inside a place, and a file holds nothing.
-            pinned = saved.get("pinned")
-            if pinned is not None:
-                if not isinstance(pinned, list) or not all(isinstance(x, str) and x.strip() and os.path.isabs(x)
-                                                           for x in pinned):
-                    raise ValueError("pinned is not a list of whole paths")
-                places += [(p, PINNED) for p in pinned]
+            # A copy is in the data folder until that folder moves; then only its record here keeps it.
+            for key in ("pinned", "added", "copies"):
+                listed = saved.get(key)
+                if listed is not None:
+                    if not isinstance(listed, list) or not all(isinstance(x, str) and x.strip() and os.path.isabs(x)
+                                                               for x in listed):
+                        raise ValueError(f"{key} is not a list of whole paths")
+                    places += [(p, PINNED) for p in listed]
         # A move's two places, in any phase: a store left behind (leave_old), or one a stopped move is half way out of.
         journal = j(root, "index", "knowledge_move.json")
         if os.path.exists(journal):
@@ -928,13 +931,60 @@ def _to_host(word: str, cwd: str, zone: Zone, *, mount: bool = False) -> Optiona
 
 def _posix_tmp(w: str, zone: Zone) -> str:
     """A try's ``/tmp`` is its scratch folder, as on Windows (D70), unless it leads somewhere else: through a link out
-    of ``/tmp`` or into a denied place (a bot folder under ``/tmp``), the path is read as what it opens."""
+    of ``/tmp`` or into a denied place (a bot folder under ``/tmp``), the path is read as what it opens. So is what was
+    there before this try began: nothing is swapped in for the real ``/tmp`` here, so that file or socket is another
+    program's (the ssh-agent keeps its socket there) and waits for her Yes like any other place outside. What the try
+    made itself stays its scratch: it gets no card."""
     if not zone.scratch or _through_a_process(w):
         return w
     real = canon(w)
     if not inside_or_equal(real, canon("/tmp")) or any(inside_or_equal(real, p) for p, _c in zone.deny):
         return w
-    return os.path.join(zone.scratch, w.lstrip("/")[4:].lstrip("/"))
+    rest = w.lstrip("/")[4:].lstrip("/")
+    if rest and os.path.lexists(w) and not _came_with_this_try(w, real, zone):
+        return w
+    return os.path.join(zone.scratch, rest)
+
+
+#: Beside a try's scratch folder, touched by the Core as the try opens: its time on disk is when the try began.
+BEGAN_FILE = "began"
+
+
+def mark_began(scratch: str | os.PathLike) -> None:
+    """The try starts now. If this can't be written, what is in ``/tmp`` asks (:func:`_came_with_this_try`)."""
+    logs = os.path.dirname(os.fspath(scratch))
+    try:
+        os.makedirs(logs, exist_ok=True)
+        Path(logs, BEGAN_FILE).touch()
+    except OSError:
+        pass
+
+
+def _came_with_this_try(w: str, real: str, zone: Zone) -> bool:
+    """Each part of *w* under ``/tmp``, and of where it really leads, is this account's and newer than the try, by lstat
+    (a part not there yet is fine). No start on record or a part that can't be read: no. A time can't say who made a
+    thing: a later file of another program of hers counts as the try's, which runs as her anyway."""
+    try:
+        began = os.lstat(os.path.join(os.path.dirname(zone.scratch), BEGAN_FILE)).st_ctime
+    except OSError:
+        return False
+
+    def newer(top: str, path: str) -> bool:
+        at = top
+        for name in os.path.relpath(path, top).split(os.sep):
+            at = os.path.join(at, name)
+            try:
+                st = os.lstat(at)
+            except FileNotFoundError:
+                return True
+            except OSError:
+                return False
+            if st.st_uid != os.getuid() or min(st.st_mtime, st.st_ctime, getattr(st, "st_birthtime", st.st_ctime)) <= began:
+                return False
+        return True
+    # ".." by text is not where a link lands: the real path below answers for that word.
+    written = ".." in w.split("/") or newer("/tmp", w)
+    return written and newer(canon("/tmp"), real)
 
 
 def _mount_sources(flag: str, value: str) -> list[str]:

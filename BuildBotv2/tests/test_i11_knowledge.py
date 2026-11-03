@@ -297,7 +297,8 @@ def test_a_source_that_fails_says_why_in_plain_words(tmp_path, state):
     run = _yes_and_build(w, b)["knowledge_run"]
     assert run["counts"]["wikipedia"] == 0 and run["counts"]["gutenberg"] == 2
     assert run["line"] == ("Read 2 public domain books into your bot's knowledge. Wikipedia could not be reached. "
-                           "Gutenberg had nothing on color theory.")
+                           "Gutenberg had nothing on color theory. Still missing: Wikipedia on wedding planning, color "
+                           "theory. Check again reads what is missing.")
     # One failed Wikipedia call, then no more tries at it.
     assert len([c for c, _h in web.calls if "wikipedia" in c]) == 1
 
@@ -310,7 +311,9 @@ def test_a_closed_bridge_is_said_and_nothing_is_sent(tmp_path, state):
     assert web.calls == []
     assert run["line"] == ("No knowledge was read into your bot. Wikipedia could not be reached: the Bridge is "
                            "closed, so nothing was sent. Gutenberg could not be reached: the Bridge is closed, so "
-                           "nothing was sent.")
+                           "nothing was sent. Still missing: Wikipedia on wedding planning, color theory, floral design, "
+                           "wedding reception music, event budget, Gutenberg on wedding planning, color theory, floral "
+                           "design, wedding reception music, event budget. Check again reads what is missing.")
 
 
 def test_hostile_text_is_screened_and_kept_as_data(tmp_path, state):
@@ -371,7 +374,9 @@ def test_an_unfinished_fetch_ends_with_a_plain_line(tmp_path, state):
     w.host._child_done(b["id"], "build", 1)                    # the process died before any step
     run = w.host.view(b["id"])["knowledge_run"]
     assert run["state"] == "done" and run["line"] == ("No knowledge was read into your bot. Toolsmith stopped "
-                                                      "before it read everything planned.")
+                                                      "before it read everything planned. Still missing: Wikipedia on "
+                                                      "wedding planning, Gutenberg on wedding planning. Check again "
+                                                      "reads what is missing.")
 
 
 def test_the_fetch_never_goes_past_what_the_card_said(monkeypatch):

@@ -436,19 +436,30 @@ core_kill_started() {
 }
 
 # The Core and any built-in package that differ from this copy. At its next start the Core itself brings its installed copy
-# of the window up to packages/desktop (PackageManager.check_builtins), which is why the Core must restart. pyproject.toml has
-# not changed since the first public version, so nothing is installed with pip.
+# of the window up to packages/desktop (PackageManager.check_builtins), which is why the Core must restart. When
+# pyproject.toml differs (what the Core needs from Python), it goes over too, and the Core's own pip step from install.sh
+# runs in the container before the Core starts again. That downloads, so it asks for the Bridge first, as the apps do.
 update_core() {
-    local here box parts gone fresh
+    local here box parts gone fresh pip=0
     here="$(cd "$CODE" && bash -c "$PARTS_SUMS" | LC_ALL=C sort)"
     box="$(docker exec "$NAME" bash -c "cd /data/bot/code && $PARTS_SUMS" | LC_ALL=C sort)" || { echo "  The bot's Core could not be read, so nothing was updated."; exit 1; }
     parts="$(LC_ALL=C comm -3 <(printf '%s\n' "$here") <(printf '%s\n' "$box") | sed -E -e 's/^[[:space:]]*//' -e 's/^[0-9a-f]+ [ *]//' | awk -F/ 'NF { print ($1 == "packages" ? $1 "/" $2 : $1) }' | LC_ALL=C sort -u)"
     parts="$(for p in $parts; do if [ -e "$CODE/$p" ]; then echo "$p"; fi; done)"
+    if [ "$(cd "$CODE" && sha256sum pyproject.toml | cut -d' ' -f1)" != "$(docker exec "$NAME" bash -c "cd /data/bot/code && sha256sum pyproject.toml 2>/dev/null | cut -d' ' -f1" || true)" ]; then
+        pip=1
+        # shellcheck disable=SC2086
+        parts="$(printf '%s\n' $parts pyproject.toml)"
+    fi
     if [ -z "$parts" ]; then
         echo "  The Core and the window are the same as this copy."
         return 0
     fi
     if core_answers; then stop_if_reading "Nothing was changed."; fi
+    if [ "$pip" = 1 ]; then
+        echo "  This copy of the Core needs Python parts the bot does not have yet, so they are installed in its container with pip, from the internet."
+        core_up
+        bridge_for_update "The Core's Python parts can't download while the Bridge is closed."
+    fi
     echo "  The bot's Core and window are older than this copy, so they are updated now, and the Core restarts. Its vault, settings, chats and books are not touched."
     if core_answers; then
         if ! core_stop; then echo "  The bot did not stop, so nothing was changed. Try again, or: ./install-writersbot.sh stop"; exit 1; fi
@@ -464,6 +475,21 @@ update_core() {
     remove_listed "$gone"
     CORE_CHANGED=1
     CORE_STARTED=1
+    if [ "$pip" = 1 ]; then
+        echo "  Installing the Core's Python parts with pip. This can take a few minutes."
+        if ! docker exec "$NAME" bash -c "mkdir -p /data/bot/tmp && cd /data/bot/code && TMPDIR=/data/bot/tmp .venv/bin/python -m pip install -q --disable-pip-version-check --no-cache-dir -e ."; then
+            echo "  pip could not install the Core's Python parts (the lines above say why), so the old code is put back."
+            remove_listed "$fresh"
+            docker exec "$NAME" tar xf /data/bot/before-update.tar -C /data/bot/code
+            if core_start_and_wait; then
+                echo "  The bot is running again on its old code, and nothing else was changed. To try again: ./install-writersbot.sh update"
+            else
+                echo "  The bot did not start on its old code either. A copy of that code is at /data/bot/before-update.tar in the container. To see why: docker exec $NAME tail /data/bot/puffpai/$BOT/logs/serve.out"
+            fi
+            exit 1
+        fi
+        echo "  The Core's Python parts are installed."
+    fi
     if core_start_and_wait; then
         echo "  The bot's Core is back, on the new code."
         case " $(echo $parts) " in *" packages/desktop "*) ;; *) return 0 ;; esac
@@ -511,14 +537,15 @@ close_bridge_again() {
     fi
 }
 
+# $1: why it is asked, when it is not for the main apps.
 bridge_for_update() {
-    local now answer
+    local now answer why="${1:-This bot's main apps can't install while the Bridge is closed, because they download what they need.}"
     now="$(box_py bridge </dev/null)" || { echo "  The Bridge did not answer, so nothing was updated. $now"; exit 1; }
     if [ "$now" = open ]; then
-        echo "  The Bridge is open, so the apps can download what they need."
+        echo "  The Bridge is open, so what is needed can download."
         return 0
     fi
-    read -r -p "  This bot's main apps can't install while the Bridge is closed, because they download what they need. Open it for this? [Y/n] " answer || answer=n
+    read -r -p "  $why Open it for this? [Y/n] " answer || answer=n
     case "$answer" in
         [Nn]*) echo "  The Bridge stays closed, so nothing was updated."; exit 0 ;;
     esac

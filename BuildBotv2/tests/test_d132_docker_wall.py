@@ -313,6 +313,7 @@ def start(core, tmp_path, monkeypatch):
     monkeypatch.setattr(dw, "load_model", lambda *a, **k: {"services": {"web": {"image": "x/web"}}})
     monkeypatch.setattr(shutil, "which", lambda name, **kw: "/usr/bin/docker")
     monkeypatch.setattr(dw.time, "sleep", lambda s: None)
+    monkeypatch.setattr(dw, "_gateways", lambda network, runner: [NOT_HERE])
 
     def go():
         return core.steward._compose_up("walltest", tmp_path, {"id": "walltest"}, {"file": "compose.yaml"},
@@ -343,12 +344,72 @@ def test_a_gate_that_reaches_the_proxy_lets_the_app_run(core, start, monkeypatch
     assert sum("exec" in c for c in runs.calls) == 1 and "down" not in runs.calls[-1]
 
 
+def test_a_wall_that_did_not_hold_says_so_and_the_app_goes_down(core, start, monkeypatch):
+    runs = _Compose()
+    monkeypatch.setattr(steward_mod.jobs, "run", runs)
+    monkeypatch.setattr(dw, "_gateways", lambda network, runner: ["127.0.0.1"])     # an address of this computer
+    core.steward.docker_wall_kw = lambda id: {"host_proxy_port": 9321, "host_gateway": True}
+    with pytest.raises(StewardError) as e:
+        start()
+    assert "does not hold" in str(e.value) and "was stopped" in str(e.value)
+    assert "down" in runs.calls[-1] and not any("exec" in c for c in runs.calls)
+
+
+def test_an_inner_network_that_names_no_gateway_lets_the_app_run(core, start, monkeypatch):
+    """Docker 29 with ``inhibit_ipv4``: the read worked and there is no address on this computer."""
+    runs = _Compose()
+    monkeypatch.setattr(steward_mod.jobs, "run", runs)
+    monkeypatch.setattr(dw, "_gateways", lambda network, runner: [])
+    core.steward.docker_wall_kw = lambda id: {"host_proxy_port": 9321, "host_gateway": True}
+    assert start().kind == "docker_compose"
+    assert sum("exec" in c for c in runs.calls) == 1 and "down" not in runs.calls[-1]
+
+
+@pytest.mark.parametrize("answer, code, want", [('[{"Subnet":"172.19.0.0/16"}]', 0, []),            # Docker 29, inhibit_ipv4
+                                                ('[{"Subnet":"172.19.0.0/16","Gateway":"172.19.0.1"}]', 0, ["172.19.0.1"]),  # 26
+                                                ('[{"Subnet":"fd00::/64","Gateway":"fd00::1"}]', 0, []),
+                                                ("null", 0, []), ("[]", 0, []),
+                                                ("", 0, None), ("not json", 0, None), ('["odd"]', 0, None), ('{"a":1}', 0, None),
+                                                ('[{"Gateway":"172.19.0.1"}]', 1, None)])
+def test_the_gateway_read_tells_none_named_from_a_failed_read(answer, code, want):
+    def runner(args, **kw):
+        return subprocess.CompletedProcess(args, code, answer, "")
+    assert dw._gateways("pp-walltest-inner", runner) == want
+
+
+@pytest.mark.parametrize("gateways", [None, OSError("no docker"), subprocess.TimeoutExpired("docker", 20)])
+def test_an_inner_network_that_cannot_be_read_fails_closed(core, start, monkeypatch, gateways):
+    runs = _Compose()
+    monkeypatch.setattr(steward_mod.jobs, "run", runs)
+
+    def read(network, runner):
+        if isinstance(gateways, Exception):
+            raise gateways
+        return gateways
+    monkeypatch.setattr(dw, "_gateways", read)
+    core.steward.docker_wall_kw = lambda id: {"host_proxy_port": 9321, "host_gateway": True}
+    with pytest.raises(StewardError) as e:
+        start()
+    assert "could not be read" in str(e.value) and "was stopped" in str(e.value) and "down" in runs.calls[-1]
+
+
+def test_the_wall_check_reads_this_apps_network_and_starts_no_container(monkeypatch):
+    calls = []
+
+    def runner(args, **kw):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, json.dumps([{"Gateway": NOT_HERE}]), "")
+    assert dw.gate_problem(lambda args: 0, 9321, "walltest", runner=runner) == ""
+    assert calls == [["docker", "network", "inspect", dw.inner_network("walltest"), "--format", "{{json .IPAM.Config}}"]]
+
+
 def test_docker_desktop_gets_no_gate_check(core, start, monkeypatch):
     runs = _Compose(check_code=1)
     monkeypatch.setattr(steward_mod.jobs, "run", runs)
     core.steward.docker_wall_kw = lambda id: {"host_proxy_port": 9321}
     assert start().kind == "docker_compose"
     assert not any("exec" in c for c in runs.calls)
+    assert core.steward.docker_wall_kw("walltest").get("host_gateway") is None
 
 
 def test_a_refusal_before_compose_stops_the_app_and_runs_no_compose(core, start, monkeypatch):
@@ -391,8 +452,19 @@ def test_the_gate_check_is_a_bare_connection_and_retries(monkeypatch):
     def run(args):
         seen.append(args)
         return codes.pop(0)
-    assert dw.gate_problem(run, 9321) == "" and len(seen) == 2
+    monkeypatch.setattr(dw, "_gateways", lambda network, runner: [NOT_HERE])
+    assert dw.gate_problem(run, 9321, "walltest") == "" and len(seen) == 2
     assert seen[0][:3] == ["exec", "-T", dw.GATE] and "Basic" not in json.dumps(seen[0])
+
+
+def test_the_probe_holds_when_the_engine_names_no_gateway(monkeypatch):
+    """Docker 29 with ``inhibit_ipv4``: nothing to try on the inner network, and the other tries still run."""
+    monkeypatch.setattr(dw, "_LINUX", True)
+    run = _probe_runner(inner="")
+    assert dw.probe("walltest", core_port=1234, proxy_port=9321, runner=run) == {"held": True, "reached": []}
+    assert "http://172.18.0.1:9321" in run.tried and "https://1.1.1.1" in run.tried
+    got = dw.probe("walltest", proxy_port=9321, runner=_probe_runner(inner="", connects=[":9321"]))
+    assert got == {"held": False, "reached": ["proxy_without_the_gate"]}
 
 
 def _probe_runner(*, inner, connects=(), inspect_code=0, bridge='[{"Gateway":"172.18.0.1"}]'):
@@ -479,8 +551,9 @@ def test_a_refused_try_is_a_refusal_in_plain_words(tmp_path, monkeypatch):
                                             ({"host_proxy_port": 9321}, 1, "")])
 def test_a_tries_gate_check_is_plain_linux_only(tmp_path, monkeypatch, kw, code, said):
     monkeypatch.setattr(dw.time, "sleep", lambda s: None)
+    monkeypatch.setattr(dw, "_gateways", lambda network, runner: [NOT_HERE])
     _find_with(monkeypatch, wall_kw=lambda p: kw)
-    got = ports_mod.Ports(tmp_path, zone=SimpleNamespace(proxy=FakeProxy())).docker_gate_problem(lambda args: code)
+    got = ports_mod.Ports(tmp_path, zone=SimpleNamespace(proxy=FakeProxy())).docker_gate_problem(lambda args: code, "walltest")
     assert (said in got) if said else got == ""
 
 
@@ -489,25 +562,38 @@ def _rec(tmp_path, runs):
         runs.append(argv)
         return {"ok": True, "exit": 1}
     return SimpleNamespace(compose={"project": "puffpai-t", "files": ["compose.yaml", ".buildbot/compose.puffpai.yml"]},
-                           folder=tmp_path, broker=SimpleNamespace(docker="docker", core_run=core_run))
+                           pkg_id="t", folder=tmp_path, broker=SimpleNamespace(docker="docker", core_run=core_run))
 
 
-def test_a_try_is_told_when_its_gate_cannot_reach_the_proxy(tmp_path):
+def _trials(ask):
+    return SimpleNamespace(ports=SimpleNamespace(docker_gate_problem=ask), _guarded=lambda rec, go: go())
+
+
+def test_a_try_is_told_and_comes_down_when_the_check_fails(tmp_path):
     runs, seen = [], []
 
-    def ask(run):
-        seen.append(run(["exec", "-T", dw.GATE, "socat"]))
+    def ask(run, package_id):
+        seen.append((run(["exec", "-T", dw.GATE, "socat"]), package_id))
         return "This Docker app can't reach the Bridge proxy."
-    got = {"exit": 0, "said": "Started."}
-    Trials._gate_note(SimpleNamespace(ports=SimpleNamespace(docker_gate_problem=ask)), _rec(tmp_path, runs), ["up", "-d"], got)
-    assert got["said"] == "Started.\n\nThis Docker app can't reach the Bridge proxy." and seen == [1]
+    got = {"ok": True, "exit": 0, "said": "Started."}
+    Trials._gate_note(_trials(ask), _rec(tmp_path, runs), ["up", "-d"], got)
+    assert got["said"] == "Started.\n\nThis Docker app can't reach the Bridge proxy. This app was stopped."
+    assert got["ok"] is False and seen == [(1, "t")]
     assert runs[0][:4] == ["docker", "compose", "-p", "puffpai-t"] and runs[0][-4:-1] == ["exec", "-T", dw.GATE]
+    assert runs[-1][-3:] == ["down", "-t", "1"]
+
+
+def test_a_try_that_passes_stays_up(tmp_path):
+    runs = []
+    got = {"ok": True, "exit": 0, "said": "Started."}
+    Trials._gate_note(_trials(lambda run, package_id: ""), _rec(tmp_path, runs), ["up", "-d"], got)
+    assert got == {"ok": True, "exit": 0, "said": "Started."} and not runs
 
 
 @pytest.mark.parametrize("rest, exit_code", [(["ps"], 0), (["up", "-d"], 1)])
 def test_a_try_only_checks_after_a_good_up(tmp_path, rest, exit_code):
-    def ask(run):
+    def ask(run, package_id):
         raise AssertionError("not asked")
     got = {"exit": exit_code, "said": "x"}
-    Trials._gate_note(SimpleNamespace(ports=SimpleNamespace(docker_gate_problem=ask)), _rec(tmp_path, []), rest, got)
+    Trials._gate_note(_trials(ask), _rec(tmp_path, []), rest, got)
     assert got["said"] == "x"

@@ -70,7 +70,7 @@
     f = f || {};
     const linked = (Array.isArray(f.linked) ? f.linked : []).filter(function (x) { return x && typeof x.path === "string"; })
       // what it read and what it couldn't, in the Core's words (D126)
-      .map(function (x) { return { path: x.path, line: x.there ? String(x.line || "There") : "Not there right now, so it is not read", files: Array.isArray(x.files) ? x.files : [] }; });
+      .map(function (x) { return { path: x.path, waiting: Number(x.waiting) || 0, line: x.there ? String(x.line || "There") : "Not there right now, so it is not read", files: Array.isArray(x.files) ? x.files : [] }; });
     const setup = f.from_setup && typeof f.from_setup === "object" ? f.from_setup : null;
     return {
       data: String(f.data || ""), dataLine: f.data_there === false ? "Not there yet: it is made when something is saved in it."
@@ -89,15 +89,6 @@
     if (!t) return { ok: false, line: "" };
     if (t.length > 1000 || /[\r\n]/.test(t)) return { ok: false, line: "One folder, on one line." };
     if (!/^([A-Za-z]:[\\/]|\\\\|\/|~|%[A-Za-z_]+%)/.test(t)) return { ok: false, line: "Use the folder's whole path, like C:\\Users\\you\\Documents\\Recipes." };
-    return { ok: true, path: t, line: "" };
-  }
-
-  /* One file path as she typed or pasted it (File Explorer's Copy as path adds quotes), D125. The Core checks again. */
-  function filePath(text) {
-    const t = String(text || "").trim().replace(/^"(.*)"$/, "$1");
-    if (!t) return { ok: false, line: "" };
-    if (t.length > 1000 || /[\r\n]/.test(t)) return { ok: false, line: "One file, on one line." };
-    if (!/^([A-Za-z]:[\\/]|\\\\|\/|~|%[A-Za-z_]+%)/.test(t)) return { ok: false, line: "Use the file's whole path, like C:\\Users\\you\\Documents\\My Novel.docx." };
     return { ok: true, path: t, line: "" };
   }
 
@@ -221,7 +212,7 @@
   }
 
   const api = { vaultStatus: vaultStatus, brainStatus: brainStatus, bridgeStatus: bridgeStatus, zoneCards: zoneCards, vaultPlace: vaultPlace,
-                vaultActions: vaultActions, foldersView: foldersView, folderPath: folderPath, filePath: filePath, dataUrlBase64: dataUrlBase64, sendFits: sendFits, placeView: placeView, toolsmithNow: toolsmithNow, capChange: capChange,
+                vaultActions: vaultActions, foldersView: foldersView, folderPath: folderPath, dataUrlBase64: dataUrlBase64, sendFits: sendFits, placeView: placeView, toolsmithNow: toolsmithNow, capChange: capChange,
                 hostLines: hostLines, cliCommands: cliCommands, CLI_NOTE: CLI_NOTE, CLI_WHERE: CLI_WHERE, computerLine: computerLine,
                 filesChoices: filesChoices };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

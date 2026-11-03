@@ -57,7 +57,7 @@ _PREFIXED = re.compile(r"(?<![A-Za-z0-9_])(?:(hf_[A-Za-z0-9]{30,})|(pp[ktd]_[A-Z
 _KEYWORD = re.compile(r"(?i)(?<![A-Za-z0-9])(?:api[ _\-]?keys?|apikeys?|keys?|tokens?|secrets?|passwords?|"
                       r"passwd|bearer|api|credentials?)(?![A-Za-z0-9])")
 _KEYWORD_REACH = 40
-_WRAP = re.compile(r"[" + _T + r"=]{6,}[ \t]*\\?\r?\n")
+_WRAP = re.compile(r"(?<![" + _T + r"=])[" + _T + r"=]{6,}[ \t]*\\?\r?\n")  # a run is tried once, from its start
 _TAIL = re.compile(r"[ \t]*([" + _T + r"]{4,4096}={0,2})(?![" + _T + r"=])")
 _SETTING_AFTER = re.compile(r"[ \t]*(?:=|:)")
 _LINE_END = re.compile(r"[ \t]*\\?\r?\n")
@@ -120,8 +120,8 @@ def _labelled_hash(text: str, start: int, end: int) -> bool:
     run = text[start:end]
     if _INTEGRITY.match(run):
         return True
-    line_start = text.rfind("\n", 0, start) + 1
-    if _HASH_LABEL.search(text, max(line_start, start - 40), start):
+    reach = max(0, start - 40)                 # only this far back is read, so a long line isn't walked per run
+    if _HASH_LABEL.search(text, max(text.rfind("\n", reach, start) + 1, reach), start):
         return True
     return bool(_HEX.fullmatch(run)) and _HASH_LIST_TAIL.match(text, end) is not None
 

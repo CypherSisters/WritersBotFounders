@@ -1,7 +1,7 @@
 /* Harvested from PuffPAIBuildBot@774e27a4:dashboard/app/dashboard/settings/page.tsx, settings/ToolsmithModelCard.tsx,
  * settings/PairedDevicesCard.tsx and looks/page.tsx (adapted). Settings: one list, one row per setting, each showing what
  * it is now and opening in place (P.act, as on Vault); #settings/<id> opens that row. Who your bot is, You, the brain,
- * Toolsmith's model (its one form, key and Yes are on Developer), the Bridge, what opens at start, Setup, this browser,
+ * Toolsmith's model (its one form, key and Yes), the Bridge, what opens at start, Setup, this browser,
  * and the Desktop. The parts a package may fill are on Developer.
  * Looks: one panel: the bot's name and theme as swatches (lanes I10a, I16), the avatar, and day or night. What is not
  * built yet gets one plain line (D92): never a nested box, a route name or developer words. */
@@ -21,7 +21,10 @@
     const t = row("brain", "The brain");
     const [m, menu] = await Promise.all([P.api("GET", "/v1/model"), P.api("GET", "/v1/model/menu")]);
     const said = el("p", { class: "small" });
+    const cardBox = el("div");
     const now = m.status === 200 && m.data.settings ? String(m.data.settings.model || "") : "";
+    /* What is drawn again when a download ends leaves a key she is typing alone. */
+    const ended = () => { if (!Array.from(document.querySelectorAll("#view-settings input[type=password], [data-tile=toolsmith] input[type=password]")).some((i) => i.value)) P.redraw("settings"); };
     const useModel = async (id, box) => {
       const r = await P.api("PUT", "/v1/model", { model: id });
       if (r.status === 200) { P.drawChips(); P.redraw("settings"); return; }
@@ -37,21 +40,21 @@
       if (opts.length) t.body.appendChild(el("details", {}, [el("summary", { class: "small", text: "Models this computer can run (" + opts.length + ")" }),
         el("ul", { class: "lines" }, opts.slice(0, 12).map((o) => el("li", {}, [el("span", { class: "grow", text: (o.label || o.id) + (o.recommended ? " (Recommended)" : "") }),
           el("span", { class: "faint small", text: (o.installed ? "on this computer" : o.disk_gb ? o.disk_gb + " GB to download" : "") }),
-          o.installed && now !== String(o.id) ? el("button", { "data-use-model": o.id, on: { click: () => useModel(o.id, said) } }, ["Use this"]) : null])))]));
+          o.installed && now !== String(o.id) ? el("button", { "data-use-model": o.id, on: { click: () => useModel(o.id, said) } }, ["Use this"]) : null,
+          !o.installed ? el("button", { "data-add-model": o.id, on: { click: (ev) => P.addModel(o.id, ev.currentTarget, said, cardBox, ended) } }, ["Add"]) : null])))]));
     }
-    t.body.append(el("p", { class: "small muted", text: L.NOT_BUILT.brain }), said, el("div", { class: "row" }, [setupBtn("brain", "Change it in Setup"),
+    t.body.append(el("p", { class: "small muted", text: L.NOT_BUILT.brain }), said, cardBox, el("div", { class: "row" }, [setupBtn("brain", "Change it in Setup"),
       el("a", { href: "#developer/brain", text: "Models for each job" })]));
     return t.node;
   }
 
-  /* Toolsmith's model: what it is now, and the way to its one form on Developer (the company, the key, the Yes). */
+  /* Toolsmith's model: what it is now, and its one form here (the company, the key, the Yes; D162). */
   async function toolsmithTile() {
     const t = row("toolsmith", "Toolsmith's model");
     const st = await P.api("GET", "/v1/toolsmith");
     if (st.status !== 200) { t.body.appendChild(el("p", { class: "fail", text: P.said(st) })); return t.node; }
     t.note.textContent = st.data.where === "cloud" ? (st.data.company || st.data.provider) + ", " + (st.data.model || "") : "This computer's own model";
-    t.body.append(el("p", { class: "small muted", text: "Only Toolsmith may use a cloud model, and only if you pick one. Everything else runs on this computer." }),
-      el("div", { class: "row" }, [el("a", { href: "#developer/toolsmith", "data-go": "toolsmith", text: "Pick a cloud model and add its key" })]));
+    t.body.appendChild(await P.toolsmithTile());
     return t.node;
   }
 
@@ -371,7 +374,7 @@
     const bits = (head, list) => list && list.length ? el("p", {}, [el("b", { text: head + ": " }), list.join(", ") + "."]) : null;
     function done(d) {
       clear(said).append(el("p", { text: "Moved here: " + d.name + "." }), ...(d.said || []).map((x) => el("p", { text: x })),
-        bits("Link these folders again", d.linked) || "", bits("Pin these documents again", d.pinned) || "", bits("These books can come back from Recommended for this bot, on Knowledge", d.books) || "",
+        bits("Link these folders again", d.linked) || "", bits("Add these documents again", d.pinned) || "", bits("Add these documents again", d.documents) || "", bits("These books can come back from Recommended for this bot, on Knowledge", d.books) || "",
         bits("Books and articles on these can come with one Yes, from Recommended for this bot, on Knowledge", d.topics) || "",
         bits("Add these tool servers and APIs again", d.added) || "",
         bits("Set up on another kind of computer, so not added. Ask Toolsmith to try them here", d.not_here) || "");

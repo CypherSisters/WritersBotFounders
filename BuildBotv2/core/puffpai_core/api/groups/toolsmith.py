@@ -250,6 +250,18 @@ def agent_found(host, build_id, job_id):
     return host.agent_found(build_id, job_id, _body())
 
 
+@route(bp, "POST", A + "/jobs/<job_id>/store", access=TOOLSMITH)
+@agent
+def agent_store_add(host, build_id, job_id):
+    return host.agent_store_add(build_id, job_id, _body())
+
+
+@route(bp, "GET", A + "/store/<consent_id>", access=TOOLSMITH)
+@agent
+def agent_store_state(host, build_id, consent_id):
+    return host.agent_store_state(build_id, consent_id)
+
+
 @route(bp, "GET", A + "/registry", access=TOOLSMITH)
 @agent
 def agent_registry(host, build_id):

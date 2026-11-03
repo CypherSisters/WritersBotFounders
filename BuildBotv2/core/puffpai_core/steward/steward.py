@@ -516,9 +516,10 @@ class Steward:
         return Running(id, "docker_compose", port, token, time.time(), compose=compose)
 
     def _gate_reaches_proxy(self, id: str, compose: list[str], folder: Path, env: dict, proxy_port: int) -> None:
-        """Say so plainly, and do not leave the app up, when its gate can't reach the proxy. Fails closed."""
+        """Say so plainly, and do not leave the app up, when the wall did not hold or its gate can't reach the proxy.
+        Fails closed."""
         check = seams.find(seams.DOCKER_GATE_PROBLEM)
-        problem = (check(lambda args: jobs.run(compose + args, folder, env, self.log_path(id), 30), proxy_port)
+        problem = (check(lambda args: jobs.run(compose + args, folder, env, self.log_path(id), 30), proxy_port, id)
                    if check is not None else "The Docker wall's check of its gate is not built, so this app was stopped.")
         if problem:
             jobs.run(compose + ["down", "-t", "1"], folder, env, self.log_path(id), 300)

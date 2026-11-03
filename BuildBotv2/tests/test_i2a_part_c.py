@@ -26,12 +26,13 @@ from pathlib import Path
 
 import pytest
 
-from test_d61_allowlist import HELLO, WIN, _checked, _never_ran, needs_jobs, world  # noqa: F401 - shared
+from test_d61_allowlist import HELLO, WIN, _checked, _never_ran, world  # noqa: F401 - shared
 from toolsmith_fakes import FakePorts, World, make_venv, script
 from puffpai_core.packages import manifest as manifest_mod
 from puffpai_core.packages import plan_cover
 from puffpai_core.packages.manager import AddError
 from puffpai_core.steward import noshell
+from puffpai_core.zone3.toolsmith.adopt import run_key
 from puffpai_core.zone3.toolsmith_host import allowlist as A
 from puffpai_core.zone3.toolsmith_host import broker as broker_mod
 from puffpai_core.zone3.toolsmith_host.ports import Ports
@@ -52,7 +53,7 @@ def _adopted_manifest(pkg_id: str, url: str = URL, **run) -> dict:
     block.update(run)
     return {"schema": "puffpai-package/1", "id": pkg_id, "kind": "app", "name": "Hello Page", "version": "0.1.0",
             "description": "A test page.", "author": "example", "license": "MIT", "homepage": url,
-            "origin": f"adopted:{url}", "run": {"windows": block},
+            "origin": f"adopted:{url}", "run": {run_key(): block},
             "health": {"url": "http://127.0.0.1:{port}/", "expect": 200, "every_s": 60},
             "ui": {"pages": [{"id": "main", "title": "Hello Page", "url": "http://127.0.0.1:{port}/",
                               "show": "new_tab"}]},
@@ -124,7 +125,6 @@ def _try_that_served(w):
 
 # -- 1. the run block gets a card unless it is exactly what ran in the try ----------------------------------
 
-@needs_jobs
 def test_the_broker_records_what_ran_and_started_but_never_what_failed_or_was_refused(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)
@@ -136,7 +136,14 @@ def test_the_broker_records_what_ran_and_started_but_never_what_failed_or_was_re
     link.try_stop(try_id)
     got = rec.broker.record()
     assert got["folder"] == os.path.realpath(rec.folder) and got["port"] == rec.port
-    assert got["python"] == os.path.realpath(rec.folder / ".venv" / "Scripts" / "python.exe")
+    python = A.venv_python(rec.folder)
+    assert got["python"] == os.path.join(os.path.realpath(python.parent), python.name)
+    if not WIN:                                                  # there it is a link: the base Python is not the try's own
+        base = os.path.realpath(python)
+        assert base != got["python"]
+        named = {**_adopted_manifest(rec.pkg_id), "run": {"default": {"type": "command", "python": True,
+                                                                      "start": [base, "serve.py"]}}}
+        assert plan_cover.commands_outside(named, got)
     assert {"kind": "run", "program": "{python}", "args": ["ok.py", "--flag"], "cwd": ""} in got["commands"]
     assert {"kind": "start", "program": "{python}", "args": ["serve.py"], "cwd": ""} in got["commands"]
     assert not any("bad.py" in c["args"] or "-c" in c["args"] for c in got["commands"]), got["commands"]
@@ -145,7 +152,6 @@ def test_the_broker_records_what_ran_and_started_but_never_what_failed_or_was_re
     assert len(rec.broker.record()["commands"]) == 2
 
 
-@needs_jobs
 def test_a_run_block_that_is_exactly_what_ran_in_the_try_is_covered_by_the_plan(real_world):
     w = real_world
     b, link, try_id, rec = _try_that_served(w)
@@ -159,7 +165,6 @@ def test_a_run_block_that_is_exactly_what_ran_in_the_try_is_covered_by_the_plan(
     assert w.core.consent.get(got["consent_id"])["by"].startswith("plan:")
 
 
-@needs_jobs
 @pytest.mark.parametrize("run,shown", [
     ({"setup": [["{python}", "-m", "pip", "install", "puffpai-never-a-package"]]},
      "setup step 1: {python} -m pip install puffpai-never-a-package"),
@@ -191,7 +196,7 @@ def test_a_run_block_command_that_never_ran_in_the_try_gets_a_card_and_nothing_i
 
 def _ran(folder, *commands, python=True):
     folder = str(folder)
-    return {"folder": folder, "python": folder + r"\.venv\Scripts\python.exe" if python else "", "node": NODE,
+    return {"folder": folder, "python": str(A.venv_python(Path(folder))) if python else "", "node": NODE,
             "port": 18555, "commands": list(commands)}
 
 
@@ -199,18 +204,18 @@ START = {"kind": "start", "program": "{python}", "args": ["serve.py"], "cwd": ""
 
 
 @pytest.mark.parametrize("manifest_change,shown", [
-    ({"run": {"windows": {"type": "command", "python": True, "start": ["{python}", "serve.py", "--debug"]}}},
+    ({"run": {"default": {"type": "command", "python": True, "start": ["{python}", "serve.py", "--debug"]}}},
      "start: {python} serve.py --debug"),                                                     # other arguments
-    ({"run": {"windows": {"type": "command", "python": True, "start": ["{python}", "serve.py"], "cwd": "web"}}},
+    ({"run": {"default": {"type": "command", "python": True, "start": ["{python}", "serve.py"], "cwd": "web"}}},
      "start: {python} serve.py (in its web folder)"),                                         # another folder
-    ({"run": {"windows": {"type": "command", "start": ["{python}", "serve.py"]}}},
+    ({"run": {"default": {"type": "command", "start": ["{python}", "serve.py"]}}},
      "start: {python} serve.py"),                                       # no python: true = the Core's own Python
-    ({"run": {"windows": {"type": "command", "python": True, "start": ["python", "serve.py"]}}},
+    ({"run": {"default": {"type": "command", "python": True, "start": ["python", "serve.py"]}}},
      "start: python serve.py"),                                         # a name looked up on the PATH
-    ({"run": {"windows": {"type": "command", "python": True, "setup": [["{python}", "serve.py"]],
+    ({"run": {"default": {"type": "command", "python": True, "setup": [["{python}", "serve.py"]],
                           "start": ["{python}", "serve.py"]}}},
      "setup step 1: {python} serve.py"),                                # ran as a server, not to its end
-    ({"run": {"windows": {"type": "command", "python": True, "start": ["{python}", "serve.py", "{data}"]}}},
+    ({"run": {"default": {"type": "command", "python": True, "start": ["{python}", "serve.py", "{data}"]}}},
      "start: {python} serve.py {data}"),                                # no data folder in a try
     ({"health": {"command": ["{python}", "check.py"]}}, "health check: {python} check.py"),
     ({"abilities": {"mcp": {"transport": "stdio", "command": ["{python}", "mcp.py"]}}},
@@ -261,7 +266,7 @@ def test_a_program_from_the_download_counts_only_while_it_is_the_file_that_ran(t
     ran = _ran(try_folder, {"kind": "start", "program": "pkg:bin/tool.exe", "args": ["--serve"], "cwd": "",
                             "sha": sha})
     manifest = {**_adopted_manifest("hello-page"),
-                "run": {"windows": {"type": "command", "start": ["{pkg}\\bin\\tool.exe", "--serve"]}}}
+                "run": {"default": {"type": "command", "start": [os.path.join("{pkg}", "bin", "tool.exe"), "--serve"]}}}
     assert plan_cover.commands_outside(manifest, ran, staged) == []
     (staged / "bin" / "tool.exe").write_bytes(b"MZ another program now")
     assert plan_cover.commands_outside(manifest, ran, staged)
@@ -283,12 +288,12 @@ def test_an_adopted_app_runs_only_from_the_manifest_the_core_wrote_never_a_shipp
     folder = tmp_path / "hello-page"
     _two_manifests(folder, ["{python}", "evil.py"], ["{python}", "serve.py"])
     data, path = manifest_mod.load(folder, adopted=True)
-    assert path == folder / ".buildbot" / "puffpai.json" and data["run"]["windows"]["start"][1] == "serve.py"
+    assert path == folder / ".buildbot" / "puffpai.json" and data["run"][run_key()]["start"][1] == "serve.py"
     assert manifest_mod.find(folder) == folder / ".buildbot" / "puffpai.json"     # origin unknown: still the Core's
     staged = core.packages.add(str(folder), adopted=URL)                  # the real Drawbridge
     assert staged["id"] == "hello-page"
     pending = core.packages._pending[staged["consent_id"]]
-    assert pending.manifest["run"]["windows"]["start"] == ["{python}", "serve.py"]
+    assert pending.manifest["run"][run_key()]["start"] == ["{python}", "serve.py"]
     # with no Core-written file, an adopted add is refused (the shipped top-level one never counts)
     (folder / ".buildbot" / "puffpai.json").unlink()
     with pytest.raises(AddError, match="the Core wrote"):
@@ -304,7 +309,7 @@ def test_steward_reads_an_installed_adopted_app_from_the_core_s_manifest(core, d
     staged = core.packages.add(str(folder), adopted=URL)
     core.consent.answer(staged["consent_id"], "yes", by="owner", card_sha=staged["card_sha"])
     assert core.packages.wait(staged["consent_id"], 300)["status"] == "installed"
-    assert core.steward.manifest("hello-page")["run"]["windows"]["start"] == ["{python}", "serve.py"]
+    assert core.steward.manifest("hello-page")["run"][run_key()]["start"] == ["{python}", "serve.py"]
 
 
 def test_a_built_in_or_hand_made_package_keeps_its_top_level_manifest(tmp_path, freshtable):
@@ -320,7 +325,6 @@ def test_a_built_in_or_hand_made_package_keeps_its_top_level_manifest(tmp_path, 
         manifest_mod.load(folder, adopted=True)                       # not adopted: never its .buildbot one
 
 
-@needs_jobs
 def test_toolsmith_cannot_write_move_or_delete_the_core_s_manifest_files(world):
     _b, link, try_id, rec = _checked(world)
     from puffpai_core.zone3.toolsmith_host.trials import CORE_FILE_LINE
@@ -345,7 +349,6 @@ def test_toolsmith_cannot_write_move_or_delete_the_core_s_manifest_files(world):
     assert link.try_write(try_id, "package.json", '{"name": "hello-page"}')["ok"]
 
 
-@needs_jobs
 def test_the_core_writes_the_manifest_toolsmith_sends_and_refuses_one_for_another_app(world):
     _b, link, try_id, rec = _checked(world)
     assert "Send the app's puffpai.json" in link.try_add(try_id, "local")["said"]
@@ -397,13 +400,13 @@ def test_pip_inside_the_trys_own_venv_still_works(tmp_path, args):
 
 def test_pip_writes_its_logs_and_downloads_only_inside_the_try(tmp_path):
     for args in (["install", "--log", str(tmp_path.parent / "out.log"), "x"],
-                 ["install", "--log-file=..\\out.log", "x"], ["download", "-d", "..\\wheels", "x"],
-                 ["install", "--report", "C:\\report.json", "x"]):
+                 ["install", "--log-file=" + os.path.join("..", "out.log"), "x"],
+                 ["download", "-d", os.path.join("..", "wheels"), "x"],
+                 ["install", "--report", os.path.join(os.path.abspath(os.sep), "report.json"), "x"]):
         with pytest.raises(A.Refusal):
             A._pip_args(args, tmp_path, tmp_path)
 
 
-@needs_jobs
 def test_a_refused_pip_option_comes_back_as_not_run_through_the_route(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)
@@ -421,14 +424,15 @@ def test_a_refused_pip_option_comes_back_as_not_run_through_the_route(world):
 def _fake_try(tmp_path) -> A.Place:
     """A try folder with a Core-made-looking .venv (never run: decide only reads it) and installed modules."""
     folder = tmp_path / "app"
-    sp = folder / ".venv" / "Lib" / "site-packages"
+    sp = folder / ".venv" / "Lib" / "site-packages" if WIN else (
+        folder / ".venv" / "lib" / f"python{sys.version_info[0]}.{sys.version_info[1]}" / "site-packages")
     for pkg in ("flask", "uvicorn", "pytest", "pip"):
         (sp / pkg).mkdir(parents=True)
         (sp / pkg / "__init__.py").write_text("", encoding="utf-8")
         (sp / pkg / "__main__.py").write_text("", encoding="utf-8")
-    (folder / ".venv" / "Scripts").mkdir(parents=True)
-    (folder / ".venv" / "Scripts" / "python.exe").write_bytes(b"MZ not a real python")
-    (folder / ".venv" / "pyvenv.cfg").write_text("home = C:\\Python311\n", encoding="utf-8")
+    A.venv_bin(folder).mkdir(parents=True)
+    A.venv_python(folder).write_bytes(b"MZ not a real python")
+    (folder / ".venv" / "pyvenv.cfg").write_text("home = a made-up place\n", encoding="utf-8")
     (folder / "myapp.py").write_text("", encoding="utf-8")
     (folder / "requirements.txt").write_text("flask\n", encoding="utf-8")
     (folder / "mypkg").mkdir()
@@ -491,16 +495,15 @@ def test_http_server_runs_only_as_a_server_on_127_0_0_1_and_the_trys_port(tmp_pa
                        (["-m", "http.server", "8000", "--bind", "127.0.0.1"], 18555),       # not its port
                        (["-m", "http.server", "--bind", "127.0.0.1"], 18555),
                        (["-m", "http.server", "18555", "--bind", "127.0.0.1", "--cgi"], 18555),
-                       (["-m", "http.server", "18555", "--bind", "127.0.0.1", "-d", "C:\\"], 18555)):
+                       (["-m", "http.server", "18555", "--bind", "127.0.0.1", "-d", os.path.abspath(os.sep)], 18555)):
         with pytest.raises(A.Refusal):
             _decide(place, args, port=port)
 
 
-@needs_jobs
 def test_python_dash_m_runs_a_module_installed_in_the_trys_own_venv_and_http_server_serves(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)
-    mod = rec.folder / ".venv" / "Lib" / "site-packages" / "hellomod"      # as pip would install it
+    mod = A.site_packages(rec.folder)[0] / "hellomod"                      # as pip would install it
     mod.mkdir(parents=True)
     (mod / "__init__.py").write_text("", encoding="utf-8")
     (mod / "__main__.py").write_text("print('hello from the venv')\n", encoding="utf-8")
@@ -527,7 +530,6 @@ def test_python_dash_m_runs_a_module_installed_in_the_trys_own_venv_and_http_ser
 
 # -- 5. every refusal is the same structured not_run record -----------------------------------------------------
 
-@needs_jobs
 def test_every_refusal_from_the_allowlist_and_the_broker_is_one_not_run_record(world):
     _b, link, try_id, rec = _checked(world)
     make_venv(link, try_id)
@@ -570,7 +572,6 @@ def test_toolsmith_says_a_denied_refusal_back_to_the_model_and_makes_no_step_for
 
 # -- 6. a short TEMP of the try's own ---------------------------------------------------------------------------
 
-@needs_jobs
 @needs_node
 def test_a_try_gets_a_short_temp_of_its_own_and_npm_answers_when_the_tests_temp_is_deep(tmp_path, monkeypatch):
     # A deep bot folder: the try's old TEMP (its scratch folder under logs) would be about 250 characters,
@@ -592,14 +593,14 @@ def test_a_try_gets_a_short_temp_of_its_own_and_npm_answers_when_the_tests_temp_
         assert len(str(rec.scratch)) >= 245                     # what TEMP was before: npm would not answer
         assert rec.temp is not None and rec.temp.parent == state / "t" and rec.temp.is_dir()
         seen = broker_mod.temp_env_path(rec.temp)
-        assert len(seen) < 200
+        assert len(seen) < 200 or not WIN                       # the short form: only Windows has one, or this limit
         began = time.monotonic()
         got = link.try_run(try_id, {"program": "npm", "args": ["--version"]})
         assert got["ok"] and got["output"].strip(), got
         assert time.monotonic() - began < 60
         assert link.try_write(try_id, "where.js", "console.log(process.env.TEMP); console.log(require('os').tmpdir())\n")["ok"]
         shown = link.try_run(try_id, {"program": "node", "args": ["where.js"]})
-        assert shown["ok"] and shown["output"].lower().count(os.path.normcase(seen)) == 2, (seen, shown)
+        assert shown["ok"] and shown["output"].lower().count(seen.lower()) == 2, (seen, shown)
         temp = rec.temp
         w.host.trials.end(rec)
         assert not temp.exists() and list((state / "t").iterdir()) == []    # made and removed by the Core

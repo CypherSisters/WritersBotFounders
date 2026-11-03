@@ -150,16 +150,6 @@ def _first(reason: str) -> str:
     return (m.group(1) if m else text).strip()
 
 
-#: The part of a job's line that says it stopped at its share of the cap (``find.share_line``, D119).
-_SHARE = re.compile(r"^(Toolsmith stopped trying apps for this job:.*? still stops at \$[\d.]+\.)( Not tried: [^:]*?\.(?=\s|$))?")
-
-
-def _share(reason: object, whole: bool = True) -> str:
-    """That part of a job's line, or "" (*whole*: with the apps it did not try)."""
-    m = _SHARE.match(str(reason or ""))
-    return "" if not m else (m.group(0) if whole else m.group(1))
-
-
 def job_result_lines(results: list) -> list:
     """Each job's end, short and plain (the Done step, chat): works, not working yet: why, nothing found: why.
     The Prove step above it has the long version (:func:`prove_lines`)."""
@@ -173,8 +163,6 @@ def job_result_lines(results: list) -> list:
             out.append(f"{name}: {JOB_LIBRARY}.")
         elif state == "working":
             out.append(f"{name}: works.")
-        elif state == "not_yet" and _share(r.get("reason")):
-            out.append(f"{name}: not working yet: {_share(r.get('reason'), whole=False)}")
         elif state == "not_yet":
             tried = _tried(r)
             if len(tried) == 1:
@@ -210,7 +198,6 @@ def prove_lines(results: list) -> list:
             tried = _tried(r)
             out.append(f"{name}: not working yet. Toolsmith tried {', '.join(t['name'] for t in tried)}:")
             out += [f"{t['name']}: {_why(t)}" for t in tried]
-            out += [x for x in (_share(reason),) if x]
         elif state == "nothing_found":
             out.append(f"{name}: nothing found. {_nothing_why(reason)}")
         else:
@@ -233,7 +220,17 @@ PLAN_WORKING = ("Toolsmith is making the plan: it looks at what is already on yo
                 "you said Yes to and reads READMEs. This can take a few minutes.")
 
 # The Done step's one line about more apps (lane I10c: the wizard lists no apps; the store is on the Desktop).
-PLAN_NEEDS_KEY = "Toolsmith plans with your cloud model, and its key is in your vault, so the plan waits until the vault is open."
+# D142: the setup window asks for the PIN itself while Toolsmith waits for a locked vault, right under the line that
+# names the other ways. Her terminal is the only place these show.
+PIN_HERE = "Or type your PIN right here and press Enter. Nothing shows as you type, that is normal. To skip this, just press Enter."
+PIN_SKIPPED = "Skipped. Toolsmith keeps waiting until your vault is open."
+PIN_OPENED = "Your vault is open. Setup goes on."
+PIN_DID_NOT_OPEN = "Your vault did not open: {why}"
+PIN_NOT_TAKEN = "the PIN was not taken."                  # the same words as /unlock in the chat
+PIN_NOT_REACHED = "this window could not reach BuildBot."
+PIN_ENTER_FIRST = "Press Enter first, and do not type your PIN yet. This window asks for it next, and hides it."
+PIN_NOT_NEEDED = "Toolsmith is not waiting for your vault any more, so your PIN is not needed now. Press Enter to go on."
+HIDDEN_READ_OUT = "The PIN question is still open, so nothing shows as you type. Press Enter to go on."
 STORE_MORE = "More apps are in the PuffPAI store on your Desktop."
 # A PuffPAI store app she ticked on the plan card, added before the build with its own Yes card.
 STORE_TICK_NOTE = "Your tick adds it first, with its own Yes card, instead of searching."

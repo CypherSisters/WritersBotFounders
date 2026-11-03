@@ -12,6 +12,8 @@ The real-Core tests run ``serve`` on free ports (never 8420-8422) in a Job Objec
 
 from __future__ import annotations
 
+import shlex
+import html
 import os
 import re
 import subprocess
@@ -42,9 +44,9 @@ def installed(tmp_path, monkeypatch):
     from puffpai_core.wizard import terminal
     folder = tmp_path / "Bird Bot" / "BuildBotv2"
     folder.mkdir(parents=True)
-    (folder / "Start BuildBot.cmd").write_text("@echo off\n", encoding="ascii")
-    (folder / "Sign in a browser.cmd").write_text("@echo off\n", encoding="ascii")
-    monkeypatch.setattr(terminal, "launcher", lambda: folder / "Start BuildBot.cmd")
+    (folder / terminal.launcher_name("Start BuildBot.cmd")).write_text("@echo off\n", encoding="ascii")
+    (folder / terminal.launcher_name("Sign in a browser.cmd")).write_text("@echo off\n", encoding="ascii")
+    monkeypatch.setattr(terminal, "launcher", lambda: folder / terminal.launcher_name("Start BuildBot.cmd"))
     return folder
 
 
@@ -53,11 +55,18 @@ def test_signin_route_names_the_file_and_its_folder_at_the_desktop_only(app, ins
     desk = desktop_client(app)
     r = desk.get("/v1/signin")
     assert r.status_code == 200 and r.headers["Cache-Control"] == "no-store"
-    assert r.json["file"] == "Sign in a browser.cmd" and r.json["folder"] == str(installed) and "command" not in r.json
+    if os.name == "nt":
+        assert r.json["file"] == "Sign in a browser.cmd" and r.json["folder"] == str(installed) and "command" not in r.json
+    else:   # D132: nothing to double-click, the launcher is the command
+        signin = installed / "signin-buildbot.sh"
+        assert r.json["file"] == r.json["folder"] == "" and r.json["command"] == shlex.quote(str(signin))
     assert app.test_client().get("/v1/signin").status_code == 302                      # 127.0.0.1: moved (D79)
     assert app.test_client().get("/v1/signin", environ_base={"puffpai.listener": "pages"}).status_code == 404
     page = desk.get("/v1/recover").get_data(as_text=True)                               # the recovery page too
-    assert f"double-click Sign in a browser.cmd in {installed}, then open the link it shows." in page
+    if os.name == "nt":
+        assert f"double-click Sign in a browser.cmd in {installed}, then open the link it shows." in page
+    else:
+        assert f"run this in a terminal on this computer, then open the link it shows: {shlex.quote(str(signin))}" in html.unescape(page)
     assert not NEVER.search(page.replace("puffpai.device_key", ""))
 
 
@@ -78,8 +87,14 @@ def test_a_signed_out_page_is_told_only_how_to_sign_in(app, installed, tmp_path,
     from puffpai_core.api.groups import ui
     with app.test_request_context("/v1/signin"):
         g.caller = None
-        assert set(ui.signin_where()) == {"file", "folder"}             # no chat, no program path
-        assert {"chat_file", "chat_folder", "chat_command", "cli"} == set(ui.signed_in_where())
+        assert set(ui.signin_where()) == ({"file", "folder"} if os.name == "nt" else {"file", "folder", "command"})   # no chat, no program path
+        assert {"chat_file", "chat_folder", "chat_command", "cli", "shells"} == set(ui.signed_in_where())
+
+
+def test_the_route_gives_a_signed_out_browser_no_shells_and_no_program(app, installed):
+    from desktop_kit import desktop_client
+    got = desktop_client(app).get("/v1/signin").json
+    assert not {"shells", "cli", "chat_file", "chat_folder", "chat_command"} & set(got)
 
 
 def test_signin_route_with_no_file_says_nothing_about_a_folder(app, tmp_path, monkeypatch):
@@ -88,7 +103,9 @@ def test_signin_route_with_no_file_says_nothing_about_a_folder(app, tmp_path, mo
     monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / "Start BuildBot.cmd")    # run from source
     got = desktop_client(app).get("/v1/signin").json
     assert got["file"] == "" and got["folder"] == ""
-    assert got["command"].endswith("pair --running") and got["command"].startswith(("& \"", "$env:"))    # one that runs
+    assert got["command"].endswith("pair --running")                                      # one that runs
+    if os.name == "nt":
+        assert got["command"].startswith(("& \"", "$env:"))
     page = desktop_client(app).get("/v1/recover").get_data(as_text=True)
     assert "run this in a terminal on this computer" in page and "run puffpai pair" not in page
 
@@ -97,8 +114,11 @@ def test_pair_running_with_no_bot_says_so_and_how_to_start_it(installed, state, 
     from puffpai_core import cli
     assert cli.main(["pair", "--running"]) == 1
     out = capsys.readouterr().out
+    from puffpai_core.wizard import terminal
     assert out.splitlines() == [cli.PAIR_NOT_RUNNING,
-                                f"Start it first: double-click Start BuildBot.cmd in {installed}, then run this again."]
+                                f"Start it first: {terminal.how_to_run(terminal.launcher())}, then run this again."]
+    if os.name == "nt":
+        assert out.splitlines()[1] == f"Start it first: double-click Start BuildBot.cmd in {installed}, then run this again."
     assert "#pair=" not in out and not (state / "pairing.json").exists()               # no code made for nothing
 
 
@@ -305,7 +325,7 @@ def test_signed_in_settings_says_what_is_not_built_in_plain_lines(state, tmp_pat
                             "document.getElementById('view-settings').textContent.indexOf('another browser') >= 0", 30)
         browser.js("document.querySelectorAll('#view-settings details.act').forEach((d) => { d.open = true; })")
         text = browser.js("document.getElementById('view-settings').innerText")
-        assert "Changing the brain here is not built yet. Setup's brain step changes it." in text, text
+        assert "Pick a model that is on this computer, or press Add to download one. The next chat turn uses it." in text, text
         assert "To sign in another browser on this computer, " in text, text
         for never in ("Coming in a later build", "Not in this build", "/v1/", "PUT /", "GET /", "Bearer", "API key"):
             assert never not in text, (never, text)

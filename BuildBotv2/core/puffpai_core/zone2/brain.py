@@ -43,7 +43,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import conversations, loop, persona
+from . import catalog, conversations, loop, persona
 from . import settings as model_settings
 from .concierge import Concierge
 from .errors import BrainError
@@ -161,9 +161,9 @@ class Brain:
         gate = Gate(prepare=_guarded(gate.prepare), vault_open=getattr(gate, "vault_open", None) or (lambda: False))
         return s, gate, where == "local"
 
-    def concierge(self, gate: Gate) -> Concierge:
+    def concierge(self, gate: Gate, *, skills_on: bool = True) -> Concierge:
         return Concierge(self.registry, self.state, keep=gate.keep, manifest=self.manifest, folder=self.folder,
-                         token=self.token,
+                         token=self.token, skills_on=skills_on,
                          start=self.start, targets=self.targets, browser=self.browser,
                          checklist=self.checklist, search=self.search, toolsmith=self.toolsmith, pinned=self.pinned,
                          outside=self.outside, real_args=gate.with_real_values, reaches=self.reaches)
@@ -196,17 +196,18 @@ class Brain:
             return gate.for_model(text, real_values=real)[0] if text else ""
         content = persona.system_text(gate.keep(concierge.prompt_block()), loop.TOOL_NOTE, role=gated(role),
                                       call_me=gated(mine.get("call_me", "")), about=gated(mine.get("about", "")),
-                                      opening=gated(opening), skills=skills_text)
+                                      opening=gated(opening), skills=gated(skills_text))
         return {"role": "system", "content": content} if content else self._system(concierge, gate)
 
     # -- one chat turn ---------------------------------------------------------
     def turn(self, text: str, *, conversation: str = conversations.DEFAULT,
              emit: Optional[Callable[[dict], None]] = None, cancelled: Optional[threading.Event] = None,
-             personal: bool = False) -> dict:
+             personal: bool = False, asked_by: str = "") -> dict:
         """``{"text", "empty", "notice", "changed", "used", "steps"}``. Raises BrainError.
 
         ``personal``: the caller is her paired owner device, so her "You" notes may go in (lane I12). Any
-        other caller (an owner API key, a routine) gets none."""
+        other caller (an owner API key, a routine) gets none. ``asked_by``: a program key's label, said on any Yes card
+        this turn raises (D147)."""
         emit = emit or (lambda _e: None)
         s, gate, real = self._checked()
         model_text, kept_text, _handles = gate.for_model(text, real_values=real)
@@ -215,12 +216,13 @@ class Brain:
                    for m in self.store.load(conversation) if m.get("role") in ("user", "assistant")]
         # The first chat since who the bot is was written opens with its first question (lane I12).
         opening = persona.first_question_due(self.state)
-        # WritersBot: an installed skill the turn needs goes in the system message (zone2.skills); the owner's
-        # recent messages keep it on. The locked history is what the model sees, so it is matched on too.
+        # WritersBot: an installed skill the turn needs goes in the system message (zone2.skills.block), from the
+        # same checked list D149's skill_view reads; the owner's recent messages keep it on. The locked history is
+        # what the model sees, so it is matched on too.
         from . import skills as _skills
         try:
             recent = [m["content"] for m in history if m.get("role") == "user"]
-            skills_text = _skills.block(self.state, concierge.rows(), model_text, recent)
+            skills_text = _skills.block(concierge._skills(), model_text, recent)
         except Exception:  # noqa: BLE001 - a skill that cannot be read is no reason to lose the turn
             skills_text = ""
         messages = [self._chat_system(concierge, gate, real, opening, personal, skills_text), *history,
@@ -228,6 +230,7 @@ class Brain:
         table = concierge.table_for(kept_text, s.tools_allowed(), s.pinned)
 
         def ask(question: dict) -> Optional[bool]:
+            question = {**question, "asked_by": asked_by} if asked_by else question
             if "notify" not in question:           # with it, the ask comes once the card has its id (run_command)
                 emit({"type": "ask", "question": question})
             answer = self.consent(question)
@@ -235,7 +238,7 @@ class Brain:
             return answer
 
         ctx = {"ask": ask if self.consent is not None else None, "cancelled": cancelled,
-               "review": self._review_for(gate, emit), "conversation": conversation, "real": real,
+               "review": self._review_for(gate, emit, asked_by), "conversation": conversation, "real": real,
                "keep": gate.keep,      # run_command: what its Yes card may show (X6)
                "audit": self.audit, "safe_mode": self.safe_mode,
                "her_device": personal is True,   # Always allow skips her Yes only for her own paired device
@@ -261,7 +264,7 @@ class Brain:
         emit({"type": "done", **out})
         return out
 
-    def _review_for(self, gate: Gate, emit: Callable[[dict], None]) -> Optional[Callable[[dict], dict]]:
+    def _review_for(self, gate: Gate, emit: Callable[[dict], None], asked_by: str = "") -> Optional[Callable[[dict], dict]]:
         """Drawbridge's review for this turn: the call's arguments in the locked form, its plain summary
         for a Yes card, and the ``ask`` / ``answered`` events when her Yes was needed."""
         if self.review is None:
@@ -269,7 +272,7 @@ class Brain:
 
         def review(call: dict) -> dict:
             locked = clean_value(call.get("args") or {}, gate.keep)
-            call = dict(call, args=locked, summary=arg_summary(locked, gate.keep),
+            call = dict(call, args=locked, summary=arg_summary(locked, gate.keep), asked_by=asked_by,
                         notify=lambda card: emit({"type": "ask", "question": card}))
             got = self.review(call)
             if isinstance(got, dict) and got.get("asked"):
@@ -288,7 +291,8 @@ class Brain:
         tool = shown_name(tool)
         s, gate, real = self._checked()
         model_text, kept_text, _h = gate.for_model(ask, real_values=real)
-        concierge = self.concierge(gate)
+        # No skills in a dry run (D149): it is one step, so reading a skill could never reach the tool it asks about.
+        concierge = self.concierge(gate, skills_on=False)
         table = concierge.table_for(kept_text, s.tools_allowed(), [tool])
         if "." in tool and table.find(tool) is None:
             try:
@@ -323,7 +327,8 @@ class Brain:
         never callable), and the answer is whose store app's tool the brain called."""
         s, gate, real = self._checked()
         model_text, kept_text, _h = gate.for_model(ask, real_values=real)
-        concierge = self.concierge(gate)
+        # No skills in a dry run (D149): a skill's list on a real model made it pick no installed app.
+        concierge = self.concierge(gate, skills_on=False)
         table = concierge.table_for(kept_text, s.tools_allowed())
         shelf: set[str] = set()
         for app in store or []:
@@ -580,6 +585,17 @@ def _brain() -> Brain:
 def picks(package: str, ask: str) -> dict:
     """Lane L6's ``brain_picks`` port: does the brain pick one of *package*'s tools for *ask*? (``Brain.picks``)"""
     return _brain().picks(package, ask)
+
+
+def drives_tools() -> bool:
+    """May Toolsmith's model on this computer try the goal's conversation (D154)? All but one the catalog says has no tools.
+    A model that turns out unable is handed back after a few turns, so trying costs little. No brain yet: no."""
+    try:
+        model = str(_brain().settings("code").model or "").lower()
+        rows = (catalog.load_catalog().get("models") or []) if model else []
+    except Exception:  # noqa: BLE001 - no brain, or no settings yet: the Core's own way, with no model
+        return False
+    return bool(model) and next((r.get("tools") for r in rows if str(r.get("id") or "").lower() == model), True) is not False
 
 
 def toolsmith_turn(system: str, messages: list[dict], tools: list[dict]) -> dict:

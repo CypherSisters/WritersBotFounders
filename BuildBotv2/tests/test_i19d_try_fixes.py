@@ -76,10 +76,11 @@ INVOICE_COMPOSE = ("services:\n  invoices:\n    image: invoices:latest\n    volu
 
 def test_a_compose_file_with_tmp_is_allowed_for_the_trys_own_scratch(bot):
     assert _check(bot, "recipe-box", RECIPE_COMPOSE, "compose").verdict == "allow"
-    assert _check(bot, "invoices", INVOICE_COMPOSE, "compose").verdict == "allow"
+    # Linux and Mac: all of the real /tmp can't be mounted, other programs' sign-in sockets are there (D132).
+    assert _check(bot, "invoices", INVOICE_COMPOSE, "compose").verdict == ("allow" if WIN else "deny")
     # A birdwatching app run with a command that names the try's temp folder.
-    for cmd in ("python count_birds.py %TEMP%\\birds.csv", "python count_birds.py $TMP/birds.csv",
-                "python count_birds.py /tmp/birds.csv"):
+    for cmd in ("python count_birds.py $TMP/birds.csv", "python count_birds.py /tmp/birds.csv",
+                *(["python count_birds.py %TEMP%\\birds.csv"] if WIN else [])):         # %TEMP% and \\ are Windows' own
         got = _check(bot, "birdwatch", cmd, "command")
         assert got.verdict == "allow", (cmd, got)
 

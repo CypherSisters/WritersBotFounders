@@ -1,6 +1,7 @@
 """Lane L5 routes: checklist, events, wizard, settings, notify, theme, people, ui and pairing."""
 
 import json
+import os
 import shutil
 
 import pytest
@@ -159,7 +160,7 @@ def test_package_checks_reach_only_its_own_port_and_folders(client, owner, core,
                                              "check": {"url": "http://127.0.0.1:5123/health"}}, headers=ft)
     assert ok.status_code == 201
     for path in (str(state / "registry.db"), str(state / "packages" / "other" / "x"),
-                 str(state / "data" / "freshtable" / ".." / "other" / "x"), "C:/Windows/win.ini", "../../registry.db"):
+                 str(state / "data" / "freshtable" / ".." / "other" / "x"), "C:/Windows/win.ini" if os.name == "nt" else "/etc/hostname", "../../registry.db"):
         r = client.post("/v1/checklist", json={"id": "f", "kind": "confirm", "title": "f", "check": {"file": path}},
                         headers=ft)
         assert r.status_code == 400 and "own folders" in r.json["error"], path

@@ -418,6 +418,12 @@ def manifest_for(t: Any) -> dict:
     """``puffpai.json`` for a try whose ``done`` passed."""
     c, r = t.cand, t.result
     name = str(c.get("name") or t.pkg_id)[:60]
+    if r.get("skill"):                         # D152: text the brain reads (D149). Nothing runs, so no run block.
+        return {"schema": "puffpai-package/1", "id": t.pkg_id, "kind": "skill", "name": name, "version": "0.1.0",
+                "description": f"Built by Toolsmith: {str(c.get('description') or name).strip()}"[:300],
+                "author": "Toolsmith", "license": "Built by Toolsmith", "origin": origin_of(c),
+                "consent": f"{name} is a skill Toolsmith wrote for this goal. It is text your bot's brain reads. It runs "
+                           "nothing by itself, and a command it asks for still asks you first."}
     server = r.get("mcp") or []                # D124: a service with no page, reached over its MCP server
     if t.compose_project:
         run = {run_key(): {"type": "docker_compose", "file": t.compose_files[0]}}
@@ -467,14 +473,17 @@ def manifest_for(t: Any) -> dict:
         del manifest["homepage"]
     if server:                                 # no page, so no ui.pages entry that opens nothing
         words, used = _argv0([_port(a, t.port) for a in server])
-        del manifest["ui"]
-        manifest["kind"] = "tool"
+        if not (built and page):               # D152: a package Toolsmith built has its page and its tools both
+            del manifest["ui"]
+            manifest["kind"] = "tool"
         manifest["abilities"] = {"mcp": {"transport": "stdio", "command": words}}
-        if "python" in used and run["windows"].get("type") == "command":
-            run["windows"]["python"] = True
+        if "python" in used and run[run_key()].get("type") == "command":
+            run[run_key()]["python"] = True
         if not page:                           # what really shows it works is its tools listed (Caretaker, the brain)
             manifest["health"] = {"file": "{pkg}/.buildbot/puffpai.json", "every_s": 60}
-        manifest["consent"] = manifest["consent"].replace(f"It runs {where}", f"It runs {where}, with no page, and your bot's brain can use its tools")
+        manifest["consent"] = manifest["consent"].replace(
+            f"It runs {where}", f"It runs {where}, and your bot's brain can use its tools" if built and page
+            else f"It runs {where}, with no page, and your bot's brain can use its tools")
     return manifest
 
 
@@ -500,11 +509,12 @@ def _ran_line(t: Any) -> str:
     return "It runs in Docker behind the Bridge." if t.compose_project else tries_line(t.cand)
 
 
-def install(t: Any, link: Any) -> dict:
-    """Write the manifest through the Core, then ask the Core to add it. ``{ok, said, manifest, id}``."""
+def install(t: Any, link: Any, manifest: dict | None = None) -> dict:
+    """Write the manifest through the Core, then ask the Core to add it. ``{ok, said, manifest, id}``. *manifest*: one
+    already made (``assemble.make_app``)."""
     from ...packages import manifest as manifest_mod
     try:
-        manifest = manifest_for(t)
+        manifest = manifest or manifest_for(t)
     except Unsaved as exc:
         t.notes.append(exc.reason)
         unsaved_step(t, exc.lines, exc.reason)

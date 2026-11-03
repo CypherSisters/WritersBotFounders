@@ -32,6 +32,10 @@ the same one-time code, cookie and second half as any browser.
   address the bot's home-network listener answers on (D130). All of the above holds, for that one host. Only the sign-in
   differs: no code can be made here, so the page goes to that listener's pair screen, and she types the bot's code once.
 
+- **On Linux and Mac (D144, PROPOSED).** The same page, in Chromium or Chrome app mode, with the same sign-in and the same
+  one-window lock: :mod:`.window_app`. It has none of the handlers above, so it is as protected as a browser tab, which
+  the owner accepted for this release. Everything above about pywebview and WebView2 is Windows only.
+
 Importing this file never imports webview (the Core and the chat never need it).
 """
 
@@ -75,6 +79,9 @@ OPENING_LINE = "The PuffPAI window is opening."
 ALREADY_LINE = "The PuffPAI window for this bot is already open."
 SHORTCUT_TEXT = "Opens the PuffPAI window for this bot."
 NOT_RUNNING_LINE = "BuildBot is not running, so its window can't open yet. Start BuildBot first."
+NO_SCREEN_LINE = "The window can't open on this computer: {why}. On another device on your home network, open {urls} and type its code. To get the code, {how}."
+NO_SCREEN_OFF_LINE = ("The window can't open on this computer: {why}. Your dashboard is at {origin}, on this computer only. "
+                      "To reach it from another device on your home network, run: {on}")
 REMOTE_NO_ANSWER = ("Nothing answers at {origin}. Check that the bot's computer is on and BuildBot runs there, that this computer is on the same "
                     "home network, and the address: on the bot's computer, puffpai pair prints it.")
 REMOTE_BAD = "That is not an address this window can use. Give the one puffpai pair prints on the bot's computer, like http://192.168.1.20:8423"
@@ -423,7 +430,8 @@ def why_not() -> str:
     """Why the window can't open on this computer, in plain words, or "" when it can. Imports nothing into this
     process."""
     if os.name != "nt":
-        return "it is built for Windows only so far"
+        from . import window_app
+        return window_app.why_not()
     if importlib.util.find_spec("webview") is None:
         return "pywebview is not installed"
     if importlib.util.find_spec("pythonnet") is None:
@@ -437,7 +445,30 @@ def why_not() -> str:
     return ""
 
 
+def _no_screen_line(why: str, port: int) -> str:
+    """D144: no screen here, so the dashboard on this computer is no use to her. The home-network address, and how to get
+    its code from this computer, or how to turn that on."""
+    from .api import network
+    from .wizard.terminal import cli_command, how_to_run, signin_launcher
+    state = state_dir()
+    urls = []
+    if network.saved_on(state):
+        urls = network.urls_of(network.network_ports(port)[0], network.own_addresses(), network.own_names())
+    if not urls:
+        return NO_SCREEN_OFF_LINE.format(why=why, origin=origin_of(port), on=cli_command("network", "on"))
+    signin = signin_launcher()
+    how = how_to_run(signin) if signin.is_file() else f"run this in a terminal: {cli_command('pair', '--running')}"
+    return NO_SCREEN_LINE.format(why=why, urls=" or ".join(urls), how=how)
+
+
 def cant_line(why: str, port: int) -> str:
+    if os.name != "nt" and not _remote:
+        from . import window_app
+        if not window_app.has_screen():
+            try:
+                return _no_screen_line(why, port)
+            except Exception:  # noqa: BLE001 - the plain line below still gives an address, never a stack trace
+                pass
     return CANT_LINE.format(why=why, origin=origin_of(port))
 
 
@@ -461,7 +492,13 @@ def tell(line: str) -> None:
 
 
 def offer_dashboard(line: str, port: int, state: Path | str) -> None:
-    """The window could not open (D81): the plain line, and an offer of the dashboard. Never a stack trace."""
+    """The window could not open (D81): the plain line, and an offer of the dashboard. Never a stack trace. No screen here
+    (D144): only the line, as a dashboard opened now would open nowhere she can see, or in a text browser in this terminal."""
+    if os.name != "nt":
+        from . import window_app
+        if not window_app.has_screen():
+            tell(line)
+            return
     if sys.stdout is None:
         yes = _box(line + "\n\nOpen your dashboard now?", yes_no=True)
     else:
@@ -482,7 +519,10 @@ def offer_dashboard(line: str, port: int, state: Path | str) -> None:
 def _bring_forward(pid: object) -> bool:
     """The running window to the front. *pid* comes from the note of a lock the OS says is held, so it is that
     window's process, not a reused number. Windows may flash it on the taskbar instead."""
-    if os.name != "nt" or not isinstance(pid, int) or pid <= 0:
+    if os.name != "nt":
+        from . import window_app
+        return window_app.bring_forward(pid)
+    if not isinstance(pid, int) or pid <= 0:
         return False
     import ctypes
     from ctypes import wintypes
@@ -523,7 +563,9 @@ def _spawn(state: Path | str, remote: str = "") -> None:
     it starts in."""
     argv = [_windowless_python(), "-P", "-m", "puffpai_core.cli", "app", "--here"] + (["--remote", remote] if remote else [])
     if os.name != "nt":
-        subprocess.Popen(argv, start_new_session=True, close_fds=True)    # noqa: S603 - this program's own window
+        # On her terminal it can still say a late line. Never holding a pipe or a log open: what piped this would wait for the window.
+        out = None if sys.stdout is not None and sys.stdout.isatty() else subprocess.DEVNULL
+        subprocess.Popen(argv, start_new_session=True, close_fds=True, stdin=subprocess.DEVNULL, stdout=out, stderr=out)    # noqa: S603 - this program's own window
         return
     DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP = 0x00000008, 0x00000200
     subprocess.Popen(argv, creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,   # noqa: S603
@@ -641,6 +683,9 @@ def _sign_in_and_show(window: Any, port: int, state: Path | str, after: Callable
 
 def _show(port: int, state: Path, after: Callable[[Any], Any] | None = None) -> str:
     """The window, until she closes it. Returns "" or why it could not open (the plain words of :func:`cant_line`)."""
+    if os.name != "nt":
+        from . import window_app
+        return window_app.show(port, state, after)
     import webview
     from webview.guilib import initialize
     logging.getLogger("pywebview").setLevel(logging.CRITICAL)      # no address (no code) in any log
@@ -684,6 +729,9 @@ def run_here(after: Callable[[Any], Any] | None = None, remote_port: int | None 
     """``puffpai app --here``: show the window in this process, until she closes it. *after* is for the tests that
     drive a real window; the command line can't set it. *remote_port*: the bot is on another device (D139)."""
     state = state_dir()
+    if os.name != "nt":
+        from . import window_app
+        window_app.ignore_forward()        # another start may signal this process as soon as the lock is taken
     try:
         port = remote_port if remote_port is not None else running_port(state)
         if port is None:

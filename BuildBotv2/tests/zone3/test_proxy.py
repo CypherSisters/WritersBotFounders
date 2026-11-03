@@ -206,5 +206,6 @@ def test_live_on_a_free_port_and_the_default_is_8421(state):
         assert r.startswith(b"HTTP/1.1 403")           # the Bridge is closed by default
     finally:
         z.stop()
-    with socket.socket() as again:
-        again.bind(("127.0.0.1", port))                # stopped: the port is free again
+    # Stopped: the port is free again, for a bind the way the Core binds it (on Linux a plain one waits out TIME_WAIT).
+    from puffpai_core.corelock import exclusive_socket
+    exclusive_socket("127.0.0.1", port).close()

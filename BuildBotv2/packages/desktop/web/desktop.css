@@ -252,10 +252,14 @@ html[data-puff-theme="day"] .tile:nth-child(4n) { --tileGlow: color-mix(in srgb,
 .kv dd { margin: 0; }
 .reading { white-space: pre-wrap; overflow-wrap: anywhere; }
 .passage-card { border-left: 3px solid var(--primary, currentColor); padding: 6px 12px; margin: 8px 0; }
-.passage-card mark { background: #ffe58a; color: #1a1a1a; border-radius: 2px; padding: 0 2px; }
+.passage-card mark { background: #ffe58a; color: #1a1a1a; border-radius: calc(2px * var(--round)); padding: 0 2px; }
 .lines { list-style: none; padding: 0 !important; margin: 0; }
 .lines li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .lines li:last-child { border-bottom: 0; }
+/* Your documents: a long path wraps, and in a narrow pane the controls go under the words. */
+.docs > li { flex-wrap: wrap; }
+.docs > li > .grow { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.docs .acts { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .lines .when { font: 400 12px var(--mono); color: var(--text3); white-space: nowrap; }
 .ok-t { color: var(--mint); } .bad-t { color: var(--red); } .warn-t { color: var(--lemon); }
 pre.box { font: 400 13px/1.45 var(--mono); background: var(--deep); border: 1px solid var(--line); border-radius: calc(14px * var(--round));

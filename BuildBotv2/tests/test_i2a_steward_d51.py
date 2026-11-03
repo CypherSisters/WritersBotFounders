@@ -2,6 +2,7 @@
 installs into the owner's own Python (found by the live adopt run)."""
 
 import json
+import os
 import urllib.request
 
 import pytest
@@ -32,7 +33,7 @@ def d51_folder(tmp_path):
     manifest = {
         "schema": "puffpai-package/1", "id": "d51-app", "kind": "app", "name": "D51 App", "version": "1.0.0",
         "description": "A test app with a D51 run block.", "author": "Cypher Sisters", "license": "MIT",
-        "run": {"windows": {"type": "command",
+        "run": {"default": {"type": "command",
                             "setup": [{"copy": ["settings.example", "settings.txt"]},
                                       ["{python}", "-c", "open('made.txt', 'w').write('made')"]],
                             "start": ["{python}", "server.py"],
@@ -65,7 +66,7 @@ def test_a_d51_run_block_sets_up_and_starts_with_its_env_and_folder(core, drawbr
         got = wait_for(page, 20)
         greeting, settings, made, cwd = got.split("|")
         assert greeting == f"hi {row['port']}" and settings == "from-example" and made == "made"
-        assert cwd.lower().endswith("d51-app\\web")
+        assert cwd.lower().endswith(os.path.join("d51-app", "web"))
     finally:
         core.steward.stop("d51-app")
 

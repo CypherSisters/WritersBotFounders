@@ -227,13 +227,21 @@ def test_a_blocked_host_is_refused(state):
     assert bot.web.seen == []
 
 
-def test_a_local_plan_reads_nothing_and_its_yes_has_no_field(state):
+def test_a_local_plan_reads_under_its_own_yes_too(state):
+    """D154: "even without opus". Its card says so, and its Yes holds the same field."""
+    bot = Bot(state, where="local")
+    assert bot.read()["ok"] is True and bot.z.consents.get(bot.cid)["covers"]["reads_public"] is True
+
+
+def test_a_local_plan_with_no_such_port_reads_nothing_and_its_yes_has_no_field(state, monkeypatch):
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     bot = Bot(state, where="local")
     _refused(bot, bot.read(), "cloud model")
     assert bot.web.seen == [] and "reads_public" not in bot.z.consents.get(bot.cid)["covers"]
 
 
-def test_she_moved_to_this_computer_after_her_yes(state):
+def test_she_moved_to_this_computer_after_her_yes(state, monkeypatch):
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     bot = Bot(state)
     settings_mod.write(state, {"where": "local"})
     _refused(bot, bot.read(), "cloud model")
@@ -850,7 +858,8 @@ def test_her_bridge_page_says_nothing_of_it_when_closed_or_on_a_local_plan(state
     assert plain({"setting": "closed", "live": []})["shown"] == "closed"
 
 
-def test_her_bridge_page_on_a_local_plan(state):
+def test_her_bridge_page_on_a_local_plan(state, monkeypatch):
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     bot = Bot(state, where="local")
     assert who_line(READ_SUBJECT) not in " ".join(bot.z.bridge.view({})["said"])
 
@@ -909,7 +918,8 @@ def test_a_keyed_row_never_goes_in_a_read(state):
 
 
 @pytest.mark.parametrize("where", ["local"])
-def test_a_keyed_row_wakes_nothing_on_a_local_plan(state, where):
+def test_a_keyed_row_wakes_nothing_on_a_local_plan(state, where, monkeypatch):
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     bot = _keyed(state, where=where)
     bot.start()
     with pytest.raises(Exception, match="only while Toolsmith makes a plan"):
@@ -1009,6 +1019,7 @@ def _strip_ids(covers, build_id):
 
 def test_a_local_plan_card_and_covers_do_not_change_at_all(state, tmp_path, monkeypatch):
     """The same local plan with both switches on and both off: the same card, the same covers, and no new field."""
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     on = Bot(state, where="local", yes=False, running=False)
     rec_on = on.z.consents.get(on.cid)
     monkeypatch.setattr(policy, "READ_PUBLIC_PAGES", False)
@@ -1050,7 +1061,8 @@ def test_the_wide_install_hosts_never_widen_what_an_app_keeps_at_run(state):
     assert any("was not on the plan" in x for x in other)                  # a found app always gets its own card
 
 
-def test_a_local_envelope_has_no_second_list(state):
+def test_a_local_envelope_has_no_second_list(state, monkeypatch):
+    monkeypatch.setattr(Ports, "local_goal", lambda self: {})
     bot = Bot(state, where="local", yes=False, running=False)
     assert "plan_hosts" not in bot.host.store.read(bot.bid)["envelope"]
 

@@ -221,7 +221,7 @@
                                         : "Setup is not finished yet. Open Setup in the menu and I'll walk you through it." }),
       el("div", { class: "row" }, [
         el("button", { class: "primary", on: { click: () => P.go("chat") } }, [P.icon("chat_bubble"), "Chat"]),
-        el("button", { on: { click: () => P.go("apps", "add") } }, [P.icon("add_circle"), "Add an app"]),
+        el("button", { on: { click: () => P.go("apps", "available") } }, [P.icon("add_circle"), "Add an app"]),
         el("button", { class: arranging ? "primary" : "", on: { click: () => { arranging = !arranging; draw(sec); } } },
           [P.icon("dashboard_customize"), arranging ? "Done arranging" : "Arrange"])])])]);
     const grid = sec.querySelector(":scope > .tiles") || el("div", { class: "tiles board" });

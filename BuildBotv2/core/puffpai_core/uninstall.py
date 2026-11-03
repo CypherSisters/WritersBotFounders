@@ -13,6 +13,7 @@ number of bots may share (D129): deleting the code folder is hers to do when no 
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import re
 import shutil
@@ -147,6 +148,11 @@ def keep_vault_copy(vault: Path, bot: str) -> Path:
     return dest
 
 
+def snap_profiles(state: Path) -> list[Path]:
+    """D144: a snap browser can't write to the bot folder, so this bot's window profile is under ``~/snap``."""
+    return list(Path.home().glob(f"snap/*/common/puffpai-window/{glob.escape(state.name)}"))
+
+
 def remove_all(state: Path) -> list[str]:
     """Everything but the vault, then the vault, then the folder. Links are removed as links, never followed. The paths
     that could not go."""
@@ -162,7 +168,7 @@ def remove_all(state: Path) -> list[str]:
                 path.unlink(missing_ok=True)
         except OSError:
             left.append(str(path))
-    for entry in [p for p in state.iterdir() if p.name != "vault"]:
+    for entry in [p for p in state.iterdir() if p.name != "vault"] + snap_profiles(state):
         gone(entry)
     if left:                                             # the vault goes last, and only if all else went: a stop leaves it
         return left

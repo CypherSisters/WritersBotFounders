@@ -1,6 +1,6 @@
 # The package contract: how to build anything that works on PuffPAI
 
-Status: design draft for the owner's review (2026-10-14). **Everything here is PROPOSED; nothing is built yet**, including `puffpai check` and every route named. Architecture: `01_ARCHITECTURE.md`. Decisions: `00_INTENT_AND_DECISIONS.md` (D5 = Manifest + MCP; D19 to D23 = zone providers). Zone provider contracts: `zones/`.
+Status: written as the design on 2026-10-14; v2 is now built from it. Where this page and the code differ, the code is right. Architecture: `01_ARCHITECTURE.md`. Decisions: `00_INTENT_AND_DECISIONS.md` (D5 = Manifest + MCP; D19 to D23 = zone providers). Zone provider contracts: `zones/`.
 
 This is the developer contract: the PuffPAI equivalent of "how to package software for Linux". A person or an AI that follows this page should end up with something that installs, runs, shows up in the tray and can be used by the brain, on any PuffPAI bot, with zero changes to the Core.
 
@@ -19,7 +19,7 @@ This is the developer contract: the PuffPAI equivalent of "how to package softwa
 |---|---|---|---|
 | `app` | Something with its own screen and data (a recipe box, a news dashboard) | `puffpai.json`, a `run` block, at least one `ui.page` or `ui.open` | Yes |
 | `tool` | Abilities for the brain with no screen of their own (a converter, an API client) | `puffpai.json`, an MCP server | Yes, or stdio on demand |
-| `skill` | Instructions the brain reads when needed (agentskills `SKILL.md` format) | `puffpai.json`, `SKILL.md` | No (scripts it names run only through a Yes) |
+| `skill` | Instructions the brain reads when needed (agentskills `SKILL.md` format; the prompt lists it, the `skill_view` tool reads it, D149) | `puffpai.json`, `SKILL.md` | No (scripts it names run only through a Yes) |
 | `page` | Extra screens or widgets for the Desktop, with no backend logic | `puffpai.json`, static files | No (the Core serves the files) |
 | `ui` | A whole replacement Desktop (kiosk UI, phone UI, a new look) | `puffpai.json`, a `run` block or static files, built only on the Core API | Yes or static |
 | `avatar` | A face for the bot | `puffpai.json`, a `.glb`, an optional voice id and preview image | No |

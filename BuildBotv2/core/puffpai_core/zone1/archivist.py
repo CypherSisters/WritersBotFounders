@@ -33,7 +33,7 @@ Interface (Core-internal; agents and packages reach it only through Core code):
   and returns False; ``anchor_get`` while locked raises ``Locked`` (never "no anchor"). No route, package
   token or Toolsmith token reaches them.
 - ``on_unlock(callback) -> remove``: ``callback(archivist)`` after every real unlock (and after a safe-mode
-  repair), after the inbox is filed; never on a failed unlock or in safe mode. A callback that crashes is
+  repair), before the inbox is filed; never on a failed unlock or in safe mode. A callback that crashes is
   logged and audited by name; the unlock still stands, and the caller (the Bridge) decides what a failed
   check means.
 - Module seams for lane L1 (``seams.py``): ``verify_pin(pin)``, ``lease_for_start(package_id, key_names)``,
@@ -145,13 +145,15 @@ class Archivist:
         if event == "locked" and reason in ("owner", "tamper", "provider_change", "safe_mode"):
             self.end_all("lock")
         if event == "opened":
-            self._file_inbox()
+            # The hooks first (D151): anyone can seal a box, so filing them can be slow or break. The vault's copy of the
+            # Bridge's files must be compared before that, or a live write can replace it first.
             for fn in list(self._unlock_hooks):
                 try:
                     fn(self)
                 except Exception:                    # the unlock stands; the hook's owner decides what it means
                     logger.exception("an unlock check failed")
                     self.vault.audit("unlock_hook", "failed", hook=getattr(fn, "__qualname__", "hook")[:80])
+            self._file_inbox()
 
     def on_unlock(self, callback: Callable[["Archivist"], None]) -> Callable[[], None]:
         """Core only (D54): ``callback(archivist)`` after every real unlock. Returns a function that removes it."""
@@ -182,7 +184,8 @@ class Archivist:
         if not self.vault.is_open():
             return False
         try:
-            self.vault.put(item, body, kind="anchor", label="core.anchor", tier="P0", reserved=True)
+            self.vault.put(item, body, kind="anchor", label="core.anchor", tier="P0", reserved=True,
+                           touch=False)      # a Core seal is not a use of the vault: the idle timer stays (D153)
         except Locked:
             return False
         self.vault.audit("anchor_put", name=name)
@@ -193,10 +196,10 @@ class Archivist:
         then) and ``ItemTampered`` when its blob was changed outside PuffPAI: treat both as "can't confirm"."""
         item = self._anchor_name(name)
         try:
-            raw = self.vault.get(item)
+            raw = self.vault.get(item, touch=False)
         except NotFound:
             return None
-        meta = self.vault.meta(item) or {}
+        meta = self.vault.meta(item, touch=False) or {}
         try:
             value = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -519,6 +522,17 @@ class Archivist:
 
 _BY_STATE: dict[str, Archivist] = {}
 _BY_LOCK = threading.Lock()
+_HOLDS: dict[str, Callable[[], bool]] = {}
+
+
+def set_hold(state: Path | str, fn: Callable[[], bool]) -> None:
+    """Core only (D153): what this bot folder's vault asks when it decides its idle timer (``Vault.hold``)."""
+    key = str(Path(state).resolve())
+    with _BY_LOCK:
+        _HOLDS[key] = fn
+        a = _BY_STATE.get(key)
+        if a is not None:
+            a.vault.hold = fn
 
 
 def for_state(state: Path | str, bus: Any = None, *, watch: bool = True) -> Archivist:
@@ -528,6 +542,7 @@ def for_state(state: Path | str, bus: Any = None, *, watch: bool = True) -> Arch
         a = _BY_STATE.get(key)
         if a is None:
             a = _BY_STATE[key] = Archivist(state, bus=bus, watch=watch)
+            a.vault.hold = _HOLDS.get(key)
             from . import gate
             gate.bind(a)
         elif bus is not None and a.bus is None:
@@ -535,7 +550,7 @@ def for_state(state: Path | str, bus: Any = None, *, watch: bool = True) -> Arch
         return a
 
 
-# -- module seams for lane L1 (``puffpai_core/seams.py`` looks these up by name; see seam/NOTE.md) -----------
+# -- module seams for lane L1 (``puffpai_core/seams.py`` looks these up by name) -----------
 
 def _here() -> Archivist:
     from ..paths import state_dir

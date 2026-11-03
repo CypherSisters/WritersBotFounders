@@ -4,6 +4,7 @@ carries only its address for the Open button (on this computer, never a Core por
 Tests never bind 8420-8422: the Core here has ports the OS picked.
 """
 
+import sys
 import socket
 
 import pytest
@@ -454,7 +455,12 @@ def test_a_cloud_tag_above_the_package_does_not_matter(monkeypatch):
     real = builtin_source("example-page")
     seen = []
     stock = manager.os.lstat
-    monkeypatch.setattr(manager.os, "lstat", lambda p, **k: seen.append(str(p)) or stock(p, **k))
+    def lstat(p, **k):
+        # On Linux and Mac realpath itself walks every folder with lstat; only what the Core asks counts.
+        if sys._getframe(1).f_globals.get("__name__") != "posixpath":
+            seen.append(str(p))
+        return stock(p, **k)
+    monkeypatch.setattr(manager.os, "lstat", lstat)
     assert apps.puffpai_own({"id": "example-page", "origin": f"local:{real}"}) is True
     assert not seen
 

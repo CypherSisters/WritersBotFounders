@@ -141,6 +141,7 @@ class ChainLog:
         self.seal = seal
         self.max_bytes = max_bytes
         self._lock = threading.Lock()
+        self.write_lock = self._lock           # D151: held across a line and its seal; the unlock check reads under it
         self.tampered: list[dict] = []
         self._digest = hashlib.sha256()
         self._stat: tuple | None = None

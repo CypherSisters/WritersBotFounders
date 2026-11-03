@@ -42,8 +42,9 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from . import adopt, find, knowledge, prove, redact, scout, tries
+from . import adopt, assemble, find, knowledge, prove, redact, scout, tries
 from .errors import CloudError, JobHeld, NotBuilt, Refused
+from .names import cut_text
 
 NOTHING_LINE = "Nothing found yet. Paste a GitHub address for this job."
 UNEXPECTED_LINE = ("Toolsmith hit a problem it did not expect ({what}) while working on this job, so the job "
@@ -124,7 +125,8 @@ def plan(link: Any, cache: Path) -> None:
                          context=" ".join([b["goal"]] + [f"{j['name']} {j['does']}" for j in js]))
     finder.notes = []
     finder.say = finder.notes.append
-    finder._now(f"asking your bot's brain for search words for {len(js)} job{'s' if len(js) != 1 else ''}")
+    if not finder.from_files:                      # a cloud plan asks nothing here (D143)
+        finder._now(f"asking your bot's brain for search words for {len(js)} job{'s' if len(js) != 1 else ''}")
     phrases = finder.search_words(js, b["goal"])
     finder.start_places(js, phrases)               # every other place, all at once, from here on (D99)
     reg = link.registry()
@@ -149,6 +151,11 @@ def plan(link: Any, cache: Path) -> None:
             fn(picked)                             # the Core's own asks, within their own time (D99)
         except Exception as exc:  # noqa: BLE001 - no downloads on the card, never no plan
             log(f"knowledge downloads: not looked for ({type(exc).__name__})")
+    if finder.from_files:                          # every job is searched by now, so a slow brain costs none its search (D143)
+        for i, row in enumerate(out, 1):
+            finder.label = f"Job {i} of {len(js)}, {row['name']}"
+            row["plan"] = finder.asks_after(row, row["plan"], reg.get("rows") or [])
+        finder.label = ""
     # The build log (D84): how many topics the brain gave, for how many jobs, and asks with no answer. Counts
     # only, never the words. The Core adds how many it kept.
     log(f"knowledge topics: the brain gave {asked.get('gave', 0)} for {asked.get('jobs', 0)} jobs; "
@@ -220,10 +227,6 @@ class _Hooks(tries.Hooks):
     def wait_for(self, ready: Callable[[], Any], limit_s: float) -> Any:
         return self._wait(ready, limit_s)
 
-    def at_share(self) -> bool:
-        """This job spent its share of the cap (D119), so a running try stops too (D121)."""
-        return bool(self.runner.share and self.models.spent >= self.runner.share)
-
     def wait_vault(self) -> bool:
         if self.vault_probe is None:
             return False
@@ -242,16 +245,11 @@ class Builder:
         self.settings = info["settings"]
         self.shell, self.os_name = str(info.get("shell") or "PowerShell"), str(info.get("os_name") or "Windows")
         self.slot = threading.Semaphore(1)
+        self._store_lock = threading.Lock()
+        self._store_said: dict[str, str | None] = {}   # a store app asked for: "" on her bot, else why not (None: asking)
         st = self.settings
         self.models = tries.Models(link, {"company": st.get("company"), "model": st.get("model")}
                                    if st.get("where") == "cloud" else None)
-        # A job's share of the cap (D119): only the jobs that can spend. One job: the sender's cap decides. On a cloud
-        # build every job that does not reuse can spend, since it looks for what it needs even with no app (D121).
-        cloud = self.models.cloud is not None
-        spending = sum(1 for j in self.b.get("jobs") or [] if (j.get("plan") or {}).get("candidates")
-                       or (cloud and not (j.get("plan") or {}).get("reuse")))
-        self.cap = float(st.get("cost_cap_usd") or 0.0) if self.models.cloud is not None else 0.0
-        self.share = self.cap / spending if self.cap and spending > 1 else 0.0
 
     def run(self) -> None:
         if not self.b.get("yes"):
@@ -262,12 +260,21 @@ class Builder:
             th = threading.Thread(target=self._knowledge, daemon=True)
             workers.append(th)
             th.start()
-        for j in self.b["jobs"]:
-            if ((j.get("run") or {}).get("state") or "planned") != "planned":
-                continue                       # "Check again" (lane I18e): a job that has its answer stays as it is
-            th = threading.Thread(target=self._run_job, args=(j,), daemon=True)
+        # "Check again" (lane I18e): a job that has its answer stays as it is.
+        left = [j for j in self.b["jobs"] if ((j.get("run") or {}).get("state") or "planned") == "planned"]
+        # D152: on a cloud build the goal's jobs are one conversation. A reused app or her pasted project stays its own.
+        # D154: a local build too, when its model can drive tools.
+        talks = self.models.cloud is not None or bool((self.info.get("local_goal") or {}).get("talks"))
+        together = [j for j in left if talks and not j.get("pasted") and not (j.get("plan") or {}).get("reuse")]
+        if together:
+            th = threading.Thread(target=self._compose, args=(together,), daemon=True)
             workers.append(th)
             th.start()
+        for j in left:
+            if not any(j is x for x in together):
+                th = threading.Thread(target=self._run_job, args=(j,), daemon=True)
+                workers.append(th)
+                th.start()
         for th in workers:
             th.join()
         if self.b.get("knowledge"):
@@ -309,48 +316,100 @@ class Builder:
         if state not in ACTIVE:
             self._ends()[0].add(job_id)
 
-    def _run_job(self, job: dict) -> None:
-        self.slot.acquire()
+    def _run_job(self, job: dict, looked: Any = None) -> None:
         current: dict = {"try": None}
-        jid = job["id"]
+        self._guarded(lambda: [job], current, lambda: self._job(job, current, looked))
+
+    def _guarded(self, jobs: Callable[[], list[dict]], current: dict, work: Callable[[], None]) -> None:
+        """*work* holding the slot. Whatever ends it early holds *jobs()*: the jobs with no answer yet."""
+        self.slot.acquire()
         what = ""                                # the class of the error that ended the job, if one did
         try:
-            self._job(job, current)
+            work()
         except JobHeld as exc:
             # Nothing waits on this job once its thread ends, so its last state is held (lane I18a: a waiting
             # state left here became the Core's generic stopped line when the process ended).
-            log_error(f"job {jid} is held ({exc.code})", exc)
-            self._status(jid, "held", VAULT_HELD_LINE if exc.code == "vault" else exc.reason, trying=None)
+            for jid in [j["id"] for j in jobs()]:
+                log_error(f"job {jid} is held ({exc.code})", exc)
+                self._status(jid, "held", VAULT_HELD_LINE if exc.code == "vault" else exc.reason, trying=None)
         except (NotBuilt, Refused) as exc:      # their words are plain lines already
-            log_error(f"job {jid} is held", exc)
-            self._status(jid, "held", f"{exc} The job is held. Check again to retry.", trying=None)
+            for jid in [j["id"] for j in jobs()]:
+                log_error(f"job {jid} is held", exc)
+                self._status(jid, "held", f"{exc} The job is held. Check again to retry.", trying=None)
         except Exception as exc:  # noqa: BLE001 - nothing unexpected stops the build: the job holds
             what = type(exc).__name__
-            log_error(f"job {jid} ended on an error", exc)
-            self._status(jid, "held", UNEXPECTED_LINE.format(what=what), trying=None)
+            for jid in [j["id"] for j in jobs()]:
+                log_error(f"job {jid} ended on an error", exc)
+                self._status(jid, "held", UNEXPECTED_LINE.format(what=what), trying=None)
         finally:
+            ended = [j["id"] for j in jobs()]
             try:
                 t = current.get("try")
                 if t is not None and not t.closed:
                     t.close()
             except Exception as exc:  # noqa: BLE001 - the Core ends a try this process left open
-                log_error(f"job {jid}: its try could not be closed", exc)
+                log_error(f"job {ended[:1]}: its try could not be closed", exc)
             finally:
                 self.slot.release()
             final, missed = self._ends()
-            if jid not in final and (what or jid in missed):
-                log(f"job {jid} {LEFT_MARK}{what or missed[jid]}")
+            for jid in ended:
+                if jid not in final and (what or jid in missed):
+                    log(f"job {jid} {LEFT_MARK}{what or missed[jid]}")
 
-    def _at_share(self, job: dict, hooks: "_Hooks", left: list[dict], tried: list[dict]) -> bool:
-        """This job spent its share of the cap (D119), so it starts no new try: its last line says so, and True."""
-        if not self.share or hooks.models.spent < self.share:
-            return False
-        line = find.share_line(hooks.models.spent, self.share, self.cap, [c["name"] for c in left])
-        log(f"job {job['id']} stopped at its share of the cap")
-        self._status(job["id"], "not_yet", f"{line} {tried_line(tried)}".strip()[:600], trying=None)
-        return True
+    def _hooks(self, jid: str) -> "_Hooks":
+        hooks = _Hooks(self, jid)
+        hooks.models = self.models
+        if self.models.cloud is not None:
+            def probe() -> bool:
+                try:
+                    return self.link.model_probe()
+                except CloudError:
+                    return False
+            hooks.vault_probe = probe
+        return hooks
 
-    def _job(self, job: dict, current: dict) -> None:
+    def _compose(self, jobs: list[dict]) -> None:
+        """One conversation for the goal's jobs (D152). The model can't be used: each job left walks its plan's apps."""
+        current: dict = {"try": None}
+        search = scout.Search(self, jobs, {j["id"]: self._hooks(j["id"]) for j in jobs}, current)
+        walk: list[dict] = []
+
+        def work() -> None:
+            if not search.run() and not search.lead.stopped():
+                walk.extend(search.open.values())
+        self._guarded(lambda: [] if walk else list(search.open.values()), current, work)
+        workers = [threading.Thread(target=self._run_job, args=(j, search), daemon=True) for j in walk]
+        for th in workers:
+            th.start()
+        for th in workers:
+            th.join()
+
+    def _cover(self, job: dict, pkg_id: str, hooks: "_Hooks") -> str:
+        """A package on her bot answers this job, because the company's model chose it for the whole goal (D152): the job
+        works when the package does. Its own health says so, or, for a skill, that it is installed for the brain to read.
+        One plain line for the model, and the job's own state."""
+        def seen() -> dict | None:
+            row = next((r for r in self.link.registry().get("rows") or [] if r.get("id") == pkg_id), None)
+            ready = row is not None and (row.get("kind") == "skill" or (row.get("health") or {}).get("checked_at"))
+            return row if ready or (row is not None and row.get("status") not in ("running", "installing")) else None
+        row = hooks.wait_for(seen, SERVICE_WAIT_S) or next((r for r in self.link.registry().get("rows") or [] if r.get("id") == pkg_id), None) or {}
+        name, health = str(row.get("name") or pkg_id), row.get("health") or {}
+        result = {"package": pkg_id, "url": "", "proof": {"result": "", "health": health, "kind": "chosen"}, "notes": []}
+        if row.get("kind") == "skill" and row.get("status") in ("stopped", "running", "needs_you"):
+            line = f"{name} is a skill on your bot: your bot's brain reads it when this comes up."
+        elif row.get("status") == "running" and health.get("ok"):
+            line = f"{name} is on your bot for this, and its health check passes."
+        else:
+            why = (f"{name} is on your bot but is {row.get('status') or 'not there'}." if row.get("status") != "running"
+                   else f"{name} is on your bot, but its health check did not pass: {health.get('reason') or 'not checked yet'}.")
+            result["proof"]["result"] = "not_yet"
+            self._status(job["id"], "not_yet", why, trying=None, result=result)
+            return f"{job['id']} is not working yet: {why}"
+        result["proof"]["result"] = "working"
+        self._status(job["id"], "working", line, trying=None, result=result)
+        return f"{job['id']} ({job.get('name')}) works with it."
+
+    def _job(self, job: dict, current: dict, looked: Any = None) -> None:
         jid = job["id"]
         plan_ = job["plan"]
         if plan_["reuse"]:
@@ -364,33 +423,23 @@ class Builder:
                 self._status(jid, "nothing_found", f"{name} from the PuffPAI store was not added, so this job "
                                                    f"has nothing to use.{later}")
                 return
-            if row is not None and row.get("abilities"):
+            if row is not None and row.get("kind") == "skill":
+                self._cover(job, row["id"], self._hooks(jid))      # text the brain reads: no page and no tools to ask (D152)
+            elif row is not None and row.get("abilities"):
                 self._prove_tools(job, row)        # a package with tools: its own health, then the chat
             else:
                 self._prove(job, plan_["reuse"], None)
             return
         cands = list(plan_["candidates"])
-        hooks = _Hooks(self, jid)
-        hooks.models = self.models.one_job()
-        if self.models.cloud is not None:
-            def probe() -> bool:
-                try:
-                    return self.link.model_probe()
-                except CloudError:
-                    return False
-            hooks.vault_probe = probe
-        tried: list[dict] = []
-        set_aside: list[dict] = []
-        if self.models.cloud is not None and not job.get("pasted"):
-            # D121: one conversation instead of a walk down the plan. Her pasted project stays that one only.
-            search = scout.Search(self, job, hooks, current, tried, set_aside)
-            if search.run():
-                return
-            if hooks.stopped():
-                return
-            hooks.status("building", scout.LOOKING, trying=None)     # the model can't be used: the plan's apps, in order
-            cands = [c for c in cands if c["ref"] not in search.refs]
+        hooks = looked.hooks[jid] if looked is not None else self._hooks(jid)
+        tried: list[dict] = looked.tried[jid] if looked is not None else []
+        set_aside: list[dict] = looked.set_aside[jid] if looked is not None else []
+        if looked is not None:                     # the conversation could not use the model: the plan's apps, in order
+            hooks.status("building", scout.LOOKING, trying=None)
+            cands = [c for c in cands if c["ref"] not in looked.refs]
         if not cands and not tried and not set_aside:
+            if self._last_way(job, hooks, current, tried, looked):
+                return
             line = find.nothing_line(job, find.pasted_any(self.b.get("jobs")))
             offer = plan_.get("offer") or {}
             if offer.get("package"):
@@ -398,7 +447,7 @@ class Builder:
             self._status(jid, "nothing_found", line[:600])
             return
         for i, cand in enumerate(cands, 1):
-            if hooks.stopped() or self._at_share(job, hooks, cands[i - 1:] + set_aside, tried):
+            if hooks.stopped():
                 return
             got = self._try_one(job, cand, f"{cand['name']} (app {i} of {len(cands)})", hooks, current, tried)
             if got == "done":
@@ -406,23 +455,22 @@ class Builder:
             if got == "held":
                 set_aside.append(cand)
         if set_aside and not hooks.stopped():
-            if self._at_share(job, hooks, set_aside, tried):
-                return
             picked = self._ask_holds(job, set_aside, hooks, tried)
             for i, cand in enumerate(picked, 1):
-                if hooks.stopped() or self._at_share(job, hooks, picked[i - 1:], tried):
+                if hooks.stopped():
                     return
                 if self._try_one(job, cand, f"{cand['name']} (set aside, {i} of {len(picked)})", hooks, current,
                                  tried) == "done":
                     return
-        if self._at_share(job, hooks, [], tried):      # a cloud try can stop there, even the last one (D121)
+        if self._last_way(job, hooks, current, tried, looked):
             return
-        self._status(jid, "not_yet", f"No app worked yet. {tried_line(tried)}"[:600], trying=None)
+        self._status(jid, "not_yet", f"{find.not_yet_words(tried)} {tried_line(tried)}"[:600], trying=None)
 
     def _try_one(self, job: dict, cand: dict, label: str, hooks: "_Hooks", current: dict,
-                 tried: list[dict]) -> str:
+                 tried: list[dict], chosen: bool = False) -> str:
         """One candidate: ``done`` (it works and is proven), ``held`` (set aside: Drawbridge couldn't check
-        some files, or found a tunnel) or ``failed`` (its reason is on the job)."""
+        some files, or found a tunnel) or ``failed`` (its reason is on the job). *chosen*: the company's model chose it
+        for the whole goal (D152), so a service is proven by its tools and health, with no ask of the small brain."""
         jid = job["id"]
         hooks.label = label
         self._status(jid, "building", cand["name"], trying=cand["name"])
@@ -439,7 +487,7 @@ class Builder:
             if mine and not cand.get("readme_steps") and cand.get("tries_in") != "docker" and not adopt.made(cand):
                 # The project's README gave no steps (D63(c), D116): say that, then what stopped the try.
                 why = f"its README does not say how to start it, and Toolsmith's try from its files ended: {why}"
-            tried.append({"name": cand["name"], "why": why})
+            tried.append({"name": cand["name"], "why": why, "closed": t.stopped_by_closed()})
             self.link.job_status(jid, tried={"name": cand["name"], "ref": cand["ref"], "why": why})
             t.close()
             return "failed"
@@ -450,13 +498,130 @@ class Builder:
             self.link.job_status(jid, tried={"name": cand["name"], "ref": cand["ref"], "why": why})
             t.close()
             return "failed"
-        current["try"] = None
+        current["try"], current["pkg"] = None, got["id"]
         self.__dict__.setdefault("_built", {})[got["id"]] = cand
         if ((got["manifest"] or {}).get("abilities") or {}).get("mcp"):
-            self._prove_service(job, got["id"], got["manifest"], hooks)
+            self._prove_service(job, got["id"], got["manifest"], hooks, chosen)
             return "done"
         self._prove(job, got["id"], got["manifest"], notes=t.notes)
         return "done"
+
+    def _last_way(self, job: dict, hooks: "_Hooks", current: dict, tried: list[dict], looked: Any) -> bool:
+        """Nothing else gave this job an answer (D154): "even without opus". The store app its plan matched, on its own
+        card, then a simple app that runs. True when the job has its answer. Her pasted project stays that one only."""
+        if (job.get("pasted") or hooks.stopped() or (self.models.cloud is not None and looked is None)
+                or not (self.info.get("local_goal") or {}).get("makes")):
+            return False
+        offer = (job.get("plan") or {}).get("store") or {}
+        pid = str(offer.get("package") or "").split(":", 1)[-1]
+        if pid and self._store_once(pid, str(offer.get("name") or pid), job["id"], hooks):
+            self._cover(job, pid, hooks)
+            return True
+        return not hooks.stopped() and self._make_app(job, hooks, current, tried)
+
+    def _store_once(self, pid: str, name: str, jid: str, hooks: "_Hooks") -> bool:
+        """Is this store app on her bot, asking her once however many jobs want it? These jobs' threads run side by side:
+        one raises the card, the others wait for her answer, stepping aside as any wait does."""
+        with self._store_lock:
+            mine = pid not in self._store_said
+            if mine:
+                self._store_said[pid] = None
+        if mine:
+            here = any(r.get("id") == pid and r.get("status") != "removed" for r in self.link.registry().get("rows") or [])
+            self._store_said[pid] = "" if here else self._add_store(pid, name, jid, hooks, "")
+        else:
+            hooks.wait_for(lambda: self._store_said.get(pid) is not None or None, scout.STORE_WAIT_S)
+        return self._store_said.get(pid) == ""
+
+    def _add_store(self, pid: str, name: str, jid: str, hooks: "_Hooks", why: str) -> str:
+        """A store app's normal add, through its normal Yes card. "" when it is on her bot now, else why not."""
+        try:
+            cid = str(self.link.store_add(jid, pid)["consent_id"])
+        except Refused as exc:
+            return str(exc)
+        hooks.status("waiting_yes", f"Your Yes to add {name}"[:120], trying=None)
+        hooks.say(cut_text(f"Toolsmith wants to add {name} from the PuffPAI store" + (f": {why}" if why else ".")
+                           + " It waits for your Yes on its card.", 300))
+
+        def answered() -> dict | None:
+            got = self.link.store_add_state(cid)
+            return None if got.get("waiting") else got
+        got = hooks.wait_for(answered, scout.STORE_WAIT_S) or {"ok": False, "said": "Stopped before her answer."}
+        hooks.status("building", scout.LOOKING, trying=None)
+        if not got.get("ok"):
+            said = str(got.get("said") or f"{name} was not added.")
+            hooks.say(said[:300])
+            return said
+        hooks.say(cut_text(str(got.get("said") or f"You said Yes. {name} is added."), 300))
+        return ""
+
+    def _make_app(self, job: dict, hooks: "_Hooks", current: dict, tried: list[dict]) -> bool:
+        """A simple app that runs (D155's ``assemble.make_app``), in a try's own empty folder: Drawbridge's check, then
+        its own Yes card, as any app Toolsmith builds. True when the job has its answer. No outside data: its own rows."""
+        jid = job["id"]
+        what = " ".join(f"{job.get('name') or ''}: {job.get('does') or ''}".split()).strip(": ")
+        try:
+            cand = self.link.found_add(jid, {"made": True, "what": what}).get("cand")
+        except Refused as exc:
+            tried.append({"name": str(job.get("name") or "A simple app"), "why": str(exc)})
+            return False
+        if not isinstance(cand, dict):
+            return False
+        hooks.say(cut_text("Nothing ready works for this, so Toolsmith puts together a simple app. It asks you on its own "
+                           "card before it is added.", 300))
+        hooks.label = str(cand["name"])
+        self._status(jid, "building", cand["name"], trying=cand["name"])
+        t = tries.Try(job, cand, link=self.link, settings=self.settings, hooks=hooks, shell=self.shell, os_name=self.os_name)
+        current["try"] = t
+        t.built_with = hooks.models.used(False)
+        t.call("download", {})
+        said = t.ended if t.folder is None else ""
+        made = None
+        if not said:
+            rows = (self.link.registry() or {}).get("rows") or []
+            # Its manifest goes with the add below, and the Core writes it: a try never writes puffpai.json itself.
+            made = assemble.make_app(str(self.b.get("goal") or ""), job, on_bot=rows, brain=self.link.brain_json, package_id=t.pkg_id,
+                                     write=lambda path, text: {"ok": True} if path == "puffpai.json" else self.link.try_write(t.try_id, path, text))
+            said = "" if made.ok else made.why
+        if not said:
+            checked = self.link.try_check(t.try_id)
+            said = "" if checked.get("ok") else str(checked.get("said") or "Drawbridge did not pass it.")
+        if not said:
+            t.result = {"made_app": True}
+            got = adopt.install(t, self.link, manifest=made.manifest)
+            said = "" if got["ok"] else str(got["said"])
+        if said:
+            why = why_of(cand["name"], said)
+            tried.append({"name": cand["name"], "ref": cand["ref"], "why": why})
+            self.link.job_status(jid, tried={"name": cand["name"], "ref": cand["ref"], "why": why})
+            t.close()
+            current["try"] = None
+            return False
+        current["try"], current["pkg"] = None, got["id"]
+        self.__dict__.setdefault("_built", {})[got["id"]] = cand
+        self._prove_service(job, got["id"], got["manifest"], hooks, chosen=True)
+        return True
+
+    def _write_skill(self, job: dict, cand: dict, text: str, hooks: "_Hooks", current: dict, tried: list[dict]) -> str:
+        """A skill Toolsmith writes for the goal (D152): the try's own empty folder, Drawbridge's check, its one SKILL.md,
+        and its own Yes card, as any app it builds. Its package id, or "" with the reason on the job."""
+        jid = job["id"]
+        hooks.label = str(cand["name"])
+        self._status(jid, "building", cand["name"], trying=cand["name"])
+        t = tries.Try(job, cand, link=self.link, settings=self.settings, hooks=hooks, shell=self.shell, os_name=self.os_name)
+        current["try"] = t
+        t.built_with = hooks.models.used(False)
+        said = t.write_skill(text)
+        got = adopt.install(t, self.link) if t.result else {"ok": False, "said": said}
+        if not got["ok"]:
+            why = why_of(cand["name"], got["said"])
+            tried.append({"name": cand["name"], "ref": cand["ref"], "why": why})
+            self.link.job_status(jid, tried={"name": cand["name"], "ref": cand["ref"], "why": why})
+            t.close()
+            current["try"] = None
+            return ""
+        current["try"] = None
+        return str(got["id"])
 
     def _ask_holds(self, job: dict, set_aside: list[dict], hooks: "_Hooks", tried: list[dict]) -> list[dict]:
         """No fully checked candidate worked: ONE card for the job lists those set aside, and the job waits
@@ -497,7 +662,7 @@ class Builder:
         refs = set(st.get("try") or [])
         return [c for c in set_aside if c["ref"] in refs]
 
-    def _prove_service(self, job: dict, pkg_id: str, manifest: dict, hooks: "_Hooks") -> None:
+    def _prove_service(self, job: dict, pkg_id: str, manifest: dict, hooks: "_Hooks", chosen: bool = False) -> None:
         """D124: a service with no page works only when the brain can reach it. Caretaker reads its tools and checks its
         health just after it starts, so this waits for that, then asks the brain as for any package with tools."""
         def seen() -> dict | None:
@@ -510,15 +675,17 @@ class Builder:
             self._status(job["id"], "not_yet", f"{name} was added, but your bot's brain can't reach its tools yet, so it is "
                                                "not counted as working.", trying=None)
             return
-        self._prove_tools(job, got, new=True)
+        self._prove_tools(job, got, new=True, chosen=chosen)
 
-    def _prove_tools(self, job: dict, row: dict, new: bool = False) -> None:
+    def _prove_tools(self, job: dict, row: dict, new: bool = False, chosen: bool = False) -> None:
         """A package already on the bot: it works for this job only when the brain, given the job's own words,
-        picks one of its tools (``puffpai check`` item 12's test) AND Caretaker's health check passes."""
+        picks one of its tools (``puffpai check`` item 12's test) AND Caretaker's health check passes. *chosen*: the
+        company's model chose it (D152), so the small brain is not asked to agree: its tools listed and its health are the proof."""
         name = str(row.get("name") or row["id"])
         health = row.get("health") or {}
         result = {"package": row["id"], "url": "", "proof": {"result": "", "health": health}, "notes": []}
-        got = find.picks(self.link, row["id"], find.job_ask(job))
+        tools = [str(a.get("tool") or "") for a in row.get("abilities") or []]
+        got = {"ok": True, "called": tools} if chosen else find.picks(self.link, row["id"], find.job_ask(job))
         result["proof"]["ask"] = {"ask": find.job_ask(job), "called": list(got.get("called") or [])[:5]}
         if not got.get("ok"):
             # Her line in plain words; the brain's own reason (tool names) stays in the result's detail (lane I8a).
@@ -547,8 +714,9 @@ class Builder:
                 result["proof"]["detail"] = "; ".join(flags)[:300]     # kept off her line: said in the log
             line = (f"{name} is already on your bot" + (", you ticked it for this job" if ticked else "")
                     + f": {does}, and its health check passes.")
-            if new:                                # D124
-                line = f"{name} runs as a service your bot can use, with no page: {does}, and its health check passes."
+            if new:                                # D124, D152: what Toolsmith built may have a page too
+                line = (f"{name} is added, with its own page: {does}, and its health check passes." if (row.get("ui") or {}).get("pages")
+                        else f"{name} runs as a service your bot can use, with no page: {does}, and its health check passes.")
             if by == "store":                      # her tick added it with this plan: the add-card's words (D104)
                 line = f"You said Yes. {name} is added: {does}, and its health check passes."
             line += f" Ask the chat, for example: \"{example}\"." if example else " Ask the chat to use it."

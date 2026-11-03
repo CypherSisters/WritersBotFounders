@@ -816,6 +816,15 @@ class Ports:
         verdict = str(getattr(got, "verdict", "") or "")
         return verdict if verdict in VERDICTS else "deny"
 
+    def bridge_closed(self) -> bool:
+        """Does the Bridge read closed right now (D151)? Only words depend on this. No Zone 3 or no answer: False."""
+        z = self.zone3()
+        posture = getattr(getattr(z, "bridge", None), "posture", None) if z is not None else None
+        try:
+            return callable(posture) and posture().get("state") == "closed"
+        except Exception:  # noqa: BLE001 - only words: can't tell is the usual words
+            return False
+
     def bridge_allowed(self, subject: str, host: str, phase: str = "build") -> bool:
         return self.bridge_decision(subject, host, phase) == "allow"
 
@@ -899,10 +908,10 @@ class Ports:
             raise Refused("The Docker wall gave no override, so this app is not started in Docker.")
         return Path(got)
 
-    def docker_gate_problem(self, run: Callable[[list[str]], int]) -> str:
-        """After a try's ``docker compose up``: the plain line when its gate can't reach the Bridge proxy, else
-        ``""``. Only plain Linux Docker can have this (``docker_wall.gate_problem``). *run* runs ``docker compose
-        <args>`` for that try and gives the exit code."""
+    def docker_gate_problem(self, run: Callable[[list[str]], int], package_id: str) -> str:
+        """After a try's ``docker compose up``: the plain line when the wall did not hold or its gate can't reach the
+        Bridge proxy, else ``""``. Only plain Linux Docker can have this (``docker_wall.gate_problem``). *run* runs
+        ``docker compose <args>`` for that try and gives the exit code."""
         wall_kw, check = find("zone3.docker_wall.wall_kw"), find("zone3.docker_wall.gate_problem")
         proxy = getattr(self.zone3(), "proxy", None)
         if wall_kw is None or check is None or proxy is None:
@@ -911,9 +920,15 @@ class Ports:
             kw = wall_kw(proxy)
         except ValueError as exc:                       # WallRefused: the engine went, or the address did
             return str(exc)
-        return check(run, kw["host_proxy_port"]) if kw.get("host_gateway") else ""
+        return check(run, kw["host_proxy_port"], package_id) if kw.get("host_gateway") else ""
 
     # -- L2: the brain --------------------------------------------------------
+
+    def local_goal(self) -> dict:
+        """What a local build does with the goal after her Yes (D154). ``talks``: this computer's model can drive the
+        goal's conversation. ``makes``: the Core can always put together a simple app, with that model or with none."""
+        drives = find("zone2.brain.drives_tools")
+        return {"talks": bool(drives()) if drives is not None else False, "makes": True}
 
     def local_turn(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
         """One turn on this computer's model, in the neutral shape (04 quick start 11)."""

@@ -50,7 +50,7 @@
     if (r.status !== 200) { t.body.appendChild(el("p", { class: "fail", text: P.said(r) })); return; }
     const v = L.vaultView(r.data);
     t.head.appendChild(el("span", { class: "stat", text: v.words.toUpperCase() }));
-    t.body.append(P.kv([["State", v.words], ["Keys kept", v.items], ["Ways in", v.waysIn.join(", ")], ["Where", v.where], ["Idle lock", v.idle],
+    t.body.append(P.kv([["State", v.words], ["Keys kept", v.items], ["Ways in", v.waysIn.join(", ")], ["Where", v.where], ["Idle lock", v.idle], ["Right now", v.lent],
       ["Inbox", v.inbox ? v.inbox + " sealed, filed at the next unlock" : "empty"], ["Why", v.why]]),
       el("p", { class: "small muted", text: "Archivist holds every key. Apps get a key for one use; no page, route or agent is ever shown one." }));
 

@@ -83,7 +83,7 @@ def _live_yes(host: Any, b: dict) -> dict | None:
 def found_why_not(host: Any, b: dict) -> str:
     """"" when this build may try an app found after her Yes, else the plain reason: the switch, a cloud model she still
     has chosen, her live Yes for exactly this plan holding ``tries_found``. Can't tell: no."""
-    if not policy.TRY_FOUND_APPS or not host._cloud_for(b, host.settings()):
+    if not policy.TRY_FOUND_APPS or not host.looks_after_yes(b, host.settings()):
         return FOUND_CLOUD_LINE
     return "" if policy.tries_found_yes(_live_yes(host, b)) else FOUND_NO_YES_LINE
 
@@ -94,7 +94,7 @@ def why_not(host: Any, b: dict) -> tuple[str, dict | None]:
     The Bridge decides the rest at the send. Can't tell: no."""
     if not policy.READ_PUBLIC_PAGES:
         return OFF_LINE, None
-    if not host._cloud_for(b, host.settings()):
+    if not host.looks_after_yes(b, host.settings()):
         return LOCAL_LINE, None
     rec = _live_yes(host, b)
     if rec is None or not policy.reads_public_yes(rec):

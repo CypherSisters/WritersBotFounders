@@ -13,13 +13,15 @@ them waits for another, and no try with a verdict against it is handed over. Com
 ``docker compose down``; nothing here runs Docker.
 """
 
+import os
+import sys
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from test_d61_allowlist import _checked, needs_jobs
+from test_d61_allowlist import _checked
 from test_i2a_part_c import NODE, RealPackages, SERVE, _adopted_manifest, needs_node
 from toolsmith_fakes import World, make_venv, script
 from puffpai_core.packages import manifest as manifest_mod
@@ -27,6 +29,10 @@ from puffpai_core.zone3.toolsmith.errors import Refused, TryEnded
 from puffpai_core.zone3.toolsmith_host import allowlist
 from puffpai_core.zone3.toolsmith_host import trials as trials_mod
 from puffpai_core.zone3.toolsmith_host.trials import CORE_HOOK_LINE, TRY_HOOK_LINE
+
+#: The try's own site-packages, relative to its folder, on this computer.
+SITE = (".venv/Lib/site-packages" if os.name == "nt"
+        else f".venv/lib/python{sys.version_info[0]}.{sys.version_info[1]}/site-packages")
 
 HELD_S = 2.0        # how long a check waits for the move; with the fix the add waits for the check instead
 
@@ -106,7 +112,6 @@ def _assert_added(w, link, try_id, held, manifest):
     return staged
 
 
-@needs_jobs
 def test_python_app_with_a_real_venv_is_not_lost_when_a_check_is_running(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Maps</title>\n", "README.md": "# Maps\n"})
     _b, link, try_id, rec = _checked(w)
@@ -119,7 +124,6 @@ def test_python_app_with_a_real_venv_is_not_lost_when_a_check_is_running(make_wo
     assert (staged / "index.html").is_file() and not (staged / ".venv").exists()
 
 
-@needs_jobs
 def test_a_plain_static_site_goes_the_same_way(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Recipes</title>\n", "css/site.css": "p {}\n"})
     _b, link, try_id, rec = _checked(w)
@@ -131,7 +135,6 @@ def test_a_plain_static_site_goes_the_same_way(make_world, monkeypatch):
     assert (staged / "css" / "site.css").is_file()
 
 
-@needs_jobs
 @needs_node
 def test_a_node_app_with_node_modules_goes_the_same_way(make_world, monkeypatch):
     server = "require('http').createServer((q, s) => s.end('ok')).listen(process.env.PORT || 0, '127.0.0.1');\n"
@@ -146,14 +149,13 @@ def test_a_node_app_with_node_modules_goes_the_same_way(make_world, monkeypatch)
     assert (staged / "server.js").is_file() and not (staged / "node_modules").exists()
 
 
-@needs_jobs
 def test_a_real_change_found_by_that_check_still_ends_the_try_and_nothing_is_added(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Birds</title>\n"})
     _b, link, try_id, rec = _checked(w)
     make_venv(link, try_id)
     assert script(link, try_id, "serve.py", SERVE, start=True)["ok"]
     folder = Path(rec.folder)
-    hook = folder / ".venv" / "Lib" / "site-packages" / "late.pth"
+    hook = folder / SITE / "late.pth"
     held = HeldCheck(w, rec, monkeypatch, on_held=lambda: hook.write_text("import os\n", encoding="utf-8"))
     added = []
     real_add = w.ports.packages_add
@@ -168,7 +170,7 @@ def test_a_real_change_found_by_that_check_still_ends_the_try_and_nothing_is_add
 
 # -- every check still judges, none waits for another, and a verdict stops the hand-over ------------------------
 
-HOOK = ".venv/Lib/site-packages/late.pth"
+HOOK = f"{SITE}/late.pth"
 
 
 def _running(w):
@@ -185,7 +187,6 @@ def _spy_add(w, monkeypatch):
     return added
 
 
-@needs_jobs
 @pytest.mark.parametrize("where", ["core", "try"])
 def test_a_check_that_arrives_while_another_is_on_its_way_to_its_verdict_still_judges(make_world, tmp_path,
                                                                                       monkeypatch, where):
@@ -232,7 +233,6 @@ def test_a_check_that_arrives_while_another_is_on_its_way_to_its_verdict_still_j
     assert trials.add(rec, "local", _adopted_manifest(rec.pkg_id))["ended"] and added == []
 
 
-@needs_jobs
 def test_a_slow_stop_holds_up_no_other_step_and_the_try_is_never_handed_over(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Invoices</title>\n"})
     _link, _try_id, rec = _running(w)
@@ -270,7 +270,6 @@ def test_a_slow_stop_holds_up_no_other_step_and_the_try_is_never_handed_over(mak
     assert seen["check"]["ended"] and rec.ended and not folder.exists() and added == []
 
 
-@needs_jobs
 def test_a_change_found_while_compose_comes_down_stops_the_hand_over(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Birds</title>\n"})
     _link, _try_id, rec = _running(w)
@@ -286,7 +285,6 @@ def test_a_change_found_while_compose_comes_down_stops_the_hand_over(make_world,
     assert [c["kind"] for c in w.host.cards] == ["try_hook_changed"]
 
 
-@needs_jobs
 @pytest.mark.parametrize("changes", [True, False], ids=["a_real_change", "no_change"])
 def test_a_command_that_overlaps_the_add_gets_its_verdict_before_the_move(make_world, monkeypatch, changes):
     """Its verdict is held back a little, so without the wait it lands after the move."""
@@ -295,7 +293,7 @@ def test_a_command_that_overlaps_the_add_gets_its_verdict_before_the_move(make_w
     trials = w.host.trials
     folder = Path(rec.folder)
     hook = folder / HOOK
-    (folder / ".venv/Lib/site-packages/distutils-precedence.pth").write_text("import os\n", encoding="utf-8")
+    (folder / SITE / "distutils-precedence.pth").write_text("import os\n", encoding="utf-8")
     rec.base = trials._new_guard(rec.folder)._snapshot()    # in the baseline, as in a real venv: not an alarm
     write = f"pathlib.Path(r'{HOOK}').write_text('import os')\n" if changes else ""
     code = f"import pathlib, time\n{write}pathlib.Path('began.txt').write_text('x')\ntime.sleep(60)\n"
@@ -336,7 +334,6 @@ def test_a_command_that_overlaps_the_add_gets_its_verdict_before_the_move(make_w
         assert manifest_mod.load(staged, adopted=True)[0] == _adopted_manifest(rec.pkg_id)
 
 
-@needs_jobs
 def test_a_refused_add_ends_the_try_so_its_moved_folder_is_never_misjudged(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Library</title>\n"})
     link, try_id, rec = _running(w)
@@ -355,7 +352,6 @@ def test_a_refused_add_ends_the_try_so_its_moved_folder_is_never_misjudged(make_
         link.try_run(try_id, {"program": "python", "args": ["-m", "venv", ".venv"]})
 
 
-@needs_jobs
 def test_an_add_that_waits_too_long_for_a_check_changes_nothing_and_can_go_again(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Choir</title>\n"})
     link, try_id, rec = _running(w)
@@ -373,7 +369,6 @@ def test_an_add_that_waits_too_long_for_a_check_changes_nothing_and_can_go_again
     assert link.try_add(try_id, "local", _adopted_manifest(rec.pkg_id)).get("waiting")
 
 
-@needs_jobs
 def test_while_an_add_is_under_way_no_command_starts_and_no_second_add_goes_in(make_world, monkeypatch):
     w = make_world({"index.html": "<!doctype html><title>Stamps</title>\n"})
     link, try_id, rec = _running(w)
@@ -413,7 +408,6 @@ def _check_loop(trials, rec, stop):
     return threads
 
 
-@needs_jobs
 def test_a_normal_end_works_under_a_loop_of_checks(make_world):
     w = make_world({"index.html": "<!doctype html><title>Quilts</title>\n"})
     _link, _try_id, rec = _running(w)
@@ -429,7 +423,6 @@ def test_a_normal_end_works_under_a_loop_of_checks(make_world):
     assert rec.ended and not folder.exists()
 
 
-@needs_jobs
 def test_safe_mode_works_under_a_loop_of_checks(make_world, tmp_path):
     w = make_world({"index.html": "<!doctype html><title>Tides</title>\n"})
     core = tmp_path / "coresite"

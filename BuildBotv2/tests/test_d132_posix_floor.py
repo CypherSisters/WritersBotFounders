@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
+import socket
 import sys
+import time
 import venv
 
 import pytest
@@ -65,15 +69,61 @@ def test_her_bot_folders_and_the_machine_key_are_refused_as_her_keys(box):
         for write in (False, True):
             got = _path(box, place, write=write)
             assert got.verdict == "deny" and got.line == keys, place
-    assert _cmd(box, f"python app.py {root / 'machine.key'}").verdict == "deny"
+    assert _cmd(box, f"python app.py {shlex.quote(str(root / 'machine.key'))}").verdict == "deny"
     assert _path(box, root.parent).verdict == "deny", "a folder that holds them"
+
+
+def _bot_folder_with_a_space(box, monkeypatch):
+    """Where a Mac keeps it, on any computer: PUFFPAI_HOME moves it there."""
+    root = box[0] / "Library" / "Application Support" / "PuffPAI"
+    root.mkdir(parents=True)
+    (root / "machine.key").write_text("made up", encoding="utf-8")
+    monkeypatch.setenv("PUFFPAI_HOME", str(root))
+    return root
+
+
+def test_a_quoted_path_with_a_space_is_her_keys_too(box, monkeypatch):
+    key = _bot_folder_with_a_space(box, monkeypatch) / "machine.key"
+    keys = Z.refused_line(Z.KEYS)
+    for command in (f"python app.py '{key}'", f'python app.py "{key}"', f'python app.py --key="{key}"',
+                    f"cp a.txt '{key}'", f"python app.py {shlex.quote(str(key))}"):
+        got = _cmd(box, command)
+        assert got.verdict == "deny" and got.line == keys, command
+    got = _path(box, key)
+    assert got.verdict == "deny" and got.line == keys
+
+
+def test_her_keys_in_another_letter_case_are_her_keys_on_a_mac(box, monkeypatch):
+    """Not run on a real Mac: this turns on the same fold. Apple's default disk format ignores letter case."""
+    _bot_folder_with_a_space(box, monkeypatch)
+    monkeypatch.setattr(Z, "_FOLD_CASE", True)
+    home, keys = box[0], Z.refused_line(Z.KEYS)
+    for place in (home / "library" / "application support" / "puffpai" / "MACHINE.KEY",
+                  home / "LIBRARY" / "Application Support" / "PUFFPAI" / "other" / "VAULT" / "x"):
+        for got in (_path(box, place), _path(box, place, write=True), _cmd(box, f"python app.py '{place}'")):
+            assert got.verdict == "deny" and got.line == keys, place
+
+
+def test_a_mac_disk_ignores_case_in_the_folder_checks_too(box, monkeypatch):
+    """Not run on a real Mac, as above. A knowledge folder in another spelling of a place she may not use."""
+    from puffpai_core.zone1 import folders, knowledge_folder as kf
+    home, state = box[0], box[1]
+    (home / ".ssh").mkdir()
+    if sys.platform != "darwin":                                      # on a disk that reads case they are two folders
+        assert kf.problem(state, home / ".SSH") == ""
+    monkeypatch.setattr(folders, "_FOLD_CASE", True)
+    assert kf.problem(state, home / ".SSH") == kf.SECRETS
+    # A Mac's /etc is a link to /private/etc, so there it is refused as a link. Refused either way.
+    assert kf.problem(state, "/ETC/books") in ((kf.SYSTEM, kf.LINK) if sys.platform == "darwin" else (kf.SYSTEM,))
 
 
 def test_the_xdg_folders_she_moved_are_refused_too(box, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "shared"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
-    for place in ("cfg/gcloud/c", "cfg/google-chrome/p", "shared/keyrings/k", "shared/puffpai/machine.key", "run/agent"):
+    # On a Mac the bot's folder ignores XDG_DATA_HOME (Library/Application Support), so that key is not there.
+    for place in ("cfg/gcloud/c", "cfg/google-chrome/p", "shared/keyrings/k", "run/agent",
+                  *(["shared/puffpai/machine.key"] if sys.platform != "darwin" else [])):
         assert _path(box, tmp_path / place).verdict == "deny", place
 
 
@@ -170,13 +220,14 @@ def test_tmp_is_the_trys_scratch_unless_a_link_leads_away(box, tmp_path):
         assert check(f"python app.py {link}/id_rsa") == "deny"
     finally:
         os.unlink(link)
-    assert check(f"python app.py /tmp/../{home}/.ssh/id_rsa") == "deny"
+    # Up to the top on both: a Mac's /tmp is /private/tmp, one folder deeper.
+    assert check(f"python app.py /tmp/../../{home}/.ssh/id_rsa") == "deny"
 
 
 @pytest.mark.parametrize("words", [
     "/proc/self/cwd/../../../machine.key", "/proc/self/cwd/machine.key", "/proc/self/root/etc/passwd",
     "/proc/thread-self/cwd/x", "/proc/self/fd/3", "/proc/1/cwd/x", "/proc/1/root/x", "/proc/self/task/1/cwd/x",
-    "/proc/1/environ", "/proc/self", "//proc//self/./cwd/x", "/tmp/../proc/self/cwd/x", "/dev/fd/3/../../x"])
+    "/proc/1/environ", "/proc/self", "//proc//self/./cwd/x", "/tmp/../../proc/self/cwd/x", "/dev/fd/3/../../x"])
 def test_a_path_through_a_running_program_is_no_place_the_check_can_read(box, words):
     assert _cmd(box, f"node arg.js {words}").verdict == "deny", words
     assert _path(box, words).verdict == "deny" and _path(box, words, write=True).verdict == "deny", words
@@ -187,9 +238,10 @@ def test_proc_through_a_link_or_a_climb_is_refused_and_plain_proc_reads_stay(box
     (folder / "jump").symlink_to("/proc/self/cwd")
     assert _path(box, folder / "jump" / "x").verdict == "deny"
     assert _cmd(box, "node arg.js jump/../../machine.key").verdict == "deny"
-    assert _cmd(box, "node arg.js ../../../../../../../../../proc/self/cwd/x").verdict == "deny"
+    assert _cmd(box, "node arg.js " + "../" * 40 + "proc/self/cwd/x").verdict == "deny"     # to the top from any temp folder
     assert _path(box, "/proc/cpuinfo").verdict == "ask"
-    assert _cmd(box, "node arg.js /proc/cpuinfo").verdict == "ask"
+    # A Mac has no /proc: a path outside that names nothing here is taken as one inside a container.
+    assert _cmd(box, "node arg.js /proc/cpuinfo").verdict == ("ask" if os.path.exists("/proc/cpuinfo") else "allow")
     assert _path(box, "/proc/cpuinfo", write=True).verdict == "deny"
     (folder / "proc" / "self").mkdir(parents=True)
     assert _path(box, folder / "proc" / "self" / "x").verdict == "allow", "a folder of the try's own with that name"
@@ -248,6 +300,277 @@ def test_a_mac_disk_ignores_case_and_so_does_the_check(box, monkeypatch):
     assert _path(box, "/ETC/x", write=True).verdict == "deny"
 
 
+def _other_app(box):
+    other = box[1] / "packages" / "other"
+    other.mkdir()
+    (other / "a.py").write_text("made up", encoding="utf-8")
+    return other
+
+
+@pytest.mark.parametrize("form", ["/{}", "//{}", "///{}", "/./{}", "//./{}", "/no-such-place/../{}"])
+def test_every_spelling_of_a_path_is_the_place_it_opens(box, form):
+    """Linux and Mac's equal of Windows' odd forms: the kernel opens each of these, so the check reads each the same."""
+    home, _state, _folder = box
+    (home / ".ssh").mkdir()
+    (home / ".ssh" / "id_rsa").write_text("made up", encoding="utf-8")
+    for place in (home / ".ssh" / "id_rsa", _other_app(box) / "a.py"):
+        target = form.format(str(place).lstrip("/"))
+        if "no-such-place" not in form:
+            assert os.path.exists(target), "the kernel really opens this"
+        for write in (False, True):
+            assert _path(box, target, write=write).verdict == "deny", target
+        assert _cmd(box, f'node arg.js "{target}"').verdict == "deny", target
+    for form_of_etc in (form.format("etc/x"),):
+        assert _path(box, form_of_etc, write=True).verdict == "deny", form_of_etc
+
+
+@pytest.mark.parametrize("prefix", ["\\\\?\\", "\\\\.\\", "\\??\\", "/\\?\\", "\\\\localhost\\C$"])
+def test_a_windows_odd_form_opens_no_other_place_here(box, prefix):
+    """On Linux and Mac a backslash is a letter of a file name: such a word is one name in the try, with a real file to
+    prove it. Nothing it spells out is reached, so it needs no refusal of its own."""
+    other = _other_app(box)
+    word = prefix + str(other / "a.py")
+    assert not os.path.exists(os.path.join(str(box[2]), word)), "no file of that name, and not the other app's"
+    # One name in the try, or (with a slash first) a folder at the top of the disk that is not there: never the other app.
+    assert _path(box, os.path.join(str(box[2]), word)).verdict == ("ask" if word.startswith("/") else "allow")
+    assert _cmd(box, f'node arg.js "{word}"').verdict != "deny"
+
+
+def test_two_slashes_name_no_share_here(box):
+    """``//host/share`` is the plain folder ``/host/share`` on Linux: nothing goes to a host. It is judged as a place."""
+    for words in ("//nas-nobody/share/a.txt", "//192.168.1.5/c$/x"):
+        assert _path(box, words, write=True).verdict == "ask", words
+        assert _path(box, words).verdict == "ask", words
+    assert _path(box, "//etc/x", write=True).verdict == "deny"
+    assert _cmd(box, "cp a.txt //etc/x").verdict == "deny"
+
+
+def test_a_colon_or_a_trailing_dot_is_a_letter_of_a_name_and_hooks_stay_refused(box):
+    """No NTFS streams here and no dot dropped: these are plain names. A write into site-packages is refused whatever
+    the name, and only an exact ``.pth`` runs at Python's start."""
+    folder = box[2]
+    for name in ("a.txt:hidden", "q.pth::$DATA", "a.py.", "a.py "):
+        assert _path(box, folder / name).verdict == "allow", name
+        assert _path(box, folder / name, write=True).verdict == "allow", name
+    site = folder / SITE
+    site.mkdir(parents=True)
+    for name in ("q.pth::$DATA", "a.pth:x", "a.pth.", "a.pth ", "sitecustomize.py.", "plain.py"):
+        assert _path(box, site / name, write=True).verdict == "deny", name
+    assert _path(box, site / "A.PTH").verdict == "deny", "a Mac reads it as a.pth, and refusing it costs nothing"
+
+
+def test_a_link_in_the_try_reads_as_where_it_lands(box):
+    """Linux and Mac's equal of Windows' junction cases: the other app, a hook, site-packages, and a link only NAMED so."""
+    folder = box[2]
+    other = _other_app(box)
+    (folder / "jump").symlink_to(other)
+    assert _path(box, folder / "jump" / "a.py").verdict == "deny"
+    assert _path(box, folder / "jump" / "a.py", write=True).verdict == "deny"
+    assert _cmd(box, "node arg.js jump/a.py").verdict == "deny"
+    site = folder / SITE
+    site.mkdir(parents=True)
+    (folder / "sitejump").symlink_to(site)
+    assert _path(box, folder / "sitejump" / "a.pth").verdict == "deny"
+    assert _path(box, folder / "sitejump" / "plain.py", write=True).verdict == "deny"
+    assert _path(box, folder / "sitejump" / "plain.py").verdict == "allow", "reading it is fine"
+    (folder / "plain").mkdir()
+    (folder / "v2" / "lib").mkdir(parents=True)
+    (folder / "v2" / "lib" / "site-packages").symlink_to(folder / "plain")
+    assert _path(box, folder / "v2" / "lib" / "site-packages" / "a.pth").verdict == "deny", "the path's own words count"
+
+
+def test_what_is_already_in_the_real_tmp_waits_for_her_yes(box):
+    """Nothing swaps the real /tmp for the try's scratch folder here: what is there is another program's, like the
+    ssh-agent's socket. A new name is the try's own. Asked with real files."""
+    _home, state, folder = box
+    logs = state / "logs" / "toolsmith" / "mytry"
+    (logs / "scratch").mkdir(parents=True)
+    zone = Z.zone_for(str(folder), logs=str(logs), scratch=str(logs / "scratch"), state=str(state))
+    check = lambda c: Z.check(c, folder=str(folder), kind="command", cwd=str(folder), zone=zone).verdict  # noqa: E731
+    named = f"/tmp/d132-another-programs-{os.getpid()}"
+    assert check(f"python app.py {named}") == "allow", "nothing there yet: the try's own"
+    os.mkdir(named)
+    try:
+        open(os.path.join(named, "agent.1"), "w", encoding="utf-8").close()
+        assert check(f"python app.py {named}/agent.1") == "ask"
+        assert check(f"python app.py {named}") == "ask"
+        assert check(f"cp a.txt {named}/agent.1") == "ask"
+        assert check(f"python app.py {named}/not-there-yet") == "allow"
+    finally:
+        os.unlink(os.path.join(named, "agent.1"))
+        os.rmdir(named)
+    assert check("python app.py /tmp") == "allow", "the name itself is the try's scratch"
+
+
+@pytest.mark.parametrize("command", ["ls ../oth*", "ls ../*", "cat ../../set*/*"])
+def test_a_wildcard_that_can_climb_is_judged_where_it_lands(box, command):
+    _other_app(box)
+    assert _cmd(box, command).verdict == "deny", command
+
+
+@pytest.mark.parametrize("command", ["ls .git*", "cat .env*", "ls .[a-z]*", "ls *.py", "python serve.py '.*'",
+                                     "python -m pytest -k .*", "node .*/x"])
+def test_a_dot_wildcard_that_stays_in_the_try_still_runs(box, command):
+    assert _cmd(box, command).verdict == "allow", command
+
+
+@pytest.fixture
+def began(box):
+    """A try that has begun, and its check. ``/tmp`` names of this test's own, removed after it, older ones first."""
+    _home, state, folder = box
+    logs = state / "logs" / "toolsmith" / "mytry"
+    (logs / "scratch").mkdir(parents=True)
+    old = f"/tmp/d132-old-{os.getpid()}"
+    new = f"/tmp/d132-new-{os.getpid()}"
+    os.mkdir(old)
+    old_file = os.path.join(old, "agent.1")
+    open(old_file, "w", encoding="utf-8").close()
+    made = [old_file, old]
+    time.sleep(0.05)
+    Z.mark_began(logs / "scratch")
+    time.sleep(0.05)
+    zone = Z.zone_for(str(folder), logs=str(logs), scratch=str(logs / "scratch"), state=str(state))
+
+    def check(command):
+        return Z.check(command, folder=str(folder), kind="command", cwd=str(folder), zone=zone).verdict
+    yield check, old, new, made
+    for path in made:                                  # only the names this test made
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.unlink(path)
+
+
+def test_a_file_made_after_the_try_began_stays_scratch(began):
+    check, _old, new, made = began
+    file = new + ".csv"
+    made.append(file)
+    open(file, "w", encoding="utf-8").close()
+    assert check(f"python app.py {file}") == "allow"
+    assert check(f"cp a.txt {file}") == "allow"
+    os.mkdir(new)
+    made.append(new)
+    inner = os.path.join(new, "out.txt")
+    made.append(inner)
+    open(inner, "w", encoding="utf-8").close()
+    assert check(f"python app.py {new}") == "allow"
+    assert check(f"python app.py {inner}") == "allow", "her card is only for what was already there"
+    assert check(f"python app.py {new}/not-there-yet") == "allow"
+
+
+def test_a_file_older_than_the_try_asks(began):
+    check, old, _new, _made = began
+    assert check(f"python app.py {old}") == "ask"
+    assert check(f"python app.py {old}/agent.1") == "ask"
+    assert check(f"cp a.txt {old}/agent.1") == "ask"
+    assert check(f"python app.py {old}/not-there-yet") == "allow", "nothing there yet: the try's own"
+
+
+def test_an_old_file_with_a_new_time_on_its_inode_or_moved_in_asks(began):
+    check, old, new, made = began
+    moved = new + ".moved"
+    made.insert(0, moved)
+    os.utime(os.path.join(old, "agent.1"), (1_000_000_000, 1_000_000_000))
+    os.rename(os.path.join(old, "agent.1"), moved)        # its ctime is new now, its mtime is not
+    assert check(f"python app.py {moved}") == "ask"
+
+
+def test_a_socket_from_before_the_try_asks_and_its_own_later_one_does_not(box, tmp_path):
+    _home, state, folder = box
+    logs = state / "logs" / "toolsmith" / "mytry"
+    (logs / "scratch").mkdir(parents=True)
+    older, later = f"/tmp/d132-s1-{os.getpid()}", f"/tmp/d132-s2-{os.getpid()}"
+    with socket.socket(socket.AF_UNIX) as one:
+        one.bind(older)
+        try:
+            time.sleep(0.05)
+            Z.mark_began(logs / "scratch")
+            time.sleep(0.05)
+            with socket.socket(socket.AF_UNIX) as two:
+                two.bind(later)
+                try:
+                    zone = Z.zone_for(str(folder), logs=str(logs), scratch=str(logs / "scratch"), state=str(state))
+                    check = lambda p: Z.check(f"python app.py {p}", folder=str(folder), kind="command",  # noqa: E731
+                                              cwd=str(folder), zone=zone).verdict
+                    assert check(older) == "ask"
+                    assert check(later) == "allow"
+                finally:
+                    os.unlink(later)
+        finally:
+            os.unlink(older)
+
+
+def test_another_accounts_file_asks_however_new(began, monkeypatch):
+    check, _old, new, made = began
+    file = new + ".theirs"
+    made.append(file)
+    open(file, "w", encoding="utf-8").close()
+    assert check(f"python app.py {file}") == "allow"
+    mine = os.getuid()
+    monkeypatch.setattr(Z.os, "getuid", lambda: mine + 1)        # the same as the file being another account's
+    assert check(f"python app.py {file}") == "ask"
+
+
+def test_a_link_the_try_made_is_read_as_where_it_lands(began, box):
+    home = box[0]
+    check, old, new, made = began
+    (home / ".ssh").mkdir()
+    (home / "plain.txt").write_text("x", encoding="utf-8")
+    for name, target, want in (("-a", os.path.join(old, "agent.1"), "ask"),   # to an older file in /tmp
+                               ("-b", home / ".ssh" / "id_rsa", "deny"),       # out of /tmp, to her keys
+                               ("-c", home / "plain.txt", "ask")):             # out of /tmp, to a plain file of hers
+        link = new + name
+        made.append(link)
+        os.symlink(target, link)
+        assert check(f"python app.py {link}") == want, name
+    own = new + ".own"
+    made.append(own)
+    open(own, "w", encoding="utf-8").close()
+    link = new + "-d"
+    made.append(link)
+    os.symlink(own, link)
+    assert check(f"python app.py {link}") == "allow", "to its own file"
+
+
+def test_with_no_start_on_record_what_is_there_asks(box):
+    _home, state, folder = box
+    logs = state / "logs" / "toolsmith" / "mytry"
+    (logs / "scratch").mkdir(parents=True)
+    zone = Z.zone_for(str(folder), logs=str(logs), scratch=str(logs / "scratch"), state=str(state))
+    file = f"/tmp/d132-nomark-{os.getpid()}"
+    open(file, "w", encoding="utf-8").close()
+    try:
+        assert Z.check(f"python app.py {file}", folder=str(folder), kind="command", cwd=str(folder), zone=zone).verdict == "ask"
+    finally:
+        os.unlink(file)
+
+
+def test_a_real_try_records_its_start_and_its_own_tmp_file_gets_no_card(tmp_path, state):
+    from test_d61_allowlist import HELLO, _checked
+    from toolsmith_fakes import World
+    from puffpai_core.zone3.toolsmith_host.ports import Ports
+    w = World(tmp_path, state)
+    w.ports.fixture_repo = HELLO
+    real = Ports.zone_check
+    w.ports.zone_check = lambda *a, **k: real(w.ports, *a, **k)
+    older = f"/tmp/d132-before-{os.getpid()}"
+    mine = f"/tmp/d132-mine-{os.getpid()}"
+    open(older, "w", encoding="utf-8").close()
+    time.sleep(0.05)
+    try:
+        _b, _link, _try_id, rec = _checked(w)
+        assert (rec.logs / Z.BEGAN_FILE).is_file()
+        time.sleep(0.05)
+        open(mine, "w", encoding="utf-8").close()
+        assert w.host.trials._zone(rec, f"python app.py {mine}", "command").verdict == "allow"
+        assert w.host.trials._zone(rec, f"python app.py {older}", "command").verdict == "ask"
+    finally:
+        w.host.stop(timeout=10)
+        for path in (older, mine):
+            if os.path.lexists(path):
+                os.unlink(path)
+
+
 def test_a_trys_venv_cant_be_swapped_unnoticed(tmp_path):
     folder = tmp_path / "app"
     folder.mkdir()
@@ -285,7 +608,23 @@ def test_a_system_folder_cant_be_linked_as_a_package():
     from pathlib import Path
 
     from puffpai_core.packages.manager import link_problem
-    assert "System folders" in link_problem(Path("/etc"), Path("/nonexistent-bot"))
+    # A Mac's /etc is a link to /private/etc: refused as a link, and the real one as a system folder (below).
+    assert ("link to somewhere else" if os.path.islink("/etc") else "System folders") in link_problem(
+        Path("/etc"), Path("/nonexistent-bot"))
+
+
+def test_a_macs_real_etc_is_a_system_folder(box, monkeypatch):
+    from pathlib import Path
+
+    from puffpai_core.packages import manager
+    from puffpai_core.packages.manager import link_problem
+    from puffpai_core.zone1 import knowledge_folder as kf
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)            # no /private/etc off a Mac: only the words are read
+    monkeypatch.setattr(manager.fsutil, "is_link", lambda _p: False)
+    assert "System folders" in link_problem(Path("/private/etc"), Path("/nonexistent-bot"))
+    assert "System folders" in link_problem(Path("/private/etc/ssh"), Path("/nonexistent-bot"))
+    monkeypatch.undo()
+    assert kf.problem(box[1], "/private/etc") == kf.SYSTEM
 
 
 def test_a_wizard_path_keeps_this_computers_slashes():

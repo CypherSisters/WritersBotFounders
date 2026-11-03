@@ -145,6 +145,8 @@
       a.open_dashboard().then((r) => { if (r && r.line) toast(r.line); }, () => {});   // D108: why no sign-in link
       return;
     }
+    /* D144, D108: with no shell this opens in the same profile as the sign-in, so not for another Desktop she has chosen. */
+    if (S.settings && S.settings.own_desktop === false) { toast("Your Desktop is not one of PuffPAI's own, so it does not open from here. Open it in your browser: " + location.protocol + "//" + location.host + "/"); return; }
     window.open("/" + (hash || ""), "_blank", "noopener");
   }
 
@@ -155,6 +157,7 @@
     button.disabled = true;
     const r = await api("POST", "/v1/terminal/open", { conversation: S.chatId });
     button.disabled = false;
+    if (r.data && r.data.pane) { openPage("developer", "terminal"); return; }   // D144: on Linux and Mac, as on another device (D139)
     toast(said(r, "The terminal chat did not open."));
   }
 
@@ -614,7 +617,7 @@
         el("span", { class: "w-grow" }), S.counts ? pill(String(S.counts), "stop") : null]),
       el("button", { class: "w-item" + (S.active === "settings" ? " on" : ""), "data-rail": "settings", on: { click: () => openTab(settingsTab()) } }, [el("span", { class: "w-name", text: "Settings" }),
         el("span", { class: "w-grow" }), pill("keys, GitHub, looks")]),
-      pageItem("people", "People"), pageItem("agents", "Agent Team"), pageItem("outside", "What leaves your computer"), pageItem("developer", "Developer"),
+      pageItem("people", "People"), pageItem("agents", "Agent Team"), pageItem("outside", "The Bridge"), pageItem("developer", "Developer"),
       // WritersBot: the native window has no address bar, so a reload needs a place of its own (F5 and Ctrl+R work too).
       el("button", { class: "w-item w-dim", "data-rail": "reload", title: "Reload the window (F5)", on: { click: () => location.reload() } }, [el("span", { class: "w-name", text: "Reload" })])];
     if (S.settings && !S.settings.wizard_complete) {
@@ -631,7 +634,7 @@
     const open = b.status === 200 && b.data.state === "open";
     const brain = m.status === 200 ? L.brainView(m.data) : null;
     clear($("status")).append(
-      el("button", { "data-status": "vault", on: { click: () => openPage("vault") } }, ["Vault ",
+      el("button", { "data-status": "vault", title: vault.lent, on: { click: () => openPage("vault") } }, ["Vault ",
         pill(vault.open ? "open" : vault.state === "locked" ? "locked" : vault.words.toLowerCase(), vault.open ? "ok" : "dim")]),
       el("button", { "data-status": "bridge", on: { click: () => openPage("outside") } }, ["Bridge ",
         b.status === 200 ? pill(open ? "open" : "closed", open ? "stop" : "ok") : pill("not known")]),
@@ -659,6 +662,7 @@
       redrawTab("building");
     } else if (!vaultWait) S.vaultSaid = false;
     if (live || vaultWait) again();
+    else if (S.vault && S.vault.lent) drawStatus();   // D153: the build ended, so what was lent may have gone with it
     renderTabs();
   }
   async function refreshCounts() {
@@ -733,9 +737,10 @@
     let shownFor = null;
     row.saySo = () => {                                 // Not now only while Toolsmith is not waiting for it
       const waits = toolsmithWaitsForVault();
-      if (waits === shownFor) return;
-      shownFor = waits;
-      clear(words).append(el("b", { text: "Your vault is locked." }), waits ? " " + L.UNLOCK_WAITING : "");
+      const tail = L.vaultRowWords(waits, S.vault);
+      if (tail === shownFor) return;
+      shownFor = tail;
+      clear(words).append(el("b", { text: "Your vault is locked." }), tail ? " " + tail : "");
       notNow.hidden = waits;
     };
     return row;
@@ -977,7 +982,7 @@
   function againEl(v) {
     const says = el("p", { class: "w-says" }), cardBox = el("div"), unlock = el("div");
     return el("div", { class: "w-card" }, [
-      el("p", { text: v.unfinished + (v.unfinished === 1 ? " job" : " jobs") + " did not get a working app. Toolsmith can try again. Jobs that work stay as they are." + L.againMore(v) }),
+      el("p", { text: [v.unfinished ? v.unfinished + (v.unfinished === 1 ? " job" : " jobs") + " did not get a working app. Toolsmith can try again. Jobs that work stay as they are." + L.againMore(v) : "", v.missing].filter(Boolean).join(" ") }),
       el("div", { class: "w-btns" }, [btn("Check again", async () => {
         if (!(await keysReady(v.id, unlock, says, null))) return;
         says.textContent = "Asking Toolsmith to check again.";
@@ -1036,12 +1041,16 @@
     }
     const builds = (r.data.builds || []).slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 12);
     const parts = [];
+    const views = [];
     if (!builds.length) parts.push(el("p", { class: "w-empty", text: "Nothing built yet. Tell Toolsmith what you want in chat, or with /build." }));
     for (const b of builds) {
       const full = await api("GET", "/v1/toolsmith/builds/" + encodeURIComponent(b.id), undefined, L.POLL_WAIT_MS);
-      if (full.status === 200) parts.push(buildEl(b, full.data, pend.cards));
+      if (full.status === 200) { views.push(L.buildView(full.data)); parts.push(buildEl(b, full.data, pend.cards)); }
     }
-    clear(t.node).append(...parts);
+    const work = L.workNow(views, r.data, Date.now());            // D159: what is happening now, first
+    clear(t.node).append(el("div", { class: "w-card", "data-work-now": work.running.length ? "running" : "idle" }, [el("h5", { text: work.head }),
+      ...work.running.map((line) => el("p", { text: line })),
+      ...work.waiting.map((line) => el("p", { class: "w-fine", text: line }))]), ...parts);
   }
 
   /* Your turn: every Yes card, the Checklist and the notices (the Desktop's rules). */
@@ -1282,7 +1291,7 @@
       row.append(field, link);
       form = help;
     } else if (v.setup) {
-      row.appendChild(btn("Set up the vault ↗", () => openDashboard("#vault")));
+      row.appendChild(btn("Set up the vault", () => openPage("vault")));
     }
     const address = el("input", { class: "w-field w-wide", type: "text", autocomplete: "off", spellcheck: "false", maxlength: "500", placeholder: "Paste a GitHub address to add its code", "aria-label": "GitHub project address" });
     const add = btn("Add", async () => {
@@ -1508,7 +1517,7 @@
           draw(); drawStatus();
         })]), says);
       } else if (!v.setUp) {
-        box.append(el("p", { class: "w-fine", text: "Set it up in the dashboard." }), el("div", { class: "w-btns" }, [btn("Open in dashboard ↗", () => openDashboard("#vault"))]));
+        box.append(el("p", { class: "w-fine", text: "Set it up on the Vault page." }), el("div", { class: "w-btns" }, [btn("Set up the vault", () => openPage("vault"))]));
       } else {
         const p = pinBox("Your PIN");
         const open = async () => {
@@ -1556,6 +1565,13 @@
     const view = currentView();
     addYou(view, ["/unlock", "/vault", "/lock"].indexOf(name) >= 0 ? name : (name + (rest ? " " + rest : "")));   // never a PIN typed after it
     if (name === "/dashboard") { openDashboard(""); say(view, "That opens in the dashboard, in your browser."); return; }
+    if (name === "/books") {
+      if (!rest) { say(view, "Say what about, like /books gardening."); return; }
+      // WritersBot: Find books on Knowledge follows the plan live and says plainly why it can't look (WB1).
+      window.Puff.askBooks(rest);
+      say(view, "That is for Knowledge, so it is looking for books there, in the side pane.");
+      return;
+    }
     if (name in PANE_PAGES) { openPage(...PANE_PAGES[name]); say(view, "It is open in the side pane."); return; }
     if (name === "/show") {
       const t = L.showTarget(rest, S.apps);
@@ -1699,6 +1715,7 @@
       if (type === "wizard.progress") { loadSettings(); drawRailMore(); }
     };
     (async () => {
+      let before = false;
       while (!S.signedOut) {
         let r = null;
         try { r = await fetch("/v1/events", { headers: authHeaders({ Accept: "text/event-stream" }), credentials: "same-origin", cache: "no-store" }); } catch (e) { r = null; }
@@ -1707,6 +1724,8 @@
           await wait(3000);
           continue;
         }
+        if (before && S.settings && S.settings.network) loadSettings();   // D150: a restarted Core opens its page ports when asked
+        before = true;
         const reader = r.body.getReader(), dec = new TextDecoder();
         let buf = "";
         try {

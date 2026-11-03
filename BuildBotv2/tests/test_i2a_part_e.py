@@ -14,6 +14,7 @@ Process rule for these tests: no test stops any process it did not start itself.
 """
 
 import json
+import os
 import shutil
 import threading
 import sys
@@ -30,6 +31,8 @@ from test_i2a_part_c import URL, _decide, _fake_try
 from zone2_doubles import FakeRuntime, GateDouble
 
 WIN = sys.platform == "win32"
+#: A real place of this computer, outside any try, written the way this computer writes it.
+OUTSIDE_FOLDER = os.path.join("C:"+os.sep, "Windows") if WIN else "/etc"
 
 
 # -- 1. one reader of an installed package's manifest ------------------------------------------------------
@@ -93,9 +96,10 @@ def test_a_chat_turn_never_starts_the_mcp_command_of_a_shipped_top_level_manifes
         say = {"tool_calls": [{"id": "c1", "name": "hello-page__say_hello", "arguments": {"name": "Sam"}}]}
         brain = _chat_brain(core, say, {"text": "Said hello."})
         assert brain.manifest == core.steward.read_manifest and brain.folder == core.steward.installs.folder
-        table = brain.concierge(GateDouble().gate()).table_for("say hello to Sam", 20)
-        names = table.names()
-        assert "hello-page.say_hello" in names, names
+        # Its server takes a moment to listen: Windows waits on a closed port, Linux answers at once.
+        table = wait_for(lambda: (lambda t: t if "hello-page.say_hello" in t.names() else None)(
+            brain.concierge(GateDouble().gate()).table_for("say hello to Sam", 20)), 60)
+        assert table, "the real .buildbot manifest's tools never came"
         # A real chat turn. An adopted app's tool is "unknown", so it asks her: the card is answered Yes here.
         owner = _owner(core)
         box = {}
@@ -201,7 +205,7 @@ def test_a_folder_in_packages_with_no_registry_row_is_never_read(core, tmp_path)
     (planted / "evil" / "index.html").write_text("<p>not the Core's</p>", encoding="utf-8")
     (planted / "puffpai.json").write_text(json.dumps({
         "schema": "puffpai-package/1", "id": "desktop", "kind": "ui", "name": "Desktop", "version": "9.9.9",
-        "run": {"windows": {"type": "static", "dir": "evil"}}}), encoding="utf-8")
+        "run": {"default": {"type": "static", "dir": "evil"}}}), encoding="utf-8")
     root = desktop.static_root(core.state, "desktop", core.registry)
     assert root is None or not str(root).startswith(str(planted))
     assert desktop.read_manifest(core.state, "desktop", core.registry)["version"] != "9.9.9"
@@ -302,8 +306,8 @@ def test_a_requirement_file_inside_the_try_with_plain_lines_runs(tmp_path, line)
 
 BAD_LINES = [
     # (pip reads a line's options the POSIX shell way, so a backslash path there is not what it looks like)
-    "-e ../outside", "-e git+https://example.org/x.git#egg=x", "--editable=C:/Windows", "-e file:///C:/Windows",
-    "../outside/evil.txt", "C:\\Windows\\System32", "file:///C:/Windows", "file://server/share/x.whl",
+    "-e ../outside", "-e git+https://example.org/x.git#egg=x", "--editable=" + OUTSIDE_FOLDER.replace(os.sep, "/"),
+    "-e file:///C:/Windows", "../outside/evil.txt", os.path.join(OUTSIDE_FOLDER, "System32"), "file:///C:/Windows", "file://server/share/x.whl",
     "https://example.org/x.whl", "x @ https://example.org/x.whl", "x @ file:///C:/Windows",
     "-r ../outside/evil.txt", "-c ../outside/evil.txt", "-r https://example.org/r.txt", "-r ${HOME}/r.txt",
     "flask==${VERSION}", "--target lib", "--prefix C:\\x", "--root C:\\x", "--user", "--src src",
@@ -346,7 +350,7 @@ def test_a_nested_requirement_file_is_checked_too_and_relative_to_its_own_folder
     ["install", "-c", "../outside/evil.txt", "x"], ["install", "--constraint=../outside/evil.txt", "x"],
     ["install", "-r", "https://example.org/r.txt"], ["install", "-r", "no-such-file.txt"],
     ["install", "-r=requirements.txt"], ["install", "-e", "../outside"], ["install", "--editable=../outside"],
-    ["install", "-e", "git+https://example.org/x.git"], ["install", "../outside"], ["install", "C:\\Windows"],
+    ["install", "-e", "git+https://example.org/x.git"], ["install", "../outside"], ["install", OUTSIDE_FOLDER],
     ["install", "https://example.org/x.whl"], ["install", "x @ https://example.org/x.whl"],
     ["install", "-i", "https://example.org/simple", "x"], ["install", "--index-url=https://example.org", "x"],
     ["install", "--extra-index-url", "https://example.org", "x"], ["install", "--trusted-host", "example.org", "x"],

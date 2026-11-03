@@ -170,7 +170,7 @@ const noKeyAnywhere = (sec, c) => {
   c.calls.forEach((x) => { assert.ok(x.call.indexOf(KEY) < 0, "the key is in an address: " + x.call); });
   c.calls.filter((x) => JSON.stringify(x.body || {}).indexOf(KEY) >= 0).forEach((x) => assert.ok(/^PUT \/v1\/toolsmith\/keys\//.test(x.call), x.call));
 };
-const tileOf = (sec) => one(sec, attr("data-tile", "toolsmith"));
+const tileOf = (sec) => one(sec, attr("data-toolsmith", "tile"));
 const pickOf = (t) => one(t, attr("aria-label", "Where Toolsmith thinks"));
 const statOf = (t) => one(t, attr("data-toolsmith", "stat")).textContent;
 const nowOf = (t) => one(t, attr("data-toolsmith", "now")).textContent;
@@ -178,7 +178,15 @@ const saidOf = (t, name) => one(t, attr("data-said", name)).textContent;
 const keyBoxOf = (t) => one(t, (n) => n.tag === "input" && n.getAttribute("type") === "password");
 const choose = async (t, id) => { const s = pickOf(t); s.value = id; s.fire("change"); await flush(); };
 const tick = (t) => { one(t, attr("aria-label", "Yes to what Toolsmith sends")).checked = true; };
-async function page(c, arg) { core = c; const sec = new N("section"); await draw(sec, arg, false); await flush(); return sec; }
+/* D162: the tile is on Settings, by the one function Settings calls. "overview" and "bridge-page" draw Developer's own pages. */
+async function page(c, arg) {
+  core = c;
+  const sec = new N("section");
+  if (arg === "overview" || arg === "bridge-page") await draw(sec, arg === "overview" ? "" : "bridge", false);
+  else sec.appendChild(await global.Puff.toolsmithTile());
+  await flush();
+  return sec;
+}
 /* Holds each call named *match* ("PUT /v1/...") until its turn: c.let() lets the oldest go on, or answers with *over*. */
 function hold(c, match) {
   const real = c.api;
@@ -226,11 +234,12 @@ const KEY2 = "not-a-real-key-i23d-1111";
   /* ---- a local bot: the tile is next to GitHub, says This computer, and "Pick a company first" ---- */
   {
     const c = fakeCore();
+    const over = await page(c, "overview");
+    const own = one(over, attr("data-dev", "add-your-own"));
+    assert.deepStrictEqual(own.kids.map((n) => n.getAttribute("data-tile")), ["own-folder", "github"]);
+    assert.ok(!tileOf(over));
     const sec = await page(c, "");
-    const own = one(sec, attr("data-dev", "add-your-own"));
-    assert.deepStrictEqual(own.kids.map((n) => n.getAttribute("data-tile")), ["own-folder", "github", "toolsmith"]);
     const t = tileOf(sec);
-    assert.strictEqual(one(t, (n) => n.tag === "h2").textContent, "Toolsmith's cloud model");
     assert.ok(/This computer/.test(nowOf(t)) && /No key is kept/.test(nowOf(t)), nowOf(t));
     assert.strictEqual(statOf(t), "NO KEY");
     assert.strictEqual(pickOf(t).value, "");
@@ -266,7 +275,6 @@ const KEY2 = "not-a-real-key-i23d-1111";
     const c = fakeCore();
     const sec = await page(c, "");
     t = tileOf(sec);
-    const shell = one(sec, attr("data-tile", "terminal"));
     await choose(t, p.id);
     assert.strictEqual(one(t, attr("data-toolsmith", "consent")).textContent, p.consent);
     assert.ok(keyBoxOf(t).disabled === false && keyBoxOf(t).getAttribute("aria-label") === p.company + " key");
@@ -289,8 +297,7 @@ const KEY2 = "not-a-real-key-i23d-1111";
     assert.ok(/Saved in your vault\. Saved: /.test(saidOf(t, "toolsmith")), saidOf(t, "toolsmith"));
     assert.strictEqual(keyBoxOf(t).value, "");
     assert.ok(button(t, "Change the key"));
-    assert.strictEqual(one(sec, attr("data-tile", "terminal")), shell);   // a running command line keeps its screen
-    assert.strictEqual(one(sec, attr("data-dev", "add-your-own")).kids[2], t);
+    assert.strictEqual(sec.kids[0], t);                        // drawn again in its own place, on Settings too
   }
 
   /* ---- D118: a bot with a saved Yes for an earlier sentence is told why, and Save needs her tick ---- */
@@ -500,7 +507,7 @@ const KEY2 = "not-a-real-key-i23d-1111";
   /* ---- the GitHub block is still there, with its own form and its own route ---- */
   {
     const c = fakeCore();
-    const sec = await page(c, "");
+    const sec = await page(c, "overview");
     const g = one(sec, attr("data-tile", "github"));
     assert.strictEqual(g.getAttribute("data-github"), "developer");
     assert.strictEqual(one(g, (n) => n.tag === "h2").textContent, "GitHub");
@@ -517,17 +524,19 @@ const KEY2 = "not-a-real-key-i23d-1111";
   /* ---- Bridge: the tile and a card to its page, next to GitHub's; its Saved line goes where it did ---- */
   {
     const c = fakeCore();
-    const sec = await page(c, "bridge");
+    const bridge = await page(c, "bridge-page");
+    assert.ok(!tileOf(bridge));
+    assert.deepStrictEqual(one(bridge, attr("data-dev", "goto")).kids.map((n) => n.getAttribute("data-goto")), ["#outside", "#developer/github", "#settings/toolsmith"]);
+    const sec = await page(c, "");
     const t = tileOf(sec);
-    assert.ok(t && one(t, (n) => n.tag === "h2").textContent === "Toolsmith's cloud model");
-    assert.deepStrictEqual(one(sec, attr("data-dev", "goto")).kids.map((n) => n.getAttribute("data-goto")), ["#outside", "#developer/github", "#developer/toolsmith"]);
+    assert.ok(t);
     await choose(t, "anthropic");
     tick(t);
     keyBoxOf(t).value = KEY;
     button(t, "Save").fire("click");
     await flush();
     assert.deepStrictEqual(c.calls.map((x) => x.call), ["PUT /v1/toolsmith/keys/anthropic", "PUT /v1/toolsmith/model"]);
-    assert.ok(/Saved: Anthropic, a-big/.test(one(sec, attr("data-said", "bridge")).textContent));
+    assert.ok(/Saved: Anthropic, a-big/.test(saidOf(tileOf(sec), "toolsmith")));
     assert.ok(/Anthropic, a-big/.test(nowOf(tileOf(sec))));
     noKeyAnywhere(sec, c);
   }
@@ -538,8 +547,6 @@ const KEY2 = "not-a-real-key-i23d-1111";
     const sec = await page(c, "toolsmith");
     const t = tileOf(sec);
     assert.ok(/OpenAI, o-big/.test(nowOf(t)) && statOf(t) === "KEY KEPT");
-    assert.ok(/Nothing leaves your computer without your consent\./.test(sec.textContent));
-    assert.strictEqual(one(sec, attr("data-dev", "back")).getAttribute("href"), "#developer");
     const t0 = t;
     await choose(t, "");
     button(t, "Save").fire("click");
@@ -703,29 +710,6 @@ const KEY2 = "not-a-real-key-i23d-1111";
     noKeyAnywhere(sec, c);
   }
 
-  /* ---- a redraw of another tile on Bridge leaves a key she pasted, unsent, in her box ---- */
-  {
-    const c = fakeCore({ searchOn: true });
-    const sec = await page(c, "bridge");
-    const t = tileOf(sec);
-    await choose(t, "google");
-    keyBoxOf(t).value = KEY;
-    tick(t);
-    button(sec, "Turn off Toolsmith's search").fire("click");
-    await flush();
-    assert.strictEqual(c.searchOn, false);
-    assert.ok(button(sec, "Let Toolsmith search while it builds"));   // the Bridge tile did draw again
-    assert.strictEqual(tileOf(sec), t);
-    assert.strictEqual(keyBoxOf(t).value, KEY);
-    assert.deepStrictEqual(c.calls.map((x) => x.call), ["POST /v1/bridge/search"]);
-    button(t, "Save").fire("click");                           // and it still goes, to the right place
-    await flush();
-    assert.deepStrictEqual(c.calls.map((x) => x.call), ["POST /v1/bridge/search", "PUT /v1/toolsmith/keys/google", "PUT /v1/toolsmith/model"]);
-    assert.ok(/Saved: Google/.test(one(sec, attr("data-said", "bridge")).textContent));
-    assert.strictEqual(keyBoxOf(tileOf(sec)).value, "");
-    noKeyAnywhere(sec, c);
-  }
-
   /* ---- everything opens again after a refusal and after a thrown error, and an error's own words never show ---- */
   for (const route of ["PUT /v1/toolsmith/keys/openai", "PUT /v1/toolsmith/model"]) {
     const c = hold(fakeCore(), route);
@@ -852,7 +836,7 @@ const KEY2 = "not-a-real-key-i23d-1111";
     tick(t);
     button(t, "Save").fire("click");
     await flush();
-    const line = one(sec, attr("data-said", "bridge")).textContent;
+    const line = saidOf(tileOf(sec), "toolsmith");
     assert.ok(/Saved: Anthropic/.test(line), line);
     assert.ok(vault === "open" ? /Saved in your vault/.test(line) : /inbox/.test(line), line);
     noKeyAnywhere(sec, c);
@@ -875,14 +859,13 @@ const KEY2 = "not-a-real-key-i23d-1111";
     assert.ok(/Saved: OpenAI/.test(saidOf(u, "toolsmith")));
   }
 
-  /* ---- a tile that can't read Toolsmith says so, and the rest of the Overview still draws ---- */
+  /* ---- a tile that can't read Toolsmith says so ---- */
   {
     const c = fakeCore();
     const real = c.api;
     c.api = async (m, p, body) => (p === "/v1/toolsmith" ? { status: 500, data: { error: "Your bot did not answer." } } : real(m, p, body));
     const sec = await page(c, "");
     assert.ok(/Your bot did not answer/.test(tileOf(sec).textContent));
-    assert.ok(one(sec, attr("data-tile", "github")) && one(sec, attr("data-tile", "zone-vault")));
     assert.strictEqual(keyBoxOf(tileOf(sec)), null);
     assert.strictEqual(statOf(tileOf(sec)), "CAN'T TELL");
   }

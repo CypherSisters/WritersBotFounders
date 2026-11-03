@@ -142,7 +142,7 @@ def test_the_folders_row_says_what_was_read_and_what_wasnt(lib, tmp_path):
     lib.scan()
     got = lib.folder_report(mine)
     assert got["read"] == 3 and got["waiting"] == 0 and got["not_read"] == 1
-    assert got["line"] == "3 files read. 1 file BuildBot can't read yet: old.doc."
+    assert got["line"] == "Your bot can find 3 files here. 1 file BuildBot can't read yet: old.doc."
     # a file it tried and could not read says why
     (mine / "scan.docx").write_bytes(b"not a zip at all")
     lib.scan()
@@ -196,7 +196,7 @@ def test_linking_reads_the_folder_now_and_a_search_never_waits_for_it(state, tmp
         if row.get("read") == 1:
             break
         time.sleep(0.1)
-    assert row["read"] == 1 and row["line"] == "1 file read.", row
+    assert row["read"] == 1 and row["line"] == "Your bot can find 1 file here.", row
     from puffpai_core import wiring
     with SCAN_LOCK:                                                  # a long scan is running
         assert wiring.knowledge_search(core)("leek", 5)              # and the search answers from what is read
@@ -214,7 +214,7 @@ def test_pin_list_and_unpin_and_the_file_never_changes(lib, tmp_path):
         lib.pin(p)
     lib.scan_file(got)
     row = lib.pinned_view()[0]
-    assert row["name"] == "My Novel.docx" and row["there"] is True and row["line"] == "Ready."
+    assert row["name"] == "My Novel.docx" and row["there"] is True and row["line"] == "Your bot can find this."
     assert lib.search("river", 5)
     assert lib.unpin(p) is True and lib.pinned() == [] and not lib.search("river", 5)
     assert lib.unpin(p) is False
@@ -417,7 +417,7 @@ def test_the_brain_reads_it_in_a_turn_through_the_gate(state, bound, freshtable,
 def test_a_document_not_found_points_at_the_knowledge_page(state, freshtable):
     table_tool = {t.name: t for t in cg.Concierge(None, state, keep=str, search=lambda *_a: []).core_tools(lambda: None)}
     said = table_tool["search_knowledge"].fn({"query": "x"}, {})["said"]
-    assert "Knowledge page" in said and "Your documents" in said and "no other place" in said
+    assert "Knowledge page" in said and "Add documents" in said and "no other place" in said
     assert "Knowledge page" in table_tool["search_knowledge"].description
 
 
@@ -428,15 +428,16 @@ def test_the_page_logic():
     web = REPO / "packages" / "desktop" / "web"
     for f in ("devzones.js", "pages/knowledge.js", "window.js"):
         assert subprocess.run([NODE, "--check", str(web / f)], capture_output=True, timeout=60).returncode == 0
-    got = subprocess.run([NODE, str(REPO / "tests" / "js" / "d125.test.js")], capture_output=True, text=True, timeout=60)
-    assert got.returncode == 0 and got.stdout.strip() == "ok", got.stderr
+    for test in ("d125.test.js", "v3_add_documents.test.js"):
+        got = subprocess.run([NODE, str(REPO / "tests" / "js" / test)], capture_output=True, text=True, timeout=60)
+        assert got.returncode == 0 and got.stdout.strip() == "ok", got.stderr
 
 
 def test_the_knowledge_page_is_the_one_place(state):
     web = REPO / "packages" / "desktop" / "web"
     page = (web / "pages" / "knowledge.js").read_text(encoding="utf-8")
-    for words in ("Your documents", "Pin this file", "Unpin", "Link this folder", "Unlink", "/v1/knowledge/pinned",
-                  "/v1/knowledge/pinned/remove", "/v1/folders/link", "/v1/folders/unlink", "Pick a file", "Pick a folder"):
+    for words in ("Your documents", "Add documents", "Add a whole folder", "Add this folder", "Remove", "/v1/knowledge/documents",
+                  "/v1/knowledge/documents/named", "/v1/knowledge/documents/remove", "/v1/folders/link", "/v1/folders/unlink"):
         assert words in page, words
     assert '"/link": ["knowledge"]' in (web / "window.js").read_text(encoding="utf-8")
     for shell in ("index.html", "window.html"):
@@ -446,9 +447,9 @@ def test_the_knowledge_page_is_the_one_place(state):
 
 def test_the_knowledge_page_by_real_clicks(state, tmp_path, monkeypatch, drawbridge):
     """Real Edge, real Core, every press a real click: link a folder with a Word file, see what it read and what it
-    couldn't, pin a file, unpin it, unlink the folder."""
+    couldn't, add a file by its route (its dialog can't be clicked here), remove it, unlink the folder."""
     import socket
-    from test_i10a_desktop_clicks import EDGE, WHERE, _desktop, _point, _text_point, _type
+    from test_i10a_desktop_clicks import EDGE, WHERE, _call, _desktop, _point, _rail, _text_point, _type
     if os.name != "nt" or EDGE is None:
         pytest.skip("Windows Job Objects and Microsoft Edge")
     s = socket.socket()
@@ -465,45 +466,46 @@ def test_the_knowledge_page_by_real_clicks(state, tmp_path, monkeypatch, drawbri
     def tile_has(text):
         return f"!!document.querySelector('#view-knowledge [data-tile=folders]') && document.querySelector('#view-knowledge [data-tile=folders]').textContent.indexOf({json.dumps(text)}) >= 0"
 
+    def show_typed_folder(b):                            # as Add a whole folder does, without its real dialog
+        b.js("document.querySelector('[data-folder-typed]').hidden = false")
+        b.js("document.querySelector('[data-folder-typed]').open = true")
+
     with _desktop(state, tmp_path, monkeypatch, complete=True, env={"OLLAMA_HOST": f"127.0.0.1:{closed_port}"}) as b:
         b.click(*_point(b, ".rail a.item[href='#knowledge']", 0))
         assert b.wait(tile_has("Your documents"), timeout_s=30), b.js(WHERE)
-        assert b.js(tile_has("0 PINNED, 0 LINKED"))
-        b.js("document.querySelectorAll('[data-tile=folders] details').forEach(d => d.open = true)")
-        _type(b, "#view-knowledge input[aria-label='A folder to link']", str(mine))
-        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Link this folder"))
-        assert b.wait(tile_has("0 PINNED, 1 LINKED"), timeout_s=30), b.js(WHERE)
+        assert b.js(tile_has("0 DOCUMENTS, 0 FOLDERS"))
+        show_typed_folder(b)
+        _type(b, "#view-knowledge input[aria-label='A folder to add']", str(mine))
+        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Add this folder"))
+        assert b.wait(tile_has("0 DOCUMENTS, 1 FOLDER"), timeout_s=30), b.js(WHERE)
         assert b.wait(tile_has("BuildBot can't read yet: old.doc"), timeout_s=30)
-        b.js("document.querySelectorAll('[data-tile=folders] details').forEach(d => d.open = true)")
-        _type(b, "#view-knowledge input[aria-label='A file to pin']", f'"{novel_file}"')
-        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Pin this file"))
-        assert b.wait(tile_has("1 PINNED, 1 LINKED"), timeout_s=30), b.js(WHERE)
-        assert b.js(tile_has("My Novel.docx")) and b.js(tile_has("Ready."))
-        b.js("document.querySelectorAll('[data-tile=folders] details').forEach(d => d.open = true)")
-        # a bad path says why, in the tile
-        _type(b, "#view-knowledge input[aria-label='A file to pin']", str(tmp_path / "nope.docx"))
-        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Pin this file"))
-        assert b.wait(tile_has("That file isn't there."), timeout_s=30), b.js(WHERE)
-        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Unpin"))
-        assert b.wait(tile_has("0 PINNED, 1 LINKED"), timeout_s=30), b.js(WHERE)
-        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] button", "Unlink"))
-        assert b.wait(tile_has("0 PINNED, 0 LINKED"), timeout_s=30), b.js(WHERE)
+        added = _call(b, "POST", "/v1/knowledge/documents", {"path": str(novel_file)})
+        assert added["status"] == 200 and added["data"]["said"] == "My Novel.docx is ready. Your bot can find it now.", added
+        _rail(b, "home")
+        _rail(b, "knowledge")
+        assert b.wait(tile_has("1 DOCUMENT, 1 FOLDER"), timeout_s=30), b.js(WHERE)
+        assert b.js(tile_has("My Novel.docx")) and b.js(tile_has("Your bot can find this."))
+        # a bad path says why
+        bad = _call(b, "POST", "/v1/knowledge/documents", {"path": str(tmp_path / "nope.docx")})
+        assert bad["status"] == 400 and bad["data"]["error"] == "That file isn't there.", bad
+        b.click(*_point(b, "#view-knowledge [data-remove-document]", 0))
+        assert b.wait(tile_has("0 DOCUMENTS, 1 FOLDER"), timeout_s=30), b.js(WHERE)
+        assert b.wait(tile_has("My Novel.docx is off your list. The file itself stays where it is."), timeout_s=30), b.js(WHERE)
+        b.click(*_text_point(b, "#view-knowledge [data-tile=folders] li[data-linked] button", "Remove"))
+        assert b.wait(tile_has("0 DOCUMENTS, 0 FOLDERS"), timeout_s=30), b.js(WHERE)
+        assert _call(b, "POST", "/v1/knowledge/documents", {"path": str(novel_file)})["status"] == 200
         # the window draws the same page in its side pane, with the same login
         b.js("location.assign('/window/')")
         assert b.wait("!!document.querySelector('[data-rail=knowledge]')", timeout_s=30), b.js(WHERE)
         b.click(*_point(b, "[data-rail=knowledge]", 0))
         tile = "[data-tile=folders]"
         assert b.wait(f"!!document.querySelector('{tile}')", timeout_s=30), b.js(WHERE)
-        opened = f"document.querySelectorAll('{tile} details').forEach(d => d.open = true)"
-        b.js(opened)
-        _type(b, "input[aria-label='A file to pin']", str(novel_file))
-        b.click(*_text_point(b, f"{tile} button", "Pin this file"))
-        here = f"document.querySelector('{tile}').textContent.indexOf('1 PINNED, 0 LINKED') >= 0"
+        here = f"document.querySelector('{tile}').textContent.indexOf('1 DOCUMENT, 0 FOLDERS') >= 0"
         assert b.wait(here, timeout_s=30), b.js(WHERE)
-        b.js(opened)
-        _type(b, "input[aria-label='A folder to link']", str(mine))
-        b.click(*_text_point(b, f"{tile} button", "Link this folder"))
-        assert b.wait(here.replace("0 LINKED", "1 LINKED"), timeout_s=30), b.js(WHERE)
+        show_typed_folder(b)
+        _type(b, "input[aria-label='A folder to add']", str(mine))
+        b.click(*_text_point(b, f"{tile} button", "Add this folder"))
+        assert b.wait(here.replace("0 FOLDERS", "1 FOLDER"), timeout_s=30), b.js(WHERE)
     assert novel_file.exists() and (mine / "letter.docx").exists()
 
 

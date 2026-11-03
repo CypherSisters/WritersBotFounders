@@ -3,14 +3,15 @@ const assert = require("assert");
 const path = require("path");
 const D = require(path.join(__dirname, "..", "..", "packages", "desktop", "web", "devzones.js"));
 
-// a file path as she pastes it: File Explorer's Copy as path adds quotes
-assert.deepStrictEqual(D.filePath('"C:\\Users\\me\\My Novel.docx"'), { ok: true, path: "C:\\Users\\me\\My Novel.docx", line: "" });
-assert.deepStrictEqual(D.filePath("  \\\\server\\share\\a.pdf "), { ok: true, path: "\\\\server\\share\\a.pdf", line: "" });
-assert.strictEqual(D.filePath("").ok, false);
-assert.strictEqual(D.filePath("").line, "");
-assert.ok(/whole path/.test(D.filePath("My Novel.docx").line));
-assert.ok(/One file/.test(D.filePath("a\nb").line));
-assert.ok(/One file/.test(D.filePath("C:\\" + "x".repeat(1000)).line));
+// a path as she pastes it: File Explorer's Copy as path adds quotes. Only a folder is typed now; a file comes from Add documents.
+assert.strictEqual(D.filePath, undefined);
+assert.deepStrictEqual(D.folderPath('"C:\\Users\\me\\My Novels"'), { ok: true, path: "C:\\Users\\me\\My Novels", line: "" });
+assert.deepStrictEqual(D.folderPath("  \\\\server\\share\\a "), { ok: true, path: "\\\\server\\share\\a", line: "" });
+assert.strictEqual(D.folderPath("").ok, false);
+assert.strictEqual(D.folderPath("").line, "");
+assert.ok(/whole path/.test(D.folderPath("My Novels").line));
+assert.ok(/One folder/.test(D.folderPath("a\nb").line));
+assert.ok(/One folder/.test(D.folderPath("C:\\" + "x".repeat(1000)).line));
 
 // a folder's row says what it read and what it couldn't, in the Core's words; with none, as before
 const rows = (linked) => D.foldersView({ linked: linked }).linked.map((x) => x.line);

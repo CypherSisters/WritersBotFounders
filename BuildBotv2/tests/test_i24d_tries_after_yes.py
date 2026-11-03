@@ -88,14 +88,15 @@ def _brain(word, fits=lambda user: False):
     return answer
 
 
-def _web(items, readmes, company):
+def _web(items, readmes, company, cloud=False):
     def send(method, url, headers, body):
         if url.startswith(f"https://{COMPANY}/"):
             return 200, {}, json.dumps(company(body)).encode()
         if url.startswith("https://api.github.com/search/repositories"):
             # One search keeps its first 6 (``from_search``): the two queries answer one part of the list each.
+            # A cloud plan searches on the job name's words and keeps all it gets (D121, D143).
             part = {"alpha": items[:6], "beta": items[6:12]}
-            got = next((v for k, v in part.items() if f"+{k}+" in url), [])
+            got = items[:12] if cloud else next((v for k, v in part.items() if f"+{k}+" in url), [])
             return 200, {}, json.dumps({"items": got}).encode()
         m = re.match(r"https://raw\.githubusercontent\.com/ex/([^/]+)/[^/]+/README\.md$", url)
         if m and m.group(1) in readmes:
@@ -106,7 +107,7 @@ def _web(items, readmes, company):
 
 def _world(tmp_path, state, *, cloud, items, readmes, brain, company=None):
     ports = FakePorts(tmp_path, brain=brain)
-    ports.http_send_fn = _web(items, readmes, company or Company())
+    ports.http_send_fn = _web(items, readmes, company or Company(), cloud)
     w = World(tmp_path, state, ports)
     if cloud:
         p = sender.load_providers()["anthropic"]

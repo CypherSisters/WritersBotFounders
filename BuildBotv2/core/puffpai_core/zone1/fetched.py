@@ -164,8 +164,28 @@ def moving(state: Path | str) -> bool:
     return isinstance(got, dict) and got.get("phase") not in (None, "done") and not got.get("switched")
 
 
+def _same_drive(one: Path | str, other: Path | str) -> bool:
+    """Both on one drive. Linux and Mac have no letters: the disk each is on, or its nearest folder that is there. One
+    that can't be read counts as the same: the bigger room is kept."""
+    if os.name == "nt":
+        return drive_of(one).lower() == drive_of(other).lower()
+
+    def disk(path: Path | str) -> int | None:
+        p = Path(path)
+        for at in (p, *p.parents):
+            try:
+                return os.stat(at).st_dev
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+        return None
+    a, b = disk(one), disk(other)
+    return a is None or b is None or a == b
+
+
 def _spare(state: Path | str, where: Path, need: int) -> int:
-    big = need >= SPARE and drive_of(where).lower() == drive_of(Path(state).resolve()).lower()
+    big = need >= SPARE and _same_drive(where, Path(state).resolve())
     return SPARE_OWN_DRIVE if big else SPARE
 
 

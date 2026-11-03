@@ -24,7 +24,6 @@ from test_i24d_tries_after_yes import Company, _fixture_repo, _plan, _yes_and_bu
 from toolsmith_fakes import FakePorts, World, make_venv, script
 
 WIN = sys.platform == "win32"
-needs_jobs = pytest.mark.skipif(not WIN, reason="job objects are Windows only")
 
 HERS = "HERS-" + "7f3a9c1e"                        # stands for anything of hers; never a real value
 APPS = {"recipes": ("Recipe Box", "src/recipes.py", "def recipe_list():\n    return ['soup']\n", ".env.example"),
@@ -83,10 +82,13 @@ def _read(link, try_id, path):
 # -- read_file: inside the try's folder, as it was; the zone's refusals stay -------------------------------------------
 
 def test_a_file_of_the_download_is_read_whole_and_under_any_spelling(world, app):
-    _b, link, try_id, _rec = _checked(world, app)
+    _b, link, try_id, rec = _checked(world, app)
     _name, source, code, example = APPS[app]
     assert _read(link, try_id, source)["said"] == code
-    assert _read(link, try_id, source.upper())["said"] == code           # Windows reads it as the same file
+    if os.path.exists(rec.folder / source.upper()):                      # Windows and a Mac read it as the same file
+        assert _read(link, try_id, source.upper())["said"] == code
+    else:                                                                # a Linux disk has no such file
+        assert not _read(link, try_id, source.upper())["ok"]
     assert _read(link, try_id, source.replace("/", "\\"))["said"] == code
     assert _read(link, try_id, example)["said"] == "API_KEY=changeme\n"
     assert "src" in link.try_fs(try_id, "list", path="")["said"] or "lib" in link.try_fs(try_id, "list", path="")["said"] \

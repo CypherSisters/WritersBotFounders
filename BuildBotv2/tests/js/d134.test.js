@@ -27,20 +27,22 @@ for (const name of ["desktop.js", "window.js"]) {
 }
 
 // One button: the browser's own picker opens at once on another device, the Windows dialog on the bot's own computer.
+// The clicks themselves run in tests/js/v3_add_documents.test.js.
 const k = read("pages/knowledge.js");
 assert.ok(k.includes("L.onNetworkHost(location.hostname)"));
 assert.ok(k.includes("fromDevice.click()"));
-assert.ok(k.includes("P.pickPath(kind, said)"));                // and only there
-assert.ok(k.indexOf("fromDevice.click(); return; }    // at once") < k.indexOf("P.pickPath(kind, said)"));
-assert.ok(k.includes("got.upload && fromDevice"));              // a bot with no dialog falls back the same way
-assert.ok(k.includes('"/v1/knowledge/pinned", { path: d.path }'));  // what is sent is then pinned, as a picked file is
-assert.ok(k.includes("if (!d.pinned)"));                        // a new copy of a pinned file is not pinned twice
+assert.ok(k.includes('dialog("files")'));                       // and only there
+assert.ok(k.indexOf("fromDevice.click(); return; }    // at once") < k.indexOf('dialog("files")'));
+assert.ok(k.includes("got && got.upload"));                     // a bot with no dialog falls back the same way
+assert.ok(!k.includes('"/v1/knowledge/pinned", {'));            // what is sent is on the list by itself: the page never pins it
 
 const s = read("sendfile.js");
 assert.ok(s.includes('type: "file"') && s.includes("L.UPLOAD_TYPES"));
+assert.ok(s.includes('multiple: "multiple"'));
 assert.ok(s.includes('"/v1/knowledge/upload?name=" + encodeURIComponent(file.name)'));
 assert.ok(s.includes("L.uploadProblem(file.name, file.size)"));
 assert.ok(s.includes('input.value = ""'));                      // the same file, changed, can be picked again
+assert.ok(s.indexOf("Array.from(input.files") < s.lastIndexOf('input.value = ""'));   // clearing the input empties its list
 
 // Nothing on another device says it opens on the bot's computer for this any more.
 for (const line of k.split("\n").concat(s.split("\n"))) {

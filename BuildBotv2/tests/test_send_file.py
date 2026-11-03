@@ -159,7 +159,7 @@ def test_the_routes_refuse_what_they_should(state, tmp_path):
     r = client.post(url, json={"file_name": "a.txt", "content_b64": "eA=="}, headers=dev)
     assert r.status_code == 409 and "not installed" in r.json["error"]
     r = client.post(url, json={"path": str(tmp_path / "secret.txt")}, headers=dev)
-    assert r.status_code == 400 and "pinned" in r.json["error"]
+    assert r.status_code == 400 and "on your list" in r.json["error"]
 
 
 # -- the picker -----------------------------------------------------------------------------------
@@ -180,6 +180,7 @@ def test_the_pick_route_says_type_it_from_another_device(state, monkeypatch):
     assert far.json["typed"] is True and far.json["path"] == ""
 
 
+@pytest.mark.skipif(os.name != "nt", reason="The file picker is a Windows dialog (send_file.can_pick)")
 def test_pick_answers_the_path_and_one_at_a_time(monkeypatch):
     got = {}
 
@@ -201,7 +202,7 @@ def test_pick_answers_the_path_and_one_at_a_time(monkeypatch):
 
 
 @pytest.mark.skipif(not send_file.can_pick(), reason="Windows only")
-@pytest.mark.parametrize("kind", ["file", "folder"])
+@pytest.mark.parametrize("kind", ["file", "files", "folder"])
 def test_the_real_script_is_good_powershell_up_to_the_dialog(kind):
     """Everything but showing it: this computer may be in use, so no dialog opens in a test."""
     script = send_file.pick_script(kind)
@@ -212,7 +213,21 @@ def test_the_real_script_is_good_powershell_up_to_the_dialog(kind):
                          capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120,
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     assert got.returncode == 0, got.stderr
-    assert got.stdout == ("OpenFileDialog" if kind == "file" else "FolderBrowserDialog")
+    assert got.stdout == ("FolderBrowserDialog" if kind == "folder" else "OpenFileDialog")
+
+
+@pytest.mark.skipif(not send_file.can_pick(), reason="Windows only")
+def test_the_real_files_answer_is_one_path_a_line():
+    """The script's last part, by real PowerShell, on what a dialog's ``FileNames`` holds. No dialog opens in a test."""
+    script = send_file.pick_script("files")
+    head, answer = script.index("if($d.ShowDialog"), script.index("[Console]::Out.Write(")
+    dry = (script[:head] + "$d=[pscustomobject]@{FileNames=[string[]]@('C:\\a b\\caf\u00e9.txt','C:\\c.docx')};" + script[answer:-1])
+    encoded = base64.b64encode(dry.encode("utf-16-le")).decode()
+    got = subprocess.run([send_file._powershell(), "-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded],  # noqa: SLF001
+                         capture_output=True, stdin=subprocess.DEVNULL, timeout=120,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    assert got.returncode == 0, got.stderr
+    assert got.stdout.decode("utf-8") == "C:\\a b\\caf\u00e9.txt\nC:\\c.docx"
 
 
 # -- chat -----------------------------------------------------------------------------------------
@@ -303,7 +318,7 @@ def test_real_files_to_the_two_store_packages_by_real_clicks(state, tmp_path, mo
         # Send to... on a pinned document's row, by real clicks
         b.click(*_point(b, ".rail a.item[href='#knowledge']", 0))
         assert b.wait("!!document.querySelector('[data-send-to=\"My Novel.docx\"]')", timeout_s=30), b.js(WHERE)
-        b.click(*_text_point(b, "[data-pinned] button", "Send to..."))
+        b.click(*_text_point(b, "[data-document] button", "Send to..."))
         assert b.wait("!document.querySelector('[data-send-to=\"My Novel.docx\"]').hidden", timeout_s=10)
         b.click(*_text_point(b, "[data-send-to=\"My Novel.docx\"] button", "Document search"))
         assert b.wait("!!document.querySelector('[data-sent=document-search]')", timeout_s=60), b.js(WHERE)

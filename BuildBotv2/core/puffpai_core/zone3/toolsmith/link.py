@@ -193,6 +193,14 @@ class Link:
         return self._call("POST", f"/jobs/{urllib.parse.quote(job_id)}/found", facts)
 
     # a try
+    def store_add(self, job_id: str, pid: str) -> dict:
+        """D152: add a store app through its normal Yes card. ``{consent_id, name}``."""
+        return self._call("POST", f"/jobs/{urllib.parse.quote(job_id)}/store", {"id": pid})
+
+    def store_add_state(self, consent_id: str) -> dict:
+        """Her answer and the install: ``{waiting}``, or ``{ok, said}``."""
+        return self._call("GET", f"/store/{urllib.parse.quote(consent_id)}")
+
     def try_open(self, job_id: str, ref: str) -> dict:
         return self._call("POST", "/tries", {"job_id": job_id, "ref": ref})
 

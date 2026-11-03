@@ -39,6 +39,10 @@ so each call goes through the same Drawbridge review (``wiring.tool_review``; a 
 as changing). ``add_tool_server``, ``remove_tool_server`` (each with its own Yes card) and ``list_tool_servers`` are
 core tools when that source is here. A password never goes through chat: the Developer page takes it.
 
+**Skills** (D149, ``zone2.skills``, ported from v1): the prompt lists each installed skill by name and one line, and
+``skill_view`` reads that package's own ``SKILL.md``. Reading runs nothing; a command it asks for goes through
+``run_command`` and her Yes. Both are here only on a bot with a skill.
+
 ``search_knowledge`` answers from the index only: text the gate already passed, with every held value as
 its handle (``{{vault:<ref>}}``). The loop's gate (``to_model``) then gives the local brain the real
 value only while the vault is open, on this computer (D25).
@@ -55,7 +59,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .. import owner_files
-from . import apps, commands, mcp, programs
+from . import apps, commands, mcp, programs, skills
 from .gate import clean_value, no_keys
 from ..zone3.drawbridge import tool_changes
 from .tools import BadArgs, Tool, ToolTable, check_schema, make
@@ -79,9 +83,9 @@ BRAIN_STEPS = "core:concierge"
 SEARCH_MAX = 20
 NO_TOOLSMITH = "Toolsmith is not part of this Core, so nothing was looked for."
 #: D126: where her documents go, so the brain never makes up a place ("document storage").
-ADD_DOCUMENTS = ("The owner adds her documents on the Knowledge page, in the place called Your documents: she links a "
-                 "folder or pins one file there. There is no other place for them.")
-NOTHING_FOUND = "No file in the data folder, the linked folders or the pinned documents matches that. " + ADD_DOCUMENTS
+ADD_DOCUMENTS = ("The owner adds her documents on the Knowledge page, with the Add documents button, or adds a whole "
+                 "folder there. There is no other place for them.")
+NOTHING_FOUND = "No file in the data folder, the linked folders or her documents matches that. " + ADD_DOCUMENTS
 
 CORE_TOOL_NAMES = ("list_installed", "open_package", "search_knowledge", "checklist_add", "ask_toolsmith",
                    "read_app", "open_app", "arrange_home", commands.TOOL)
@@ -95,6 +99,8 @@ READ_PINNED = "read_pinned"
 SHOW_PASSAGE = "show_passage"
 #: Only on a bot with an app that takes files (D127).
 SEND_DOCUMENT = "send_document"
+#: Only on a bot with a skill installed (D149).
+SKILL_VIEW = skills.TOOL
 #: Only on a bot with a desktop program she added (D138).
 OPEN_IN_PROGRAM = programs.OPEN_TOOL
 #: What arrange_home can do (D82): an app's own page on Home or off it, every app as pages or small tiles,
@@ -166,6 +172,7 @@ class Concierge:
     outside: Any = None                # tool_servers.ToolServers: the tool servers she added (D137)
     real_args: Optional[Callable[[Any], Any]] = None
     reaches: Optional[Callable[[str], bool]] = None
+    skills_on: bool = True             # off for a dry run, which is one step long (Brain.sample_ask, Brain.picks)
     _listed: dict = field(default_factory=dict)
 
     # -- what is installed ---------------------------------------------------
@@ -221,7 +228,36 @@ class Concierge:
             lines.append(f"- {r['id']}: {r.get('name')} ({r.get('kind')}, {r.get('status')})" + (f": {desc}" if desc else ""))
         if len(rows) > PROMPT_ROWS:
             lines.append(f"... and {len(rows) - PROMPT_ROWS} more; list_installed shows them all.")
-        return "\n".join(lines) + self._outside_block() + self._pinned_block()
+        return "\n".join(lines) + self._outside_block() + self._pinned_block() + self._skills_block()
+
+    # -- skills (D149) ---------------------------------------------------------
+    def _skills(self) -> list[dict]:
+        """The installed skills the brain may read: a row of kind skill, in use, its manifest still the file her Yes
+        covered, and its own ``SKILL.md`` readable. Read fresh every turn, as the installed list is."""
+        if not self.skills_on or self.manifest is None or self.folder is None:
+            return []
+        out = []
+        for r in self.rows():
+            if r.get("kind") != "skill" or r.get("status") not in ("running", "stopped", "needs_you"):
+                continue
+            text = skills.read_own(self._folder(r["id"])) if self._manifest(r["id"]) is not None else None
+            if text is not None:
+                said = skills.description_of(text) or " ".join(str(r.get("description") or "").split())
+                out.append({"id": r["id"], "name": str(r.get("name") or ""), "text": text,
+                            "description": said[:skills.LIST_DESCRIPTION_MAX]})
+        return out
+
+    def _skills_block(self) -> str:
+        block = skills.prompt_block(self._skills())
+        return "\n\n" + block if block else ""
+
+    def _skill(self, name: str) -> Optional[dict]:
+        """An installed skill by id, or in any spelling: an id always wins over another skill's display name."""
+        flat = re.sub(r"[^a-z0-9]", "", name.lower())
+        found = self._skills()
+        return next((s for s in found if s["id"] == name), None) or next(
+            (s for s in found if flat and flat == re.sub(r"[^a-z0-9]", "", s["id"])), None) or next(
+            (s for s in found if flat and flat == re.sub(r"[^a-z0-9]", "", s["name"].lower())), None)
 
     # -- tool servers she added (D137) -----------------------------------------
     def _outside_rows(self) -> list[dict]:
@@ -538,6 +574,13 @@ class Concierge:
             return self.pinned.show(str(a.get("name") or ""), str(a.get("passage") or ""), no_keys(str(a.get("suggestion") or "")),
                                     no_keys(str(a.get("why") or "")), part, (c or {}).get("real") is True)
 
+        def skill_view(a: dict, _c: dict) -> Any:
+            try:
+                part = int(a.get("part") or 1)
+            except (TypeError, ValueError):
+                raise BadArgs("part is a whole number, from 1") from None
+            return skills.view(self._skill, str(a.get("name") or ""), part)
+
         def send_document(a: dict, _c: dict) -> Any:
             return self.pinned.send(str(a.get("name") or ""), str(a.get("app") or ""))
 
@@ -581,9 +624,10 @@ class Concierge:
 
         s = lambda props, req: {"type": "object", "properties": props, "required": req}  # noqa: E731
         idp = {"id": {"type": "string", "description": "The package id, as listed."}}
+        skill_tool = [make(SKILL_VIEW, skills.VIEW_WORDS, skills.VIEW_SCHEMA, skill_view)] if self._skills() else []
         send_tool = [make(SEND_DOCUMENT, "Hand one of the owner's documents to an installed app that takes files, when "
                           "she asks, like \"add my warranty to Document search\" or \"turn my novel into a PDF\". The "
-                          "document is one she pinned or one in a folder she linked, by its name.",
+                          "document is one on her list or one in a folder she linked, by its name.",
                           s({"name": {"type": "string", "description": "The document's file name."},
                              "app": {"type": "string", "description": "The app's id, as listed."}}, ["name", "app"])
                           | {"additionalProperties": False}, send_document)] if self._can_send() else []
@@ -626,7 +670,7 @@ class Concierge:
                           lambda a, c: programs.open_tool(self.state, a, c),
                           question=lambda a, c: programs.open_question(self.state, a, c))] \
             if programs.has_desktop(self.state) else []
-        return send_tool + pinned_tool + server_tools + open_tool + [
+        return skill_tool + send_tool + pinned_tool + server_tools + open_tool + [
             make("list_installed", "List everything installed on this bot: apps, tools, pages and more, "
                  "with each one's id, status and what it does.", s({}, []), list_installed),
             make("open_package", "Get the tools of one installed package by its id, to use them in this turn.",
@@ -642,9 +686,10 @@ class Concierge:
                  s({"title": {"type": "string"}, "why": {"type": "string"},
                     "kind": {"type": "string", "enum": list(CHAT_STEP_KINDS)}},
                    ["title", "why"]) | {"additionalProperties": False}, checklist_add),
-            make("ask_toolsmith", "Add an app or tool to this bot. Call it whenever the owner says add, install or "
-                 "get an app, a tool or a GitHub address (\"add github.com/owner/repo\", \"add an app for my "
-                 "plants\"), or asks for a job no installed tool can do. Toolsmith makes a plan, the owner says "
+            make("ask_toolsmith", "Add an app or tool to this bot, or find books to download for its library. Call it whenever "
+                 "the owner says add, install or get an app, a tool, a GitHub address or books (\"add "
+                 "github.com/owner/repo\", \"add an app for my plants\", \"find books on gardening\"), or asks for a job no "
+                 "installed tool can do. Toolsmith makes a plan, the owner says "
                  "Yes or No on its card, then Toolsmith builds it. Nothing is added without this tool. While a build "
                  "the owner asked for in this chat is still running, her new words are added to that build.",
                  s({"job": {"type": "string", "description": "What to add, in the owner's words, with any "
@@ -676,4 +721,5 @@ class Concierge:
         ]
 
 
-__all__ = ["CORE_TOOL_NAMES", "Concierge", "OPEN_IN_PROGRAM", "READ_PINNED", "SEND_DOCUMENT", "SHOW_PASSAGE", "SERVER_TOOL_NAMES", "words"]
+__all__ = ["CORE_TOOL_NAMES", "Concierge", "OPEN_IN_PROGRAM", "READ_PINNED", "SEND_DOCUMENT", "SHOW_PASSAGE", "SERVER_TOOL_NAMES", "SKILL_VIEW",
+           "words"]

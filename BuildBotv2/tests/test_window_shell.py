@@ -21,6 +21,7 @@ from conftest import REPO
 from puffpai_core import cli, corelock, opens, pairing, window
 
 windows_only = pytest.mark.skipif(os.name != "nt", reason="Windows shortcuts")
+window_here = pytest.mark.skipif(os.name != "nt", reason="The PuffPAI window is Windows only so far (window.why_not)")
 PORT = 51234
 WEB = REPO / "packages" / "desktop" / "web"
 OWN = f"http://puffpai.localhost:{PORT}"
@@ -392,6 +393,7 @@ def _parts(monkeypatch, webview=True, net=True, dotnet=True, webview2=True):
     monkeypatch.setattr(window, "_webview_imports", lambda: True)
 
 
+@window_here
 @pytest.mark.parametrize("missing, words", [({"webview": False}, "pywebview is not installed"),
                                             ({"net": False}, "pythonnet"),
                                             ({"dotnet": False}, ".NET Framework"),
@@ -409,6 +411,7 @@ def test_the_real_check_on_this_computer_says_a_word_or_nothing():
     assert isinstance(window.why_not(), str)
 
 
+@window_here
 def test_a_process_that_cant_start_is_one_plain_line(monkeypatch, state):
     _parts(monkeypatch)
 
@@ -419,6 +422,7 @@ def test_a_process_that_cant_start_is_one_plain_line(monkeypatch, state):
     assert opened is False and "FileNotFoundError" in line and "pythonw" not in line
 
 
+@window_here
 def test_open_window_starts_it_detached_and_says_so(monkeypatch, state):
     _parts(monkeypatch)
     spawned = []
@@ -442,6 +446,7 @@ def test_the_process_gets_no_code_or_port_on_its_command_line(monkeypatch, state
         assert got["kw"]["creationflags"] & 0x8 and got["kw"]["close_fds"] is True    # DETACHED_PROCESS
 
 
+@window_here
 def test_a_window_already_open_is_brought_forward_and_not_opened_twice(monkeypatch, state):
     _parts(monkeypatch)
     monkeypatch.setattr(window, "_spawn", lambda *_: pytest.fail("only one window per bot"))
@@ -455,6 +460,7 @@ def test_a_window_already_open_is_brought_forward_and_not_opened_twice(monkeypat
     assert forward == [os.getpid()]
 
 
+@window_here
 def test_a_lock_left_by_a_window_that_died_does_not_count(monkeypatch, state):
     _parts(monkeypatch)
     spawned = []
@@ -478,6 +484,7 @@ def here(monkeypatch):
     monkeypatch.setattr(cli, "_terminal", lambda: {"port": PORT, "token": "t"})
 
 
+@window_here
 @pytest.mark.parametrize("stdout_none", [False, True], ids=["console", "no-console"])
 def test_a_failure_in_the_window_parts_is_a_plain_line_and_an_offer(monkeypatch, capsys, state, here, stdout_none):
     def boom(*_a, **_k):
@@ -497,6 +504,7 @@ def test_a_failure_in_the_window_parts_is_a_plain_line_and_an_offer(monkeypatch,
     assert (boxes[0][1] is True) if stdout_none else boxes == []     # no console: a Yes or No for the dashboard
 
 
+@window_here
 def test_a_second_process_brings_the_first_forward_and_ends(monkeypatch, state, here):
     forward = []
     monkeypatch.setattr(window, "_bring_forward", forward.append)
@@ -536,12 +544,14 @@ def _fake_webview(monkeypatch, renderer):
     return types.SimpleNamespace(created=created, started=started, settings=settings, edge=edge)
 
 
+@window_here
 def test_pywebviews_fallback_to_the_old_browser_is_refused(monkeypatch, state):
     kit = _fake_webview(monkeypatch, "mshtml")
     why = window._show(PORT, state)               # noqa: SLF001
     assert why == "the Microsoft Edge WebView2 Runtime did not load" and kit.created == [] and kit.started == {}
 
 
+@window_here
 def test_the_window_starts_hidden_locked_with_no_debug_and_its_own_profile(monkeypatch, state):
     kit = _fake_webview(monkeypatch, "edgechromium")
     (state / "settings").mkdir(parents=True)
@@ -559,6 +569,7 @@ def test_the_window_starts_hidden_locked_with_no_debug_and_its_own_profile(monke
     assert kit.edge.on_navigation_start is not FakeEdge.on_navigation_start    # the lock is on the class it runs
 
 
+@window_here
 def test_what_could_change_the_windows_browser_is_cleared_before_it_starts(monkeypatch, state, here):
     monkeypatch.setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--remote-debugging-port=9222")
     monkeypatch.setenv("WEBVIEW2_USER_DATA_FOLDER", r"C:\elsewhere")
@@ -609,6 +620,7 @@ def test_app_says_so_when_buildbot_does_not_start(monkeypatch, capsys, app_kit):
 
 
 def test_app_that_cant_open_offers_the_dashboard(monkeypatch, capsys, app_kit, state):
+    monkeypatch.setenv("DISPLAY", ":99")                 # D144: off Windows, no screen means no offer
     app_kit.opens = False
     monkeypatch.setattr(cli, "_terminal", lambda: {"port": PORT, "token": "t"})
     opened = []
@@ -749,6 +761,7 @@ def test_the_script_takes_every_value_from_the_environment():
     assert '"' not in window._SHORTCUT_PS and "'" not in window._SHORTCUT_PS                        # noqa: SLF001
 
 
+@windows_only
 def test_shortcuts_use_her_real_folders_only_when_no_folders_are_given(state):
     with pytest.raises(AssertionError, match="real desktop"):                         # conftest's guard
         window.make_shortcuts(state, "Sunny")
@@ -879,10 +892,13 @@ def test_the_helper_gives_a_third_party_desktop_the_plain_address_and_says_why(s
     assert link.code == "" and link.url == OWN + "/" and _no_live_code(state)
     assert link.line.startswith("Your Desktop is not one of PuffPAI's own, so it gets no sign-in link from here. "
                                 "To sign it in, run this in a terminal: ") and link.line.endswith("pair --running.")
-    start = tmp_path / "Start BuildBot.cmd"
-    (tmp_path / "Sign in a browser.cmd").write_text("@echo off", encoding="ascii")
+    start = tmp_path / terminal.launcher_name("Start BuildBot.cmd")
+    signin = tmp_path / terminal.launcher_name("Sign in a browser.cmd")
+    signin.write_text("@echo off", encoding="ascii")
     monkeypatch.setattr(terminal, "launcher", lambda: start)
-    assert desktop.dashboard_link(state, PORT).line.endswith(f"To sign it in, double-click Sign in a browser.cmd in {tmp_path}.")
+    assert desktop.dashboard_link(state, PORT).line.endswith(f"To sign it in, {terminal.how_to_run(signin)}.")
+    if os.name == "nt":
+        assert desktop.dashboard_link(state, PORT).line.endswith(f"To sign it in, double-click Sign in a browser.cmd in {tmp_path}.")
 
 
 def test_a_ui_with_its_own_process_gets_no_code(state, monkeypatch):
@@ -1034,6 +1050,7 @@ def test_the_window_is_the_built_in_page_whatever_desktop_is_active(state, tmp_p
     assert client.get("/window/logic.js", base_url=base).data == (WEB / "logic.js").read_bytes()
 
 
+@window_here
 def test_a_third_party_desktop_no_longer_stops_the_window(state, tmp_path, monkeypatch, drawbridge, capsys):
     _third_party_ui(tmp_path, monkeypatch, state)
     capsys.readouterr()
@@ -1122,6 +1139,7 @@ def test_a_webview_that_is_there_but_does_not_import_is_found(monkeypatch, tmp_p
     assert "webview" not in sys.modules or sys.modules["webview"] is not None
 
 
+@window_here
 def test_a_broken_install_falls_back_to_the_chat(monkeypatch, capsys, state):
     from puffpai_core import termchat
     _parts(monkeypatch)
@@ -1135,6 +1153,7 @@ def test_a_broken_install_falls_back_to_the_chat(monkeypatch, capsys, state):
 
 
 # -- one start at a time ------------------------------------------------------------------------------------------------
+@window_here
 def test_repeated_opens_start_one_window(monkeypatch, state):
     _parts(monkeypatch)
     spawned = []
@@ -1143,6 +1162,7 @@ def test_repeated_opens_start_one_window(monkeypatch, state):
     assert len(spawned) == 1 and all(a == (True, window.OPENING_LINE) for a in answers)
 
 
+@window_here
 def test_a_start_that_died_does_not_block_the_next(monkeypatch, state):
     _parts(monkeypatch)
     spawned = []

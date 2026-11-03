@@ -31,7 +31,7 @@ PIN = "Tq7#mz2Lp!"                     # a made-up test PIN (tests/z1kit.py), no
 FAKE_KEY = "not-a-real-key-i23d-" + "0" * 12
 NODE = shutil.which("node")
 WEB = REPO / "packages" / "desktop" / "web"
-TILE = "#view-developer [data-tile=toolsmith]"
+TILE = "#view-settings [data-tile=toolsmith]"
 COMPANIES = ("anthropic", "openai", "google")
 
 
@@ -91,14 +91,14 @@ def test_the_tile_never_stores_or_prints_the_key():
 
 def test_the_same_tile_is_on_each_page_and_github_stays_as_it_was():
     src = (WEB / "pages" / "developer.js").read_text(encoding="utf-8")
-    assert src.count("async function toolsmithTile(") == 1 and "toolsmithTile((line) => bridgePage(sec, line))" in src
-    assert 'title: "Toolsmith\'s cloud model"' in src
+    assert src.count("async function toolsmithTile(") == 1 and "P.toolsmithTile = toolsmithHere;" in src     # D162: Settings' row
+    assert "await P.toolsmithTile()" in (WEB / "pages" / "settings.js").read_text(encoding="utf-8")
     over = src[src.index("async function overview("):src.index("/* ---- Zone 1: Vault")]
     own = over[over.index('"data-dev": "add-your-own"'):]
     own = own[:own.index("]);")]
-    assert 'window.PuffGitHub.block({ where: "developer" }) : null' in own and "smith" in own
-    assert own.index("PuffGitHub.block") < own.index("smith")
-    assert 'goTo("#developer/toolsmith"' in src and 'goTo("#developer/github"' in src
+    assert 'window.PuffGitHub.block({ where: "developer" }) : null' in own and "smith" not in own
+    assert src.count('goTo("#settings/toolsmith"') == 2 and 'goTo("#developer/github"' in src
+    assert 'P.go("settings", "toolsmith")' in src                  # an old address still lands on it
     assert 'toolsmith: toolsmithPage' in src and 'github: githubPage' in src
 
 
@@ -215,15 +215,17 @@ def test_overview_by_real_clicks(state, tmp_path, monkeypatch, drawbridge):
     with _desktop(state, tmp_path, monkeypatch, complete=True, env={"OLLAMA_HOST": f"127.0.0.1:{closed_port}"}) as b:
         assert _call(b, "POST", "/v1/vault/setup", {"pin": PIN})["status"] == 201
         b.click(*_point(b, ".rail a.item[href='#developer']", 0))
-        assert b.wait(f"!!document.querySelector({json.dumps(TILE)})", timeout_s=30), b.js(WHERE)
+        assert b.wait("!!document.querySelector('[data-tile=github]')", timeout_s=30), b.js(WHERE)
 
-        # At a glance, next to GitHub, on a local bot
+        # D162: Developer points to it, and it is on Settings, on a local bot
         own = b.js("Array.from(document.querySelector('[data-dev=add-your-own]').children).map(n => n.dataset.tile)")
-        assert own[:2] == ["own-folder", "github"] and "toolsmith" in own
-        assert b.js(has(TILE + " h2", "Toolsmith's cloud model")) and b.js(has(TILE + " [data-toolsmith=now]", "This computer"))
+        assert own[:2] == ["own-folder", "github"] and "toolsmith" not in own
+        assert b.js("document.querySelector('[data-tile=github]').dataset.github") == "developer"
+        b.click(*_point(b, "#view-developer [data-goto='#settings/toolsmith']", 0))
+        assert b.wait(f"location.hash === '#settings/toolsmith' && !!document.querySelector({json.dumps(TILE + ' [data-toolsmith=now]')})", timeout_s=30), b.js(WHERE)
+        assert b.js(has(TILE + " [data-toolsmith=now]", "This computer"))
         assert b.js(has(TILE + " [data-toolsmith=stat]", "NO KEY")) and b.js(has(TILE, "Pick a company first"))
         assert b.js(f"document.querySelector({json.dumps(TILE + ' input[type=password]')}).disabled") is True
-        assert b.js("document.querySelector('[data-tile=github]').dataset.github") == "developer"
 
         # Each company shows its own sentence and key box
         got = b.js("Array.from(document.querySelector(" + json.dumps(TILE + " select") + ").options).map(o => o.value)")
@@ -292,15 +294,13 @@ def test_overview_by_real_clicks(state, tmp_path, monkeypatch, drawbridge):
         assert b.js(f"document.querySelector({json.dumps(TILE + ' input[type=password]')}).value") == ""
         assert b.js(no_key) is True
 
-        # From Zone 3 Bridge: the tile, and the card to its own page next to GitHub's
-        b.click(*_point(b, "#view-developer [data-zone-open=bridge]", 0))
-        assert b.wait(f"location.hash === '#developer/bridge' && !!document.querySelector({json.dumps(TILE)}) && "
-                      "!!document.querySelector(\"[data-goto='#developer/toolsmith']\")", timeout_s=20), b.js(WHERE)
-        assert b.js("Array.from(document.querySelector('[data-dev=goto]').children).map(n => n.dataset.goto)") == ["#outside", "#developer/github", "#developer/toolsmith"]
-        b.click(*_point(b, "[data-goto='#developer/toolsmith']", 0))
-        assert b.wait(f"location.hash === '#developer/toolsmith' && !!document.querySelector({json.dumps(TILE)}) && "
-                      "!document.querySelector('[data-tile=bridge-now]')", timeout_s=20), b.js(WHERE)
-        assert b.js(has("#view-developer", "Nothing leaves your computer without your consent."))
+        # From Zone 3 Bridge: the card to it, next to GitHub's; an old address lands on it too
+        b.js("location.hash = '#developer/bridge'")
+        assert b.wait("!!document.querySelector(\"#view-developer [data-goto='#settings/toolsmith']\")", timeout_s=20), b.js(WHERE)
+        assert b.js("Array.from(document.querySelector('#view-developer [data-dev=goto]').children).map(n => n.dataset.goto)") == ["#outside", "#developer/github", "#settings/toolsmith"]
+        assert not b.js("!!document.querySelector('#view-developer [data-tile=toolsmith]')")
         assert not b.js("Array.from(document.querySelectorAll('#view-developer .fail')).map(n => n.textContent).join(' ')"), b.js(WHERE)
+        b.js("location.hash = '#developer/toolsmith'")
+        assert b.wait(f"location.hash === '#settings/toolsmith' && !!document.querySelector({json.dumps(TILE + ' [data-toolsmith=now]')})", timeout_s=20), b.js(WHERE)
     assert _files_holding(state, FAKE_KEY) == []
     assert FAKE_KEY not in (tmp_path / "core" / "serve.txt").read_text(encoding="utf-8", errors="replace")

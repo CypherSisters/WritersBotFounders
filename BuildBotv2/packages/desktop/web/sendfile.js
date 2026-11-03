@@ -1,5 +1,5 @@
 /* Hand a file to an app that takes files (D127; 02 `accepts`): GET /v1/packages/sendable, POST /v1/packages/<id>/send,
- * and the bot's own Open dialog for Pin and Link (POST /v1/knowledge/pick). Shown on Apps and on Knowledge. Where that
+ * and the bot's own Open dialog for documents and folders (POST /v1/knowledge/pick). Shown on Apps and on Knowledge. Where that
  * dialog can't show (another device, or a bot that has none), the browser's own file input and an upload (D134). */
 (function () {
   "use strict";
@@ -71,31 +71,35 @@
     return el("div", {}, [open, list]);
   };
 
-  /* Windows's own Open dialog: the path, or null if she closed it, or { upload: true } when there is no such dialog
-   * here and the file has to come from this browser's own file input (D134). */
+  /* Windows's own Open dialog: the path (with kind "files", a list of paths), or null if she closed it, or { upload: true }
+   * when there is no such dialog here, or for "files" when it can't open, and the file has to come from this browser's
+   * own file input (D134). */
   P.pickPath = async function (kind, said) {
     said.textContent = "Look for the window that just opened on this computer.";
     const x = await P.api("POST", "/v1/knowledge/pick", { kind: kind });
     said.textContent = "";
-    if (x.status !== 200) { said.textContent = P.said(x); return null; }
-    if ((x.data || {}).typed) { said.textContent = String(x.data.line || ""); return x.data.upload ? { upload: true } : null; }
-    return (x.data || {}).path || null;
+    if (x.status !== 200) { said.textContent = P.said(x); return kind === "files" && x.status === 409 ? { upload: true } : null; }
+    const d = x.data || {};
+    if (d.typed) { said.textContent = String(d.line || ""); return d.upload ? { upload: true } : null; }
+    return (d.paths && d.paths.length ? d.paths : d.path) || null;
   };
 
-  /* D134: the browser's own file input. The file goes to the bot, read as it goes, and *done* gets the Core's answer. */
-  P.uploadInput = function (said, done) {
-    const input = el("input", { type: "file", hidden: "hidden", accept: L.UPLOAD_TYPES, "data-upload": "", "aria-label": "A file from this device" });
-    input.addEventListener("change", async () => {
-      const file = input.files && input.files[0];
+  /* D134: one file from this device goes to the bot, read as it goes. It answers { said, ok } or { error }. */
+  async function upload(file) {
+    const problem = L.uploadProblem(file.name, file.size);
+    if (problem) return { error: problem };
+    const x = await P.api("POST", "/v1/knowledge/upload?name=" + encodeURIComponent(file.name), file);
+    if (x.status !== 200) return { error: x.status === 413 ? L.UPLOAD_TOO_BIG : P.said(x, "That file was not saved.") };
+    return { said: (x.data || {}).said, ok: (x.data || {}).ok };
+  }
+
+  /* D134: the browser's own file input, for one file or many. *chosen* gets the files and the way to send each. */
+  P.uploadInput = function (chosen) {
+    const input = el("input", { type: "file", hidden: "hidden", multiple: "multiple", accept: L.UPLOAD_TYPES, "data-upload": "", "aria-label": "Files from this device" });
+    input.addEventListener("change", () => {
+      const files = Array.from(input.files || []);   // first: clearing the input empties its list
       input.value = "";              // so the same file, changed, can be picked again
-      if (!file) return;
-      const problem = L.uploadProblem(file.name, file.size);
-      if (problem) { said.textContent = problem; return; }
-      said.textContent = "Sending " + file.name + " to your bot...";
-      const x = await P.api("POST", "/v1/knowledge/upload?name=" + encodeURIComponent(file.name), file);
-      if (x.status !== 200) { said.textContent = x.status === 413 ? L.UPLOAD_TOO_BIG : P.said(x, "That file was not saved."); return; }
-      said.textContent = String((x.data || {}).line || "");
-      done(x.data || {});
+      if (files.length) chosen(files, upload);
     });
     return input;
   };

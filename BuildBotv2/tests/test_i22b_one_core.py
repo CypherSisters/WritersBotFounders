@@ -131,19 +131,24 @@ def test_a_second_serve_for_the_same_bot_says_so_plainly_and_starts_nothing(stat
                                                                            launcher_there):
     from puffpai_core.cli import main
     from puffpai_core.wizard import terminal
-    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / "Start BuildBot.cmd")
+    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / terminal.launcher_name("Start BuildBot.cmd"))
+    stop, signin = terminal.stop_launcher(), terminal.signin_launcher()
     if launcher_there:
-        for name in ("Stop BuildBot.cmd", "Sign in a browser.cmd"):
-            (tmp_path / name).write_text("@echo off\n", encoding="ascii")
+        for path in (stop, signin):
+            path.write_text("@echo off\n", encoding="ascii")
     p1, p2 = _free_ports(2)
     with corelock.acquire(state, port=18431, pages_port=18433):
         assert main(["serve", "--port", str(p1), "--pages-port", str(p2), "--proxy-port", "0"]) == 1
     out = capsys.readouterr().out
     assert out.splitlines()[0] == ("BuildBot is already running, in another window. This window did not start "
-                                   "a second one.")
+                                   "a second one." if os.name == "nt" else
+                                   "BuildBot is already running. This did not start a second one.")
     assert "http://puffpai.localhost:18431/" in out                                 # the running one's port
-    assert (f"double-click Stop BuildBot.cmd in {tmp_path}" in out) is launcher_there
-    assert (f"double-click Sign in a browser.cmd in {tmp_path}" in out) is launcher_there
+    assert (terminal.how_to_run(stop) in out) is launcher_there
+    assert (terminal.how_to_run(signin) in out) is launcher_there
+    if os.name == "nt":
+        assert (f"double-click Stop BuildBot.cmd in {tmp_path}" in out) is launcher_there
+        assert (f"double-click Sign in a browser.cmd in {tmp_path}" in out) is launcher_there
     assert ("pair --running" in out) is not launcher_there and "run puffpai" not in out
     assert "Traceback" not in out and "PuffPAI Desktop at" not in out
     assert not (state / "tokens.db").exists() and not (state / "settings" / "terminal.json").exists()

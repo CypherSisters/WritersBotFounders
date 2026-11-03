@@ -271,10 +271,11 @@ def test_the_core_names_this_bots_own_launchers(monkeypatch, tmp_path):
     fake.parent.mkdir(parents=True)
     monkeypatch.setattr(term_mod, "__file__", str(fake))
     monkeypatch.setenv("PUFFPAI_BOT", "buildbot-2")
-    assert term_mod.launcher() == tmp_path / "Start BuildBot.cmd"
+    start, stop = term_mod.launcher_name("Start BuildBot.cmd"), term_mod.launcher_name("Stop BuildBot.cmd")
+    assert term_mod.launcher() == tmp_path / start
     own = tmp_path / "bots" / "buildbot-2"
     own.mkdir(parents=True)
-    (own / "Start BuildBot.cmd").write_text("x", encoding="ascii")
-    assert term_mod.stop_launcher() == own / "Stop BuildBot.cmd"
+    (own / start).write_text("x", encoding="ascii")
+    assert term_mod.stop_launcher() == own / stop
     monkeypatch.setenv("PUFFPAI_BOT", "buildbot")
-    assert term_mod.stop_launcher() == tmp_path / "Stop BuildBot.cmd"
+    assert term_mod.stop_launcher() == tmp_path / stop

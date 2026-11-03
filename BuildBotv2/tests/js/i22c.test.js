@@ -21,7 +21,7 @@ const NEVER = /bearer|token|api key|authorization|\/v1\/|coming in a later build
 // no file (run from source), no answer, or junk: still plain words, never the Core's refusal text
 [null, undefined, {}, { file: "", folder: "" }, { file: 3, folder: ["x"] }, "Bearer abc"].forEach((w) => {
   const got = L.signInWords(w).line;
-  assert.strictEqual(got, "To sign in this browser, double-click Sign in a browser.cmd in the folder BuildBot is installed in, then open the link it shows.");
+  assert.strictEqual(got, "To sign in this browser, in the folder BuildBot is installed in, open Sign in a browser.cmd on Windows, or run signin-buildbot.sh on Linux or a Mac, then open the link it shows.");
   assert.ok(!NEVER.test(got), got);
 });
 // run from source: the one command that really runs here, never bare "puffpai"
@@ -51,8 +51,9 @@ assert.strictEqual(L.signedOut(401, { error: "x", code: "anything_else" }), fals
 Object.values(L.NOT_BUILT).forEach((line) => {
   assert.ok(!NEVER.test(line), line);
   assert.ok(!/\u2014/.test(line), line);
-  assert.ok(/not built yet/.test(line), line);
 });
-assert.strictEqual(L.NOT_BUILT.brain, "Changing the brain here is not built yet. Setup's brain step changes it.");
+// D133: changing the brain is built now, so its line says how; the others still say what is not built
+Object.entries(L.NOT_BUILT).filter(([k]) => k !== "brain").forEach(([, line]) => assert.ok(/not built yet/i.test(line), line));
+assert.strictEqual(L.NOT_BUILT.brain, "Pick a model that is on this computer, or press Add to download one. The next chat turn uses it.");
 
 console.log("ok");

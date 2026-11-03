@@ -29,7 +29,8 @@ CPUS="${CPUS:-4}"
 PLATFORM_ARG=()
 [ -n "${PLATFORM:-}" ] && PLATFORM_ARG=(--platform "$PLATFORM")
 
-in_box() { docker exec -it "$NAME" bash -c "$1"; }
+# -t only with a terminal: a script has none, and docker refuses it then. -i stays, for the PIN and the chat.
+in_box() { local tty=(); [ -t 0 ] && tty=(-t); docker exec -i "${tty[@]}" "$NAME" bash -c "$1"; }
 batch() { docker exec "$NAME" bash -c "$1"; }
 GO="cd /data/bot/code"
 

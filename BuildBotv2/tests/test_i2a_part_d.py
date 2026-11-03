@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from conftest import git_init, yes
-from test_d61_allowlist import HELLO, WIN, _checked, needs_jobs, world  # noqa: F401 - shared
+from test_d61_allowlist import HELLO, WIN, _checked, world  # noqa: F401 - shared
 from toolsmith_fakes import World
 from puffpai_core.steward import gitfence
 from puffpai_core.steward.steward import MANIFEST_CHANGED, MANIFEST_UNRECORDED, StewardError
@@ -57,7 +57,6 @@ def _sha(path: Path) -> str:
 # -- 1. a try and a package never see a git repository above them -------------------------------------------
 
 @needs_git
-@needs_jobs
 def test_a_try_folder_below_a_home_repo_gets_its_own_and_git_in_it_sees_only_that(tmp_path, monkeypatch):
     home = _home_repo(tmp_path)
     w = World(tmp_path, home / "AppData" / "Local" / "PuffPAI" / "bot")
@@ -127,7 +126,6 @@ def test_a_git_init_that_fails_is_said_and_a_try_with_one_never_runs(tmp_path, m
         w.host.stop(timeout=10)
 
 
-@needs_jobs
 def test_toolsmith_cannot_write_move_or_delete_the_trys_own_git(world):
     _b, link, try_id, rec = _checked(world)
     from puffpai_core.zone3.toolsmith_host.trials import CORE_FILE_LINE
@@ -277,6 +275,7 @@ def test_start_again_after_a_restart_leaves_a_changed_package_broken_with_its_re
 
 
 def test_an_adopted_app_is_held_to_the_core_s_manifest_file_not_the_projects_own(quiet, drawbridge, tmp_path):
+    from puffpai_core.zone3.toolsmith.adopt import run_key
     from test_i2a_part_c import URL, _two_manifests
     folder = tmp_path / "hello-page"
     _two_manifests(folder, ["{python}", "evil.py"], ["{python}", "serve.py"])
@@ -285,10 +284,10 @@ def test_an_adopted_app_is_held_to_the_core_s_manifest_file_not_the_projects_own
     assert quiet.registry.get(pkg)["manifest_sha"] == _sha(installed / ".buildbot" / "puffpai.json")
     # The project's own top-level file is not her manifest: changing it changes nothing Steward runs.
     (installed / "puffpai.json").write_text("{}", encoding="utf-8")
-    assert quiet.steward.manifest(pkg)["run"]["windows"]["start"] == ["{python}", "serve.py"]
+    assert quiet.steward.manifest(pkg)["run"][run_key()]["start"] == ["{python}", "serve.py"]
     core_file = installed / ".buildbot" / "puffpai.json"
     data = json.loads(core_file.read_text(encoding="utf-8"))
-    data["run"]["windows"]["start"] = ["{python}", "evil.py"]
+    data["run"][run_key()]["start"] = ["{python}", "evil.py"]
     core_file.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(StewardError, match="settings file changed"):
         quiet.steward.start(pkg)
@@ -354,6 +353,10 @@ def test_an_update_whose_staged_manifest_changed_after_her_card_is_not_swapped_i
 # -- 4. leftover try TEMP folders at Core start ------------------------------------------------------------
 
 def _junction(link: Path, target: Path) -> bool:
+    """A link that leads out: a junction on Windows, a symbolic link on Linux and Mac."""
+    if not WIN:
+        os.symlink(target, link, target_is_directory=True)
+        return True
     got = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
     return got.returncode == 0
 
@@ -371,20 +374,17 @@ def test_core_start_removes_only_the_try_temp_folders_the_broker_names(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "precious.txt").write_text("keep me", encoding="utf-8")
-    linked = WIN and _junction(t / "0f0f0f", outside)                  # a link with the right name: not ours
-    inner = WIN and _junction(t / "a1b2c3" / "out", outside)          # a link inside one of ours: never followed
-    assert linked == inner == WIN
+    linked = _junction(t / "0f0f0f", outside)                          # a link with the right name: not ours
+    inner = _junction(t / "a1b2c3" / "out", outside)                  # a link inside one of ours: never followed
+    assert linked and inner
     assert broker_mod.clean_temps(bot) == 2
     assert not made.exists() and not (t / "a1b2c3").exists()
     for name in keep:
         assert (t / name).exists(), name
-    if linked:
-        assert os.path.lexists(t / "0f0f0f")
-    if linked or inner:
-        assert (outside / "precious.txt").read_text(encoding="utf-8") == "keep me"
+    assert os.path.lexists(t / "0f0f0f")
+    assert (outside / "precious.txt").read_text(encoding="utf-8") == "keep me"
 
 
-@needs_jobs
 def test_a_t_folder_that_is_a_link_is_never_gone_into(tmp_path):
     bot = tmp_path / "bot"
     bot.mkdir()

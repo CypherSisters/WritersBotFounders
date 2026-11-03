@@ -4,8 +4,12 @@ Five kinds of credential, all random tokens of which the Core keeps only a
 SHA-256 hash, in ``<state>/tokens.db``:
 - program key (``via: api_key``, label ``PROGRAM_LABEL`` + the owner's words): Home Assistant or another
   program the owner set up. It may call only routes with access ``public`` and ``program`` (the chat routes
-  for programs, ``/openai/v1`` and ``/ollama/api``), never an owner route: no Yes card, setting, package or
-  chat history. ``puffpai apikey new | list | revoke`` issues, lists and takes them back
+  for programs, ``/openai/v1`` and ``/ollama/api``), never an owner route. That is a rule about routes. A turn on those
+  routes is a full turn of the bot, on this computer and on the home network: the model can use the bot's tools, her
+  pinned documents and knowledge, real values while the vault is open, and raise Yes cards. On the home network it can
+  call only the ``program`` routes (D147, ``api.app._network_key``). On this computer a key can name any conversation,
+  her chat included; on the home network its conversations are its own (``groups.openai_api._conversation``).
+  ``puffpai apikey new | list | revoke`` issues, lists and takes them back
   (``issue_program_key``, ``program_keys``, ``revoke_program_key``); it never issues or lists any other key;
 - owner API key (``via: api_key``, any other label): the owner's own program. Nothing outside tests issues
   one today (``issue_owner_key``);
@@ -33,8 +37,8 @@ Each Core sets the cookie under a name with its own port (``cookie_name``,
 D129), so two bots on one computer don't overwrite each other's sign-in in one
 browser. The usual port keeps the plain ``puffpai_device``.
 
-On the home network (D130, ``api.network``) a paired browser's cookie is named for that listener's port, and it is the
-only credential taken there.
+On the home network (D130, ``api.network``) a paired browser's cookie is named for that listener's port. It is the
+only credential taken there, but for a program key on the ``program`` routes (D147, PROPOSED).
 
 A browser's login has two halves (D79). Pairing issues the device token (the
 cookie) and binds a second secret to it (``bind_device``; the Core keeps only

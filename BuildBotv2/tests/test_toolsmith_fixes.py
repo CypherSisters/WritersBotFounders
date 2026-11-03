@@ -256,7 +256,7 @@ def test_manifest_for_keeps_the_try_line(tmp_path):
                              {"command": "cat README.md", "ok": True, "build": False}],
                         human_steps=[], notes=[])
     man = adopt.manifest_for(t)
-    run = man["run"]["windows"]
+    run = man["run"][adopt.run_key()]
     assert run["cwd"] == "web" and run["start"] == ["{node}", "server.js"]
     assert run["setup"] == [{"copy": [".env.example", ".env"]}, ["npm", "install"]]
     assert manifest_mod.validate(man) == []

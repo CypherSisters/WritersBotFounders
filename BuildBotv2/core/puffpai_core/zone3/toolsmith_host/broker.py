@@ -99,6 +99,11 @@ def base_env() -> dict:
             if not k.upper().startswith("PUFFPAI") and k.lower() not in gitfence.GIT_LOCATORS}
 
 
+def _in_its_real_folder(path: Path | str) -> str:
+    """The real folder of *path*, with the file's own name: the file itself is not followed if it is a link."""
+    return os.path.join(os.path.realpath(os.path.dirname(os.fspath(path))), os.path.basename(os.fspath(path)))
+
+
 #: A TEMP longer than this is given in its short (8.3) form when Windows has one: npm stops answering
 #: when TEMP passes about 240 characters (seen 10-22), and npm and pip add their own folders under it.
 SHORT_TEMP = 120
@@ -282,8 +287,10 @@ class Broker:
         from ...packages import plan_cover
         try:
             folder = os.path.realpath(self.folder)
-            python = os.path.realpath(allowlist.venv_python(self.folder)) if self.venv else ""
+            python = self._own_python() if self.venv else ""
             first = os.path.realpath(planned.argv[0])
+            if python and _in_its_real_folder(planned.argv[0]) == python:
+                first = python
             word, args = plan_cover.program_of([first, *planned.argv[1:]], folder, python, self.node)
             if word.startswith("other:"):
                 return
@@ -297,12 +304,17 @@ class Broker:
             if entry not in self._ran:
                 self._ran.append(entry)
 
+    def _own_python(self) -> str:
+        """The try's own Python as a path of its own. On Linux and Mac that file is a link to the base Python: followed
+        to the end, the base Python would count as the try's own in the record."""
+        return _in_its_real_folder(allowlist.venv_python(self.folder))
+
     def record(self) -> dict:
         """A copy of the record: the try's own values and every command that ran (never written by a route)."""
         with self._lock:
             commands = [dict(c, args=list(c["args"])) for c in self._ran]
         return {"folder": os.path.realpath(self.folder),
-                "python": os.path.realpath(allowlist.venv_python(self.folder)) if self.venv else "",
+                "python": self._own_python() if self.venv else "",
                 "node": self.node, "port": self.port, "commands": commands}
 
     def own_pids(self) -> set[int]:

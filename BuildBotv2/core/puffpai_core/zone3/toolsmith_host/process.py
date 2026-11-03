@@ -18,7 +18,7 @@ Started by this launcher, not by Steward itself: Steward starts installed
 packages from their Registry row and manifest, gives each a package token
 and the proxy variables, and closes stdin. Toolsmith is a Core agent, not a
 package (09 section 3): it must get a Toolsmith token on stdin and nothing a
-package gets. The job object is Steward's own code (see NOTE.md).
+package gets. The job object is Steward's own code.
 """
 
 from __future__ import annotations
@@ -53,6 +53,12 @@ class Child:
 
     def wait(self, timeout: float | None = None) -> bool:
         return self.done.wait(timeout)
+
+    def ended(self) -> bool:
+        """Has the process itself ended (D153), even while its cleanup is still running or stuck? ``done`` comes only
+        after that. The watcher's ``proc.wait()`` sets ``returncode`` the moment it ends, so this is one plain read: no
+        system call, no lock, and it never reaps anything, on any platform."""
+        return self.done.is_set() or self.job.proc.returncode is not None
 
     def stop(self) -> None:
         if self.job.contained or self.job.proc.poll() is None:

@@ -27,7 +27,7 @@ from typing import Any, Callable
 
 from .. import jsonfile
 from . import fetched, zim_reader
-from .folders import SCAN_LOCK, Library
+from .folders import DOCUMENT_SUFFIXES, SCAN_LOCK, Library
 from .knowledge_folder import is_link
 from .pinned import part_starts
 
@@ -47,6 +47,7 @@ NO_ARTICLE = "That article isn't in this library."
 CANT_READ_ZIM = "BuildBot can't read this file as an offline library, so it was left where it is."
 WAITING = "This file isn't whole yet. If it is still copying, your bot learns it when that ends."
 NO_SCREEN = "Drawbridge's text check isn't here, so this waits."
+DOCUMENT_HERE = "Word and PDF files aren't read here. Use Add documents at the top of this page."
 _FILE = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}\.txt$")
 _lock = threading.Lock()
 _running: dict[str, threading.Thread] = {}
@@ -141,9 +142,20 @@ def dropped(state: Path | str) -> list[Path]:
 
 
 def waiting(state: Path | str) -> list[dict]:
-    """``[{name, line}]``: a dropped file that isn't being learned, and why."""
+    """``[{name, line}]``: a dropped file that isn't being learned, and why. A Word or PDF file left at the top of the store
+    has a row too: the Library doesn't read it there, :func:`look` never takes it in, and it stays where it is."""
     bad = _load(state)["bad"]
-    return [{"name": p.name, "line": str((bad.get(p.name) or {}).get("line") or WAITING)} for p in dropped(state)]
+    return [{"name": p.name, "line": str((bad.get(p.name) or {}).get("line") or WAITING)} for p in dropped(state)] \
+        + [{"name": p.name, "line": DOCUMENT_HERE} for p in _documents_here(state)]
+
+
+def _documents_here(state: Path | str) -> list[Path]:
+    """Word and PDF files at the top of the store, by their names. Word's own lock files are not documents."""
+    try:
+        return sorted(p for p in fetched.root(state).iterdir() if p.suffix.lower() in DOCUMENT_SUFFIXES
+                      and not p.name.startswith("~$") and p.is_file() and not is_link(p))
+    except OSError:
+        return []
 
 
 # -- remove ---------------------------------------------------------------------------------------

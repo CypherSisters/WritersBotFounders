@@ -457,16 +457,19 @@ def test_setup_keeps_running_then_stops_on_ctrl_c(state, monkeypatch, tmp_path, 
 
 def test_the_running_screen_says_how_to_stop_and_start_again(tmp_path, monkeypatch):
     from puffpai_core.wizard import terminal
-    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / "Start BuildBot.cmd")
+    start = tmp_path / terminal.launcher_name("Start BuildBot.cmd")
+    monkeypatch.setattr(terminal, "launcher", lambda: start)
     lines = terminal.running_lines(18430, "AAAA-BBBB-CCCC")
     # no launcher (run from source): the one command that runs here, since bare "puffpai" is on no PATH (D92(e))
     assert lines[-1] == "To start it again later, run this in a terminal: " + terminal.cli_command("serve")
     assert "run: puffpai" not in " ".join(lines)
-    (tmp_path / "Start BuildBot.cmd").write_text("@echo off\n", encoding="ascii")
+    start.write_text("@echo off\n", encoding="ascii")
     lines = terminal.running_lines(18430, "AAAA-BBBB-CCCC")
     assert "BuildBot is running now, in this window." in lines
     assert "http://puffpai.localhost:18430/#pair=AAAA-BBBB-CCCC" in " ".join(lines)
-    assert lines[-1] == f"To start it again later, double-click Start BuildBot.cmd in {tmp_path}."
+    assert lines[-1] == f"To start it again later, {terminal.how_to_run(start)}."
+    if os.name == "nt":
+        assert lines[-1] == f"To start it again later, double-click Start BuildBot.cmd in {tmp_path}."
 
 
 def test_an_open_event_stream_ends_when_the_core_stops(state):

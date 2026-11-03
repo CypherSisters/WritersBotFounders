@@ -495,6 +495,7 @@
     clear($("private")).append(
       el("div", { class: "micro", text: "Your private stuff" }),
       el("div", { class: "what" }, [icon(vault.open ? "lock_open" : "shield_lock"), el("span", { text: "Vault: " + vault.words })]),
+      vault.lent ? el("div", { class: "sub", text: vault.lent }) : "",
       el("div", { class: "sub", text: bridge ? bridge.text : "The Bridge did not answer." }));
   }
 
@@ -671,6 +672,8 @@
           await wait(3000);
           continue;
         }
+        if (es.before && es.onback) es.onback();
+        es.before = true;
         es.readyState = 1;
         const reader = r.body.getReader(), dec = new TextDecoder();
         let buf = "";
@@ -693,6 +696,7 @@
 
   function listen() {
     const es = stream("/v1/events");
+    es.onback = () => { if (S.settings && S.settings.network) loadSettings(); };   // D150: a restarted Core opens its page ports when asked
     EVENTS.forEach((type) => es.addEventListener(type, (ev) => {
       let data = null;
       try { data = JSON.parse(ev.data); } catch (e) { data = null; }

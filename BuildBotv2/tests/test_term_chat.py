@@ -7,6 +7,7 @@ output, the bot's files or the logs; NO_COLOR has no escape codes; ASCII boxes w
 
 from __future__ import annotations
 
+import re
 import contextlib
 import hashlib
 import io
@@ -502,7 +503,7 @@ def test_with_no_core_running_it_says_so_and_how_to_start(state, capsys):
     out = capsys.readouterr().out
     assert termchat.NOT_RUNNING in out
     assert "Start BuildBot.cmd" in out or out.rstrip().endswith("serve")   # the launcher, or a command that really runs
-    assert "puffpai serve" not in out
+    assert not re.search(r"(?<![\\/\w])puffpai serve", out)     # never the bare name: it is on no PATH (D92(e))
     for verb in (["build", "x"], ["yes"], ["watch"], ["vault", "status"]):
         assert cli.main(verb) == 1
         assert termchat.NOT_RUNNING in capsys.readouterr().out
@@ -660,12 +661,15 @@ def test_chat_with_buildbot_cmd_chats_with_the_running_bot_in_a_real_console(tmp
 
 def test_the_end_of_setup_says_how_to_chat_in_a_terminal(tmp_path, monkeypatch):
     from puffpai_core.wizard import terminal
-    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / "Start BuildBot.cmd")
+    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / terminal.launcher_name("Start BuildBot.cmd"))
     assert terminal.chat_line().startswith("To chat with your bot in a terminal, run this there while BuildBot runs: ")
     assert "run puffpai" not in terminal.chat_line()
-    (tmp_path / "Chat with BuildBot.cmd").write_text("@echo off\n", encoding="ascii")
-    assert terminal.chat_line() == ("To chat with your bot in a terminal, double-click Chat with BuildBot.cmd "
-                                    f"in {tmp_path}.")
+    chat = terminal.chat_launcher()
+    chat.write_text("@echo off\n", encoding="ascii")
+    assert terminal.chat_line() == f"To chat with your bot in a terminal, {terminal.how_to_run(chat)}."
+    if os.name == "nt":
+        assert terminal.chat_line() == ("To chat with your bot in a terminal, double-click Chat with BuildBot.cmd "
+                                        f"in {tmp_path}.")
     import inspect
     from puffpai_core.wizard import engine
     assert "chat_line()" in inspect.getsource(engine.DoneStep)       # one Done step, both renderers (D36(f))

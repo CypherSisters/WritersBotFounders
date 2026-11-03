@@ -126,7 +126,7 @@ def test_her_done_writes_the_tick_and_its_fingerprint_into_the_build(host_and_bu
     mark = host.store.read(build_id)["ticked"]["ts-account"]
     assert mark["step"] == sid and mark["by"] == "owner"
     assert mark["sha"] == plan_cover.step_sha(raw) == plan_cover.step_sha(ACCOUNT)   # the same step in a manifest
-    run_sid = _raise(host, build_id, job_id, RUN)                     # the Core adds shell: powershell itself
+    run_sid = _raise(host, build_id, job_id, RUN)                     # the Core adds its own shell itself
     checklist.done(run_sid, by="owner")
     assert host.store.read(build_id)["ticked"]["ts-run-1a2b"]["sha"] == plan_cover.step_sha(RUN)
     assert host.store.read(build_id)["ticked"]["ts-run-1a2b"]["sha"] != plan_cover.step_sha(

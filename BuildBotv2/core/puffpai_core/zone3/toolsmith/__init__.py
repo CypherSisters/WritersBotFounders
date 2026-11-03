@@ -16,6 +16,7 @@ side is ``zone3.toolsmith_host``.
 | ``knowledge`` | the knowledge leg (lane I11): topics from one local brain ask while it plans; after her Yes, the Core's fetch stepped to its end (the Core reads, screens and keeps the text, never Toolsmith) |
 | ``tries`` | the try loop: fixed tools, budgets, timing, repeat guard, "Your turn" pause, done and give_up, the model through the Core |
 | ``adopt`` | the adopted ``puffpai.json`` (the working start line kept, D51) and the install through the Core |
+| ``assemble`` + ``data/made_app`` | D155: a simple app of her own rows when nothing ready-made fits, with a small local model or none. It writes files, and starts nothing |
 | ``prove`` | health, the main page, ``read_app`` and the job's sample ask |
 | ``commands`` | how a command line is read (reads, builds, compose ``up``); runs nothing |
 | ``runbook`` + ``data/runbook.json``, ``readme_steps``, ``programs`` | the run notes, the README Quick Start, missing programs as steps |

@@ -33,6 +33,10 @@ README = (FIXTURES / "toolsmith" / "hello-page" / "README.md").read_text()
 class MainPorts(Ports):
     """The real adapter on main's Core; recorded only: GitHub, the Bridge's search Yes, the model, the reader."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._outside_file()                 # there before any try began: on Linux a test's folder is under /tmp
+
     def fetch_repo(self, url, dest):
         shutil.copytree(FIXTURES / "toolsmith" / "hello-page", dest, dirs_exist_ok=True)
         readme = Path(dest) / "README.md"            # without the AI-aimed line (real Drawbridge blocks it, rightly)

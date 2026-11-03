@@ -12,6 +12,7 @@ Everything it made is removed at the end (``docker compose down``, then its two 
 Marked ``docker``: skipped when Docker is not running.
 """
 
+import ipaddress
 import json
 import shutil
 import socket
@@ -166,8 +167,15 @@ def _plain_linux_checks(core):
     assert has_name.stdout.strip() == "0" and has_name.returncode != 0, has_name.stdout
     assert dw.HOST_ALIAS in _compose("exec", "-T", dw.GATE, "cat", "/etc/hosts").stdout
     # 2. a page on every address of this computer is not reachable from an app, by either of its addresses
-    inner = dw._gateways(dw.inner_network(ID), dw._run)
-    assert inner and not any(dw._is_here(g) for g in inner)              # the inner network has no address here
+    inner = dw._gateways(dw.inner_network(ID), dw._run)                  # Docker 29 names none; 26 names one not here
+    assert inner is not None and not any(dw._is_here(g) for g in inner)
+    # Not taken from what the engine names: no address of this computer lies in the inner network at all.
+    from puffpai_core.api.network import _interface_table
+    subnets = json.loads(subprocess.run(["docker", "network", "inspect", dw.inner_network(ID), "--format",
+                                         "{{json .IPAM.Config}}"], capture_output=True, text=True, timeout=30).stdout)
+    nets = [ipaddress.ip_network(c["Subnet"]) for c in subnets]
+    mine = [a for _, a in _interface_table()]
+    assert nets and mine and not any(ipaddress.ip_address(a) in n for a in mine for n in nets if n.version == 4), (mine, nets)
     canary = socket.socket()
     canary.bind(("0.0.0.0", 0))
     canary.listen(5)

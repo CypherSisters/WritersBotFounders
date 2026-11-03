@@ -6,8 +6,8 @@
   every package tool call has. A file she hands over is her choice, so it isn't turned into handles (a Word file's
   bytes can't be). A package with internet hosts gets Drawbridge's existing check on what the file holds: a key is
   refused, and anything else private is a Yes card for that one send.
-- :func:`pick`: Windows's own Open dialog, on this computer, so she never types a path. It only answers a path; Pin and
-  Link check it as they check a typed one.
+- :func:`pick`: Windows's own Open dialog, on this computer, so she never types a path. It only answers a path, or with
+  ``files`` one path a line; Pin, Add and Link check each as they check a typed one.
 """
 
 from __future__ import annotations
@@ -146,16 +146,20 @@ _PICK_HEAD = ("$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Enc
 _PICK = {
     "file": ("$d=New-Object Windows.Forms.OpenFileDialog;$d.Title='Pick a document for your bot';"
              "$d.Filter='Documents (*.txt;*.md;*.docx;*.pdf)|*.txt;*.md;*.docx;*.pdf';$d.Multiselect=$false;",
-             "FileName"),
+             "$d.FileName"),
+    # All files too: she can pick an old .doc and be told why not. The Core checks each one she picks.
+    "files": ("$d=New-Object Windows.Forms.OpenFileDialog;$d.Title='Pick documents for your bot';"
+              "$d.Filter='Documents (*.txt;*.md;*.docx;*.pdf)|*.txt;*.md;*.docx;*.pdf|All files (*.*)|*.*';$d.Multiselect=$true;",
+              "($d.FileNames -join [char]10)"),
     "folder": ("$d=New-Object Windows.Forms.FolderBrowserDialog;$d.Description='Pick a folder for your bot to read';"
-               "$d.ShowNewFolderButton=$false;", "SelectedPath"),
+               "$d.ShowNewFolderButton=$false;", "$d.SelectedPath"),
 }
 _picking = threading.Lock()
 
 
 def pick_script(kind: str) -> str:
     start, field = _PICK[kind]
-    return (_PICK_HEAD + start + f"if($d.ShowDialog($o) -eq 'OK'){{[Console]::Out.Write($d.{field})}}")
+    return (_PICK_HEAD + start + f"if($d.ShowDialog($o) -eq 'OK'){{[Console]::Out.Write({field})}}")
 
 
 def can_pick() -> bool:
@@ -167,8 +171,14 @@ def _powershell() -> str:
                         "powershell.exe")
 
 
+def _no_window(kind: str) -> str:
+    return ("The window to pick from could not open. Choose them from this browser instead." if kind == "files"
+            else "The window to pick from could not open. Type the path instead.")
+
+
 def pick(kind: str) -> str:
-    """The path she picks, or "" if she closes it. :class:`SendRefused` when one is open already, or it can't open."""
+    """The path she picks (with ``files``, one a line), or "" if she closes it. :class:`SendRefused` when one is open
+    already, or it can't open."""
     if kind not in _PICK:
         raise ValueError(kind)
     if not _picking.acquire(blocking=False):
@@ -181,12 +191,12 @@ def pick(kind: str) -> str:
         path = got.stdout.decode("utf-8", "replace").strip()
         # A path counts whatever PowerShell's exit code says (seen on the real dialog); Pin and Link check it anyway.
         if got.returncode != 0 and not path:
-            raise SendRefused("The window to pick from could not open. Type the path instead.")
+            raise SendRefused(_no_window(kind))
         return path
     except subprocess.TimeoutExpired:
         return ""                                       # subprocess.run has ended our own process
     except OSError:
-        raise SendRefused("The window to pick from could not open. Type the path instead.") from None
+        raise SendRefused(_no_window(kind)) from None
     finally:
         _picking.release()
 

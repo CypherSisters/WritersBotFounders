@@ -260,16 +260,17 @@ def test_developer_zones_by_real_clicks(state, tmp_path, monkeypatch, drawbridge
         _type(b, "#view-developer input[aria-label=Command]", "echo first-i18f")
         b.click(*_text_point(b, "#view-developer .term-form button", "Run"))
         assert b.wait(has("#view-developer .term", "first-i18f\n") + " || /\\nfirst-i18f/.test(document.querySelector('#view-developer .term').textContent)", timeout_s=30)
-        # Zone 1 by its card
+        # Zone 1 by its card: a folder linked first, since this page no longer has a box for it
+        assert _call(b, "POST", "/v1/folders/link", {"path": str(mine)})["status"] == 200
         b.click(*_point(b, "#view-developer [data-zone-open=vault]", 0))
         assert b.wait("location.hash === '#developer/vault' && !!document.querySelector('[data-tile=folders]')", timeout_s=20), b.js(WHERE)
         assert b.js(has("#view-developer", "Zone 1: Vault")) and b.js(has("#view-developer [data-tile=vault-now]", "Not made yet"))
-        _type(b, "#view-developer input[aria-label='A folder to link']", str(mine))
-        b.click(*_text_point(b, "#view-developer [data-tile=folders] button", "Link this folder"))
+        assert b.js("!document.querySelector(\"#view-developer input[aria-label='A folder to add']\")")
+        assert b.js(has("#view-developer [data-tile=folders]", "Add a folder on Knowledge"))
         assert b.wait(f"!!document.querySelector('#view-developer [data-linked]') && {has('#view-developer [data-dev=linked]', str(mine.resolve()))}"), b.js(WHERE)
         folders = json.loads((state / "settings" / "folders.json").read_text(encoding="utf-8"))
         assert folders["linked"] == [str(mine.resolve())]
-        b.click(*_text_point(b, "#view-developer [data-dev=linked] button", "Unlink"))
+        b.click(*_text_point(b, "#view-developer [data-dev=linked] button", "Remove"))
         assert b.wait(has("#view-developer [data-tile=folders]", "No folders are linked yet."))
         # back to the overview: the command line still follows its shell
         b.click(*_point(b, "#view-developer a[data-dev=back]", 0))
@@ -293,20 +294,22 @@ def test_developer_zones_by_real_clicks(state, tmp_path, monkeypatch, drawbridge
         b.click(*_text_point(b, "#view-developer [data-tile=bridge-now] button", "Turn off Toolsmith's search"))
         assert b.wait(has("#view-developer [data-tile=bridge-now]", "Let Toolsmith search while it builds"), timeout_s=20)
         assert _call(b, "GET", "/v1/bridge")["data"]["switches"]["toolsmith:search"] is False
-        # Toolsmith's model: a company without her tick is not saved; a key needs the vault first
-        sel = "#view-developer [data-tile=toolsmith] select[aria-label='Where Toolsmith thinks']"
+        # Toolsmith's model, on Settings (D162): a company without her tick is not saved; a key needs the vault first
+        b.click(*_point(b, "#view-developer [data-goto='#settings/toolsmith']", 0))
+        assert b.wait("!!document.querySelector(\"#view-settings [data-tile=toolsmith] select[aria-label='Where Toolsmith thinks']\")", timeout_s=20), b.js(WHERE)
+        sel = "#view-settings [data-tile=toolsmith] select[aria-label='Where Toolsmith thinks']"
         pid = b.js(f"document.querySelector({json.dumps(sel)}).options[1].value")
         b.js(f"(() => {{ const s = document.querySelector({json.dumps(sel)}); s.value = {json.dumps(pid)}; s.dispatchEvent(new Event('change')); }})()")
-        b.click(*_text_point(b, "#view-developer [data-tile=toolsmith] button", "Save"))
-        assert b.wait(has("#view-developer [data-said=toolsmith]", "Tick Yes to what Toolsmith sends first.")), b.js(WHERE)
+        b.click(*_text_point(b, "#view-settings [data-tile=toolsmith] button", "Save"))
+        assert b.wait(has("#view-settings [data-said=toolsmith]", "Tick Yes to what Toolsmith sends first.")), b.js(WHERE)
         assert _call(b, "GET", "/v1/toolsmith")["data"]["where"] == "local"
-        _type(b, "#view-developer [data-tile=toolsmith] input[type=password]", FAKE_KEY)
-        b.click(*_text_point(b, "#view-developer [data-tile=toolsmith] button", "Save the key"))
-        assert b.wait(has("#view-developer [data-said=toolsmith-key]", "Set up the vault first")), b.js(WHERE)
-        assert b.js("document.querySelector('#view-developer [data-tile=toolsmith] input[type=password]').value") == ""
+        _type(b, "#view-settings [data-tile=toolsmith] input[type=password]", FAKE_KEY)
+        b.click(*_text_point(b, "#view-settings [data-tile=toolsmith] button", "Save the key"))
+        assert b.wait(has("#view-settings [data-said=toolsmith-key]", "Set up the vault first")), b.js(WHERE)
+        assert b.js("document.querySelector('#view-settings [data-tile=toolsmith] input[type=password]').value") == ""
         assert FAKE_KEY not in b.js("document.body.innerText")
         # Zone 2 by its card: the brain now, and the models section
-        b.click(*_point(b, "#view-developer a[data-dev=back]", 0))
+        b.js("location.hash = '#developer'")
         assert b.wait("!!document.querySelector('[data-zone-open=brain]')")
         b.click(*_point(b, "#view-developer [data-zone-open=brain]", 0))
         assert b.wait("location.hash === '#developer/brain' && !!document.querySelector('[data-tile=brain-now]') && "

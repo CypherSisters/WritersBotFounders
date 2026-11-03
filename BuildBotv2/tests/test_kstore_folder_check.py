@@ -1040,15 +1040,19 @@ def test_inside_problem_sees_a_link_at_any_part_below_the_store(box, junction):
     assert kf.inside_problem(store, "../out.txt") == kf.CANT_CHECK
 
 
-@pytest.mark.parametrize("where", ["other bot's vault", ".ssh", "AppData", "Windows"])
+@pytest.mark.parametrize("where", ["other bot's vault", ".ssh", ".mozilla", pytest.param("AppData", marks=windows),
+                                   "system folder"])
 def test_a_setting_edited_by_hand_to_a_bad_place_writes_nothing(box, where):
     """The refutation: still_safe trusted the setting. Each of these passed it, and the save wrote there."""
     other = make_bot(box.local / "PuffPAI")
     theirs = box.disk / "theirvault"
     write_json(other / "settings" / "vault.json", {"folder": str(theirs)})
-    bad = {"other bot's vault": theirs, ".ssh": box.home / ".ssh", "AppData": box.roaming / "x",
-           "Windows": box.c / "Windows"}[where]
-    bad.mkdir(parents=True, exist_ok=True)
+    # Linux and Mac: a real system folder, only asked about. Nothing is made there.
+    bad = {"other bot's vault": theirs, ".ssh": box.home / ".ssh", ".mozilla": box.home / ".mozilla",
+           "AppData": box.roaming / "x",
+           "system folder": box.c / "Windows" if os.name == "nt" else Path("/etc/puffpai-never-made")}[where]
+    if os.name == "nt" or where != "system folder":
+        bad.mkdir(parents=True, exist_ok=True)
     write_json(box.settings / "folders.json", {"knowledge": str(bad)})
     assert kf.still_safe(box.state, bad / "knowledge") != ""
     with pytest.raises(fetched.StoreAway):

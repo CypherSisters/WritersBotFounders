@@ -28,6 +28,10 @@ default way in, the dashboard an option); when she leaves it, BuildBot keeps run
 Stop BuildBot works through all of it (D122). :class:`Answers` reads her answers on a thread of their own, so this
 window sees a stop while it waits at a prompt, and setup then ends through its usual stop. A step's own work (a vault
 being made, a system part being added) is never cut in two: the stop is seen when that work is done.
+
+While Toolsmith waits for a locked vault, the window with its own Core and a real terminal asks for the PIN right there
+(D142), with no echo, and sends it to ``POST /v1/vault/unlock`` as the chat's /unlock does. It never passes through the
+engine or ``/v1/wizard`` (D106): the engine only says, on every poll of the wait, that the vault is what it waits for.
 """
 
 from __future__ import annotations
@@ -45,6 +49,11 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from . import lines as L
+
+try:
+    import termios
+except ImportError:                           # Windows: the console's own mode instead (_echo_back)
+    termios = None
 
 CLEAR = "\x1b[3J\x1b[2J\x1b[H"
 ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
@@ -79,6 +88,22 @@ def is_tty(stream: Any) -> bool:
         return False
 
 
+def is_console(stream: Any) -> bool:
+    """A terminal someone can type a secret at (D142). On Windows ``isatty`` is True for any character device, NUL too,
+    and getpass on NUL spins for ever, so there it takes a real console: GetConsoleMode has to work on the handle."""
+    if not is_tty(stream):
+        return False
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import msvcrt
+        handle = ctypes.c_void_p(msvcrt.get_osfhandle(stream.fileno()))
+        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(ctypes.c_uint32())))
+    except Exception:  # noqa: BLE001 - can't tell: not asked
+        return False
+
+
 class SetupStopped(BaseException):
     """Stop BuildBot was pressed while this window waited (D122). Not an ``Exception``, and not a Ctrl+C: nothing on
     the way out mistakes it for a failed step or for her leaving the chat."""
@@ -92,10 +117,64 @@ class Overtaken(Exception):
         self.screen = screen
 
 
+def _conin_mode(set_to: int | None = None) -> int | None:
+    """Windows: this process's console input mode (CONIN$, whatever stdin is), after setting it to *set_to* if given.
+    None: no console to ask. OSError: none to open."""
+    import ctypes
+    import msvcrt
+    fd = os.open("CONIN$", os.O_RDWR)
+    try:
+        handle = ctypes.c_void_p(msvcrt.get_osfhandle(fd))
+        kernel32 = ctypes.windll.kernel32
+        if set_to is not None:
+            kernel32.SetConsoleMode(handle, ctypes.c_uint32(set_to))
+        mode = ctypes.c_uint32()
+        return mode.value if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) else None
+    finally:
+        os.close(fd)
+
+
+def _echo_back() -> Callable[[], None] | None:
+    """How to give this terminal the settings it has now (D142). getpass changes them while it reads and changes them
+    back itself, which never happens for a read left behind (:func:`_leave`). Off Windows it turns echo off. On Windows
+    its getwch sets the console's input mode to 0, and a later program in that window then has no echo and no line
+    input. None: nothing to give back. The flush on the way back drops a half-typed PIN, or it goes to her shell."""
+    if termios is None:
+        if os.name != "nt":
+            return None
+        try:
+            mode = _conin_mode()
+        except Exception:  # noqa: BLE001 - no console: getpass has no mode of this one to change
+            return None
+        if mode is None:
+            return None
+
+        def give_console_back() -> None:
+            try:
+                _conin_mode(mode)
+            except Exception:  # noqa: BLE001 - on the way out, with a console that went away
+                pass
+        return give_console_back
+    try:
+        fd = sys.stdin.fileno()
+        saved = termios.tcgetattr(fd)
+    except Exception:  # noqa: BLE001 - not a terminal: getpass has no echo of this one to turn off
+        return None
+
+    def give_back() -> None:
+        try:
+            termios.tcsetattr(fd, termios.TCSAFLUSH, saved)
+        except Exception:  # noqa: BLE001 - on the way out, with a terminal that went away
+            pass
+    return give_back
+
+
 class Answers:
     """Her answers in the setup window, read on a thread of their own (D122), so a read that blocks can't hold up a
     stop. Windows gives no plain way to cancel a read of the console, so a read still out when setup ends is left
-    behind: see :func:`_leave`. A read left out by an overtaken question takes the answer to the next question."""
+    behind: see :func:`_leave`. A read left out by an overtaken question takes the answer to the next question, except
+    where a secret is in it either way (D142): a secret is never read through a read that shows what she types, and
+    what a hidden read took is never the answer to anything else."""
 
     EVERY_S = 0.2
 
@@ -106,6 +185,8 @@ class Answers:
         self._read_hidden = read_hidden or getpass.getpass
         self._out = out
         self._box: queue.SimpleQueue | None = None      # the read still out, if any
+        self._secret_out = False                        # that read is a hidden one
+        self._echo: Callable[[], None] | None = None    # how to give the terminal back from a hidden read
 
     @property
     def read_is_out(self) -> bool:
@@ -114,8 +195,14 @@ class Answers:
     def line(self, prompt: str, watch: Callable[[], None] | None = None, watch_s: float = 2.0) -> str:
         return self._wait(self._read_line, prompt, watch, watch_s)
 
-    def hidden(self, prompt: str) -> str:
-        return self._wait(self._read_hidden, prompt, None, 0.0)
+    def hidden(self, prompt: str, watch: Callable[[], None] | None = None, watch_s: float = 2.0) -> str:
+        return self._wait(self._read_hidden, prompt, watch, watch_s, secret=True)
+
+    def give_echo_back(self) -> None:
+        """For a hidden read left behind as setup ends (:func:`_leave`): her terminal is not left with no echo."""
+        give_back, self._echo = self._echo, None
+        if give_back is not None and self._secret_out and self.read_is_out:
+            give_back()
 
     def sleep(self, seconds: float) -> None:
         end = time.monotonic() + seconds
@@ -130,13 +217,22 @@ class Answers:
         if self.stopped():
             raise SetupStopped
 
-    def _wait(self, read: Callable[[str], str], prompt: str, watch: Callable[[], None] | None, watch_s: float) -> str:
+    def _wait(self, read: Callable[[str], str], prompt: str, watch: Callable[[], None] | None, watch_s: float,
+              secret: bool = False) -> str:
         self.check()
+        out = self._out or sys.stdout
+        if self.read_is_out and (secret or self._secret_out):
+            out.write(f"\n  {L.HIDDEN_READ_OUT}\n" if self._secret_out else f"  {L.PIN_ENTER_FIRST}\n")
+            out.flush()
+        while self.read_is_out and (secret or self._secret_out):      # D142: that read ends first, and its line is dropped
+            time.sleep(self.EVERY_S)
+            self.check()
         if self.read_is_out:
-            out = self._out or sys.stdout
             out.write(prompt)
             out.flush()
         else:                                           # a line that came for an overtaken question is dropped
+            self._secret_out = secret
+            self._echo = _echo_back() if secret else None
             self._box = queue.SimpleQueue()
             threading.Thread(target=self._read, args=(self._box, read, prompt), name="puffpai-setup-read",
                              daemon=True).start()
@@ -171,6 +267,7 @@ def _leave(answers: Answers, code: int) -> int:
     if answers.read_is_out:
         sys.stdout.flush()
         sys.stderr.flush()
+        answers.give_echo_back()              # last: the read left behind can change it again with a key she presses
         os._exit(code)
     return code
 
@@ -180,7 +277,7 @@ class Terminal:
                  read_hidden: Callable[[str], str] | None = None, env: dict | None = None,
                  run: Callable[..., Any] = subprocess.run, sleep: Callable[[float], None] = time.sleep,
                  tty: Callable[[Any], bool] = is_tty, vt_on: Callable[[Any], bool] = windows_vt_on,
-                 answers: Answers | None = None) -> None:
+                 answers: Answers | None = None, unlock: Callable[[str], tuple[bool, str]] | None = None) -> None:
         self.tty, self.vt_on = tty, vt_on
         self.engine = engine
         self.answers = answers
@@ -193,6 +290,9 @@ class Terminal:
         self._printed: set[str] = set()       # the lines this window already shows
         self._held: list[str] = []            # lines that came while a question waited, shown after it
         self._look: tuple | None = None       # how the question now asked looks whether it still stands (D122)
+        self.unlock = unlock                  # D142: opens the vault from a PIN typed here. None: only the line, today's way
+        self._pin_settled = False             # this wait for the vault: she skipped, or it was opened from here
+        self._pin_told = False                # this wait: she was told to press Enter first
 
     # -- input ----------------------------------------------------------------
     def read(self, field: dict, prompt: str) -> str:
@@ -277,7 +377,16 @@ class Terminal:
                 self.write(f"    {screen['show']['value']}")
                 self.write("")
                 self.write(f"  {screen['show']['line']}")
+            # D142. Any screen with no vault on it ends the wait, so a later lock asks again. A card in the middle of a
+            # wait carries vault too, so it neither asks (she answers the card first) nor forgets that she skipped.
+            if not screen.get("vault"):
+                self._pin_settled = self._pin_told = False
             if screen["status"] == "working":
+                if screen.get("vault") and self.unlock is not None and not self._pin_settled:
+                    seen = self._ask_pin(step_id, float(screen.get("poll_s") or 2))
+                    if seen is not None:
+                        screen = seen
+                        continue
                 self.sleep(float(screen.get("poll_s") or 2))
                 screen = self.engine.submit(step_id, {}, renderer="terminal")
                 continue
@@ -308,11 +417,75 @@ class Terminal:
             now = self.engine.submit(step_id, {}, renderer="terminal")
             lines = list(now.get("lines") or [])
             self._printed.difference_update(now.get("repeat") or [])
+            if not now.get("vault"):
+                self._pin_settled = False      # D142: the wait ended behind this question
             if now.get("status") == "ask" and now.get("asked") == asked:
                 self._held += lines
                 return
             self._held, now["lines"] = [], self._held + lines
             raise Overtaken(now)
+        return look
+
+    def _ask_pin(self, step_id: str, poll_s: float) -> dict | None:
+        """D142. Ask for the PIN once, under the engine's line. A read the owner can see is out (an overtaken question,
+        D122): reading now would show the PIN on her screen, so she is told to press Enter first and a later poll asks.
+        Returns the engine's latest screen if it looked while she typed, else None. The PIN goes to ``self.unlock`` and
+        nowhere else. After a refusal it asks again at once, with no sleep or poll between: she retypes straight away,
+        and until the next hidden read what she types shows. Every re-ask waits on her, so this never spins."""
+        if self.answers is not None and self.answers.read_is_out:
+            if not self._pin_told:
+                self._pin_told = True
+                self.write(f"  {L.PIN_ENTER_FIRST}")
+            return None
+        self._pin_told = False
+        seen: list[dict] = []
+        while True:
+            self.write(f"  {L.PIN_HERE}")
+            try:
+                if self.answers is None:
+                    typed = self._read_hidden("  > ")
+                else:
+                    typed = self.answers.hidden("  > ", self._pin_look(step_id, seen), poll_s)
+            except (EOFError, OSError, ValueError):   # as the chat's /unlock: nothing typed
+                typed = ""
+            if seen and not seen[-1].get("vault"):
+                typed = ""                            # the wait ended while she typed: never sent, never an answer
+                break
+            if not typed:
+                self._pin_settled = True
+                self.write(f"  {L.PIN_SKIPPED}")
+                break
+            opened, words = self.unlock(typed)
+            typed = ""
+            self.write(f"  {words}")
+            if opened:
+                self._pin_settled = True              # the job can still say it waits for a moment: not asked again
+                break
+            if seen and seen[-1].get("status") != "working":
+                break                                 # a card came while she typed: it goes first
+        if not seen:
+            return None
+        self._held, seen[-1]["lines"] = [], self._held
+        return seen[-1]
+
+    def _pin_look(self, step_id: str, seen: list[dict]) -> Callable[[], None]:
+        """The poll while the PIN is asked. A read can't be cancelled, so the screens wait in *seen* and their lines in
+        ``_held``: no job line is lost and nothing is written over the prompt, but the one line that the wait ended.
+        That screen is what comes next, so the engine is not asked again until she presses Enter."""
+
+        def look() -> None:
+            if seen and not seen[-1].get("vault"):
+                return
+            try:
+                now = self.engine.submit(step_id, {}, renderer="terminal")
+            except Exception:  # noqa: BLE001 - the poll after this read says it: this read is never left out for it
+                return
+            self._printed.difference_update(now.get("repeat") or [])
+            self._held += list(now.get("lines") or [])
+            seen[:] = [now]
+            if not now.get("vault"):
+                self.write("")                        # the cursor is still on the prompt's line
+                self.write(f"  {L.PIN_NOT_NEEDED}")
         return look
 
     def run(self) -> int:
@@ -354,6 +527,7 @@ def moved_lines(said: dict) -> list[str]:
     from ..bot_move import STAYS
     out = []
     for key, head in (("linked", "Link these folders again, if you have them here"), ("pinned", "Pin these documents again"),
+                      ("documents", "Add these documents again"),
                       ("books", "These books can come back from Recommended for this bot, on Knowledge"),
                       ("topics", "Books and articles on these can come with one Yes, from Recommended for this bot, on Knowledge"),
                       ("added", "Add these tool servers and APIs again")):
@@ -526,6 +700,28 @@ def main(argv: list[str] | None = None) -> int:
     return _leave(answers, code)
 
 
+def core_unlock(pin: str) -> tuple[bool, str]:
+    """The PIN typed in the setup window (D142), on the same path and with the same words as the chat's /unlock
+    (``termchat.Chat._unlock``): this Core's route with its terminal key. Its own limits and its own words apply. Says
+    whether the vault opened, and the words for her. Those words never hold the PIN or an exception's text."""
+    from ..cli import _call, _terminal
+    from ..termchat import said
+    body = {"method": "pin", "secret": pin}
+    pin = ""
+    try:
+        info = _terminal()
+        if info is None:
+            return False, L.PIN_DID_NOT_OPEN.format(why=L.PIN_NOT_REACHED)
+        status, got = _call(info, "POST", "/v1/vault/unlock", body)
+    except Exception:  # noqa: BLE001 - a Core that stopped answering: the next poll or stop says the rest
+        return False, L.PIN_DID_NOT_OPEN.format(why=L.PIN_NOT_REACHED)
+    finally:
+        body.clear()                          # the PIN goes once, in this one request
+    if status != 200:
+        return False, L.PIN_DID_NOT_OPEN.format(why=said(got, L.PIN_NOT_TAKEN))
+    return True, L.PIN_OPENED
+
+
 def _setup_remote(info: dict, call: Callable[..., tuple[int, Any]]) -> int:
     """``puffpai setup`` on a Core another window runs. When that Core stops (D122), this window ends too: the Core's
     stop removes its terminal key last, and a Core that stopped answering counts the same."""
@@ -596,7 +792,9 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
             engine = wizard_group.engine()    # the browser's engine too: one progress, two renderers
         if not isinstance(engine, Engine):
             engine = Engine(core.state, default_services(core), registry=core.registry, bus=core.bus)
-        code = Terminal(engine, answers=answers).run()
+        # D142: only a real terminal is asked. getpass on a pipe falls back to showing what is typed, and spins on NUL.
+        unlock = core_unlock if is_console(sys.stdin) and is_console(sys.stdout) else None
+        code = Terminal(engine, answers=answers, unlock=unlock).run()
         if moved is not None and code == 0:
             from .. import bot_move
             add_moved_apps(core, moved, answers.line, print, again=again, repair=repair)
@@ -621,8 +819,7 @@ def _setup_core(args: argparse.Namespace, answers: Answers) -> int:
     except KeyboardInterrupt:
         stopped_here = True
         how_stopped = L.SETUP_INTERRUPTED
-        if answers.read_is_out:               # the cursor is still on the prompt's line
-            print(flush=True)
+        print(flush=True)                     # the cursor can still be on a prompt's line; on Windows the read has ended
     except EOFError:
         print(f"Setup stopped: there were no more answers. Run {again or 'puffpai setup'} again to go on where you left off.")
     finally:
@@ -689,7 +886,7 @@ def setup_done(port: int, state: Path, name: str, read_line: Callable[[str], str
         write("")
     if key == "":
         from .. import window
-        if not window.why_not():           # no shortcuts to a window that can't open here
+        if os.name == "nt" and not window.why_not():           # no shortcuts to a window that can't open here
             write(f"  {window.make_shortcuts(state, name, port=port)[1]}")
         write(f"  {window.open_window(port)[1]}")
         write("")

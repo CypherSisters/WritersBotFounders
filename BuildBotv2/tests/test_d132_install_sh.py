@@ -94,8 +94,9 @@ def test_a_dry_run_shows_every_step_and_changes_nothing(tmp_path):
     shutil.copy(REPO / "scripts" / "install_tools.sh", repo / "scripts")
     home = tmp_path / "home"
     home.mkdir()
+    # A Mac gets its own programs, so it is not told to be Linux: uname still says Darwin, and setup goes the Mac's way.
     env = {"PATH": os.environ["PATH"], "HOME": str(home), "PUFFPAI_INSTALL_PRETEND_MISSING": "python,node,ollama",
-           "PUFFPAI_TOOLS_PLATFORM": "linux-x64"}
+           **({} if sys.platform == "darwin" else {"PUFFPAI_TOOLS_PLATFORM": "linux-x64"})}
     got = subprocess.run([bash, str(repo / "install.sh"), "--dry-run"], env=env, capture_output=True, text=True,
                          timeout=60, stdin=subprocess.DEVNULL, check=False)
     assert got.returncode == 0, got.stdout + got.stderr
@@ -104,8 +105,33 @@ def test_a_dry_run_shows_every_step_and_changes_nothing(tmp_path):
     for name in terminal.POSIX_LAUNCHERS.values():
         assert f"would write {repo}/{name}" in got.stdout
     assert "would download Python" in got.stdout and "would download Node.js" in got.stdout
-    assert "ollama.com/install.sh" in got.stdout
+    if sys.platform == "darwin":
+        assert "would download Ollama" in got.stdout and "ollama.com/install.sh" not in got.stdout
+    else:
+        assert "ollama.com/install.sh" in got.stdout
     assert sorted(p.name for p in repo.iterdir()) == ["install.sh", "scripts"] and not list(home.iterdir())
+
+
+@posix
+@pytest.mark.skipif(not bash, reason="needs bash")
+def test_a_mac_downloads_a_checked_ollama_and_never_pipes_its_script(tmp_path):
+    """Run anywhere: a stand-in ``uname`` says Darwin, so the Mac's own way through setup is read on every computer."""
+    repo = tmp_path / "a repo"
+    (repo / "scripts").mkdir(parents=True)
+    shutil.copy(REPO / "install.sh", repo)
+    shutil.copy(REPO / "scripts" / "install_tools.sh", repo / "scripts")
+    home, tools = tmp_path / "home", tmp_path / "bin"
+    home.mkdir()
+    tools.mkdir()
+    (tools / "uname").write_text('#!/bin/sh\ncase "$1" in -m) echo arm64;; *) echo Darwin;; esac\n', encoding="utf-8")
+    (tools / "uname").chmod(0o755)
+    env = {"PATH": str(tools) + os.pathsep + os.environ["PATH"], "HOME": str(home),
+           "PUFFPAI_INSTALL_PRETEND_MISSING": "python,node,ollama"}
+    got = subprocess.run([bash, str(repo / "install.sh"), "--dry-run"], env=env, capture_output=True, text=True,
+                         timeout=60, stdin=subprocess.DEVNULL, check=False)
+    assert got.returncode == 0, got.stdout + got.stderr
+    assert "would download Ollama" in got.stdout and "signed by Ollama" in got.stdout and "darwin-arm64" in got.stdout
+    assert "ollama.com/install.sh" not in got.stdout and not list(home.iterdir())
 
 
 @posix

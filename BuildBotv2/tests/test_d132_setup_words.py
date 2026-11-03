@@ -24,7 +24,7 @@ def test_the_vault_line_names_the_real_ways_out_and_never_start(tmp_path, monkey
     assert term.how_to_run(term.chat_launcher()) in line and "/unlock" in line and "PIN" in line
     assert "Building" in line and term.how_to_run(term.signin_launcher()) in line
     assert term.launcher_name("Start BuildBot.cmd") not in line
-    assert "—" not in line
+    assert "\u2014" not in line
 
 
 def test_the_vault_line_from_source_names_commands(tmp_path, monkeypatch):
@@ -55,24 +55,6 @@ def test_the_end_of_setup_gives_the_code_and_how_to_get_a_new_one(tmp_path, monk
 def test_a_desktop_that_is_not_ours_gets_no_code(tmp_path):
     link = SimpleNamespace(url="http://puffpai.localhost:8420/", code="", line="Your Desktop is not one of PuffPAI's own.")
     assert term.pair_lines(tmp_path, 8420, link) == [link.line]
-
-
-def test_a_plan_that_needs_the_cloud_key_waits_and_says_so_once(tmp_path, monkeypatch):
-    _launchers(tmp_path, monkeypatch)
-    started = []
-    ts = SimpleNamespace(plan_start=lambda build: started.append(build) or {"ready": False, "now": "", "vault": True})
-    eng = SimpleNamespace(services=SimpleNamespace(toolsmith=ts), build_id=lambda: "b1")
-    step = engine_mod.PlanStep(eng)
-    first = step.live({}, None, "terminal")
-    assert first["status"] == "working" and first["lines"][0] == L.PLAN_NEEDS_KEY and "/unlock" in first["lines"][1]
-    assert step.live({}, None, "terminal")["lines"] == []
-
-
-@pytest.mark.parametrize("where, opened, waits", [("cloud", False, True), ("cloud", True, False), ("local", False, False)])
-def test_only_a_cloud_choice_with_a_locked_vault_holds_the_plan(where, opened, waits):
-    from puffpai_core.zone3.toolsmith_host.service import ToolsmithHost as Host
-    me = SimpleNamespace(settings=lambda: {"where": where}, ports=SimpleNamespace(vault_open=lambda: opened))
-    assert Host.plan_waits_for_key(me) is waits
 
 
 def test_a_card_with_no_keyboard_answers_later_and_shows_no_traceback():

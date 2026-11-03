@@ -41,7 +41,8 @@ the package's own origin (``groups.pages``).
 
 The home network (D130, ``api.network``; on unless she turns it off, and no change to the two above): one more listener
 for the Desktop and the API, and one page listener per package, each with its own stamp set by the server. Only a
-paired browser's two halves count there (``_network_gate``, ``_network_page_gate``).
+paired browser's two halves count there (``_network_gate``, ``_network_page_gate``), and a program key on the chat routes
+for programs (D147, PROPOSED, ``_network_key``).
 
 Core start and stop: ``create_app`` builds the app only (no Zone 3, no
 wiring, nothing started). ``start_core(app)`` is what ``serve`` calls: it makes
@@ -456,15 +457,16 @@ def _pages_gate(app: Flask, access: str) -> Any:
 
 
 def _network_gate(app: Flask, access: str) -> Any:
-    """The network listener (D130). The cookie named for this port, with its second half, is the only credential: a
-    program's key is refused here whatever it could do on 127.0.0.1. No route answers without a paired browser but the
-    pair screen, pairing itself and where to pair. A paired browser then gets what the owner gets on this computer."""
+    """The network listener (D130). The cookie named for this port, with its second half, is a browser's credential. Any
+    key goes to :func:`_network_key`, whatever it could do on 127.0.0.1: only a program key on a program route gets past
+    it (D147). No other route answers without a paired browser but the pair screen, pairing itself and where to pair. A
+    paired browser then gets what the owner gets on this computer."""
     core: Core = app.extensions["puffpai"]
     net = app.extensions[network.EXTENSION]
     if request.blueprint == "pages":
         return jsonify(error="Package pages are on their own ports."), 404
     if request.headers.get("Authorization") or request.headers.get("X-PuffPAI-Key"):
-        return jsonify(error=network.KEYS_REFUSED), 403
+        return _network_key(core, net, access)
     name = network.cookie_name(net.port)
     caller, token = _cookie_caller(core, request.cookies, request.headers.get(auth.DEVICE_HEADER, "").strip(), name)
     g.caller, g.token, g.network_paired = caller, token, caller is not None
@@ -483,6 +485,30 @@ def _network_gate(app: Flask, access: str) -> Any:
             return redirect("/pair?back=window" if request.endpoint == "ui.window_root" else "/pair")   # D139: and back
     if caller is None:
         return jsonify(auth.refusal(401, auth.NO_CREDENTIAL)), 401
+    refused = auth.decide(access, caller, request.view_args or {})
+    if refused:
+        status, reason = refused
+        return jsonify(auth.refusal(status, reason)), status
+    return None
+
+
+def _network_key(core: Core, net: network.Network, access: str) -> Any:
+    """A request with a key on the network listener (D147, PROPOSED). A program key opens the chat routes for programs and
+    nothing else. A cookie beside it is never read, so it can't widen it, and the caller is no paired browser.
+
+    Any other route: one refusal, with no lookup and no count, so no route says a key is real. On a program route anything
+    but a program key gets that same refusal and counts with wrong pairing codes (``net.limit``, by the socket's own peer,
+    never a forwarded header). The key is looked up first and only a miss is taken, so a right key is never counted, never
+    waits on someone else's wrong tries and needs no ``forgive``."""
+    if access != auth.PROGRAM:
+        return jsonify(error=network.KEYS_REFUSED), 403
+    token, _ = auth.credential(request.headers, request.cookies, allow_cookie=False)
+    caller = core.tokens.lookup(token)
+    if caller is None or not caller.program:
+        if not net.limit.take(request.environ.get("REMOTE_ADDR") or ""):
+            return jsonify(error=network.KEYS_WAIT, code="key_wait"), 429
+        return jsonify(error=network.KEYS_REFUSED), 403
+    g.caller, g.token, g.network_paired = caller, token, False
     refused = auth.decide(access, caller, request.view_args or {})
     if refused:
         status, reason = refused
@@ -665,6 +691,8 @@ def start_core(app_or_core: Any) -> str:
     core.caretaker.start()
     host = start_toolsmith(app)               # lane L6: Toolsmith's host, once
     _open_network(app)
+    if callable(getattr(host, "settle_after_restart", None)):
+        host.settle_after_restart()           # jobs a hard stop of the Core left active hold now, so Check again can run
     if core.caretaker.in_safe_mode and callable(getattr(host, "pause", None)):
         host.pause()                          # safe mode at start: Toolsmith stays paused (01 "Core start")
     elif callable(getattr(host, "resume_store_adds", None)):

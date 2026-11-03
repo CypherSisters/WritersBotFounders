@@ -390,6 +390,10 @@ $m = [regex]::Match($text, '(?ms)^\$Launcher = .*?^Set-Content -LiteralPath \$La
 if (-not $m.Success) { throw "install.ps1 has no launcher block" }
 $RepoDir = $args[1]
 $Name = $args[2]
+$tools = [regex]::Match($text, '(?ms)^function Add-ToolLines .*?^}')   # D145: step 4 defines it just before the block
+if (-not $tools.Success) { throw "install.ps1 has no Add-ToolLines" }
+$ToolLines = @()
+Invoke-Expression $tools.Value
 Invoke-Expression $m.Value
 '''
 

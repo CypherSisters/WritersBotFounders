@@ -98,6 +98,14 @@ def _no_real_window(monkeypatch):
         raise AssertionError("a test tried to start a real window or use her real desktop folder")
     monkeypatch.setattr(window, "_spawn", refuse)
     monkeypatch.setattr(window, "_shell_folders", refuse)
+    from puffpai_core import window_app
+    real_start = window_app._start
+
+    def start(path, args):                                 # D144: a test's own small program may run; a browser never
+        if Path(path).name in ("chromium", "chromium-browser", "chrome", "google-chrome", "google-chrome-stable", "Google Chrome"):
+            refuse()
+        return real_start(path, args)
+    monkeypatch.setattr(window_app, "_start", start)
     # A real console on her taskbar: a test stubs this, or stubs Popen to read what it would start.
     import subprocess
 

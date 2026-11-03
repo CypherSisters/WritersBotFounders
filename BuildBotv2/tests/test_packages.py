@@ -1,6 +1,7 @@
 """The Package Manager: add (copy, link, git), the one Yes, install in place, remove, update."""
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -93,7 +94,7 @@ def test_link_runs_in_place_and_remove_keeps_the_folder(quiet, drawbridge, hello
     assert out["removed"] and out["linked_folder_kept"] and (hello_copy / "server.py").is_file()
 
 
-@pytest.mark.parametrize("bad, words", [("relative/folder", "full path"), ("C:\\", "whole drive")])
+@pytest.mark.parametrize("bad, words", [("relative/folder", "full path"), (os.path.abspath(os.sep), "whole drive")])
 def test_link_refusals(quiet, drawbridge, bad, words):
     with pytest.raises(AddError) as e:
         quiet.packages.add(bad, link=True)
@@ -215,6 +216,10 @@ def test_safe_mode_adds_nothing(quiet, drawbridge, hello_copy):
 
 
 def _junction(link, target):
+    """A link that leads out of the folder: a junction on Windows, a symbolic link on Linux and Mac."""
+    if os.name != "nt":
+        os.symlink(target, link, target_is_directory=True)
+        return
     got = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
     if got.returncode != 0:
         pytest.skip("could not make a junction here")

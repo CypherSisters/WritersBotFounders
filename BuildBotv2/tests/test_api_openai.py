@@ -19,7 +19,7 @@ class StubBrain:
         self.tokens, self.changed, self.error, self.mid_error = list(tokens), list(changed), error, mid_error
         self.calls = []
 
-    def turn(self, text, *, conversation="main", emit=None, cancelled=None, personal=False):
+    def turn(self, text, *, conversation="main", emit=None, cancelled=None, personal=False, asked_by=""):
         self.calls.append({"text": text, "conversation": conversation, "personal": personal})
         if self.error is not None:
             raise self.error

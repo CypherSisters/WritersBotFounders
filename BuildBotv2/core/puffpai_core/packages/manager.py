@@ -288,8 +288,8 @@ def link_problem(folder: Path, state: Path) -> str | None:
     for refused, words in ((state.resolve(), "the bot's own state folder"), (own_code, "BuildBot's own code")):
         if resolved == refused or refused in resolved.parents or resolved in refused.parents:
             return f"That folder holds {words}, so it can't be a package."
-    parts = [p.lower() for p in resolved.parts[1:2]]
-    if parts and parts[0] in _SYSTEM_DIRS:
+    parts = [p.lower() for p in resolved.parts[1:3]]
+    if (parts and parts[0] in _SYSTEM_DIRS) or parts == ["private", "etc"]:     # a Mac's /etc is really /private/etc
         return "System folders can't be packages."
     return None
 

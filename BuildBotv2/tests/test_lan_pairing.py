@@ -660,6 +660,7 @@ def test_no_route_answers_an_unpaired_device_or_a_programs_key(core, on):
             assert r.status_code == 401, (method, rule.rule, r.status_code)
         if rule.endpoint in OPEN_TO_ANYONE or rule.endpoint == "ui.ui_pair" or rule.endpoint.startswith("pages."):
             continue
+        on.limit = network.PairLimit()         # D147: a wrong key on a program route counts (tests/test_d147_program_keys_lan.py)
         for key in keys:
             r = stranger.open(method, _url(rule), body={} if method != "GET" else None, headers=local(key))
             assert r.status_code == 403 and r.json["error"] == network.KEYS_REFUSED, (method, rule.rule)
@@ -947,6 +948,7 @@ def test_the_model_routes_work_for_a_paired_device_and_no_key_gets_in(core, on):
             assert r.status_code == 403 and r.json["error"] == network.KEYS_REFUSED, path
             assert d.get(path, headers=local(token)).status_code == 403, path         # with both halves too
         assert c.get(path, headers=local(owner)).status_code == 200, path            # the owner key, on this computer
+    on.limit = network.PairLimit()             # D147: wrong keys on these routes count (tests/test_d147_program_keys_lan.py)
     for path in ("/openai/v1/chat/completions", "/ollama/api/chat"):
         assert d.open("POST", path, body={"messages": []}).status_code == 400, path   # reached the route: its own answer
         r = d.open("POST", path, body={"messages": []}, origin=False, headers={"Origin": "http://evil.example", "X-PuffPAI": "1"})
@@ -1478,13 +1480,54 @@ def test_the_network_ports_count_as_the_cores_own(apps, page_ports_bound):
 def test_addresses_on_linux_with_faked_results():
     """Debian names the computer 127.0.1.1 in its hosts file, so the name alone finds nothing there."""
     got = network.own_addresses(named=lambda: ["127.0.1.1"], interfaces=lambda: ["127.0.0.1", "192.168.1.20", "172.17.0.1", "8.8.8.8"],
-                                route=lambda: ["192.168.1.20"])
-    assert got == {"192.168.1.20", "172.17.0.1"}
+                                route=lambda: ["192.168.1.20"], virtual=lambda: [])
+    assert got == {"192.168.1.20", "172.17.0.1"}          # 172.17.0.1 here is a container's own eth0
 
 
 def test_addresses_on_windows_with_faked_results():
     got = network.own_addresses(named=lambda: ["10.0.0.4", "169.254.1.1", "20.30.40.50"], interfaces=lambda: [], route=lambda: ["10.0.0.4"])
     assert got == {"10.0.0.4", "169.254.1.1"}
+
+
+def test_docker_addresses_are_not_home_addresses_whichever_lookup_finds_them():
+    docker = ["172.18.0.1", "172.19.0.1", "192.168.122.1"]
+    for source in ("named", "interfaces", "route"):
+        lookups = {"named": lambda: [], "interfaces": lambda: [], "route": lambda: [], source: lambda: [ADDRESS, *docker]}
+        assert network.own_addresses(**lookups, virtual=lambda: docker) == {ADDRESS}
+
+
+def test_given_addresses_still_win_over_docker_interfaces(monkeypatch):
+    monkeypatch.setenv(network.ADDRESSES_ENV, "172.18.0.1")
+    assert network.own_addresses(named=_nothing_looked_up, interfaces=_nothing_looked_up, route=_nothing_looked_up,
+                                 virtual=_nothing_looked_up) == {"172.18.0.1"}
+
+
+def test_a_host_naming_the_docker_bridge_is_refused_and_not_offered(core, on):
+    bridge = "172.18.0.1"
+    on.addresses = lambda: network.own_addresses(named=lambda: [ADDRESS, bridge], interfaces=lambda: [],
+                                                 route=lambda: [bridge], virtual=lambda: [bridge])
+    on._looked, on._known = float("-inf"), (float("-inf"), set(), set())
+    assert Device(core.app).get("/pair", host=f"{bridge}:{on.port}").status_code == 421
+    assert Device(core.app).get("/pair").status_code == 200
+    assert bridge not in json.dumps(on.view()["urls"])
+
+
+def test_the_interface_lookup_sorts_docker_from_the_rest(monkeypatch):
+    fcntl = pytest.importorskip("fcntl", reason="Windows has no interface lookup")
+    table = {"lo": "127.0.0.1", "eth0": "172.17.0.5", "enp3s0": "192.168.1.20", "br0": "192.168.1.21", "docker0": "172.18.0.1",
+             "docker_gwbridge": "172.20.0.1", "br-0123456789ab": "172.19.0.1", "veth12ab": "169.254.3.3", "virbr0": "192.168.122.1"}
+    monkeypatch.setattr(network.socket, "if_nameindex", lambda: list(enumerate(table)))
+
+    def ioctl(fd, request, packed):
+        name = packed[:16].rstrip(bytes(1)).decode()
+        address = next(a for n, a in table.items() if n[:15] == name)
+        return bytes(20) + socket.inet_aton(address) + bytes(232)
+    monkeypatch.setattr(fcntl, "ioctl", ioctl)
+    assert set(network._interface_addresses()) == {"127.0.0.1", "172.17.0.5", "192.168.1.20", "192.168.1.21"}
+    assert set(network._virtual_addresses()) == {"172.18.0.1", "172.20.0.1", "172.19.0.1", "169.254.3.3", "192.168.122.1"}
+    monkeypatch.delenv(network.ADDRESSES_ENV, raising=False)
+    got = network.own_addresses(named=lambda: ["172.18.0.1"], route=lambda: ["172.19.0.1"])
+    assert got == {"172.17.0.5", "192.168.1.20", "192.168.1.21"}     # a container's eth0 stays
 
 
 def test_addresses_when_nothing_answers():

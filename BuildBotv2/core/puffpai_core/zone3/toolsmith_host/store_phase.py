@@ -118,6 +118,10 @@ class StorePhase:
         rec = self.record(build_id)
         return bool(rec and rec.get("consent_id") == consent_id and rec.get("state") in RUNNING)
 
+    def alive(self) -> bool:
+        """A store phase's thread is working now (D153). Memory only, and no lock."""
+        return any(th.is_alive() for th in list(self._threads.values()))
+
     def _set(self, build_id: str, n: int | None = None, **fields: Any) -> None:
         token = getattr(self._mine, "token", None)
 

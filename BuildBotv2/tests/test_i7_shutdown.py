@@ -82,12 +82,15 @@ def test_shutdown_with_nothing_running_says_so(state, capsys):
 
 def test_the_running_screen_names_the_stop_file(tmp_path, monkeypatch):
     from puffpai_core.wizard import terminal
-    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / "Start BuildBot.cmd")
+    monkeypatch.setattr(terminal, "launcher", lambda: tmp_path / terminal.launcher_name("Start BuildBot.cmd"))
     lines = terminal.running_lines(18430, "AAAA-BBBB-CCCC")
     assert any(ln.startswith("Or run this in another terminal to stop it from anywhere: ") and ln.endswith("shutdown") for ln in lines)
-    (tmp_path / "Stop BuildBot.cmd").write_text("@echo off\n", encoding="ascii")
+    stop = terminal.stop_launcher()
+    stop.write_text("@echo off\n", encoding="ascii")
     lines = terminal.running_lines(18430, "AAAA-BBBB-CCCC")
-    assert f"Or double-click Stop BuildBot.cmd in {tmp_path} to stop it from anywhere." in lines
+    assert f"Or {terminal.how_to_run(stop)} to stop it from anywhere." in lines
+    if os.name == "nt":
+        assert f"Or double-click Stop BuildBot.cmd in {tmp_path} to stop it from anywhere." in lines
 
 
 # -- a real Core in the test's own job ------------------------------------------------------------------

@@ -75,6 +75,10 @@ NO_ANSWER_LINE = "The plan's Yes card got no answer in time, so nothing was buil
 REPLACED_LINE = "Replaced by a newer plan."
 NOTHING_LINE = "Nothing found yet. Paste a GitHub address for this job."
 EMPTY_PLAN_LINE = "Toolsmith found nothing to install, so there is nothing to say Yes to."
+#: Said once on a plan whose every search the closed Bridge refused (D151). Words only: the Yes stays as it was. A card
+#: can wait a long time and its words can't change, so they stay true if the Bridge opens before she reads them.
+PLAN_BRIDGE_CLOSED_LINE = ("The Bridge was closed when Toolsmith searched, so none of this plan's searches could run. If it "
+                           "is still closed, open it on the Bridge page, then ask for this plan again.")
 
 
 nothing_line = find.nothing_line
@@ -262,6 +266,12 @@ KEY_KEPT_LINE = ("When you say Yes, Toolsmith keeps the key it needs until this 
                  "you close BuildBot (3 hours at most).")
 
 
+#: The plan card's line on a local plan for what her Yes also lets Toolsmith do while it builds (D154). On the fingerprinted card.
+LOCAL_LOOK_LINE = ("After your Yes, Toolsmith may read any public web page while it builds, only to read, never signing in or "
+                   "sending your files. It may also try other apps it finds, and put together a simple app for a job nothing "
+                   "else does. An app it adds this way asks you on its own card. A try runs as a program on your computer, as you.")
+
+
 def found_line(company: str = "") -> str:
     """The plan card's line on a cloud plan for what her Yes also lets Toolsmith do while it builds (D121), and what goes
     to *company* because of it. A part goes when its switch is off. Her bot's names go out either way, since the job's
@@ -433,12 +443,20 @@ def _tries(cand: dict) -> str:
     return find.tries_line(cand).rstrip(".")
 
 
+def _without_closed(job: dict) -> dict:
+    """The job with its "the Bridge is closed" reasons taken out, since the plan's own line says it once (D151)."""
+    p = job["plan"]
+    return {**job, "plan": {**p, "notes": [n for n in p.get("notes") or [] if not find.said_closed(str(n))],
+                            "not_used": [n for n in p.get("not_used") or []
+                                         if not (isinstance(n, dict) and find.said_closed(str(n.get("why"))))]}}
+
+
 def card(goal: str, jobs: list[dict], setup: list[dict], choice: dict, company: str = "",
          rows: list[dict] | None = None, shop: list[dict] | None = None, knowledge: dict | None = None,
          searches: list[str] | None = None, held: dict | None = None, models: list[dict] | None = None,
          left_out: list[str] | None = None, limited: dict | None = None, asked: dict | None = None,
          by_place: dict | None = None, whole: list | None = None, places: dict | None = None,
-         late: list | None = None, owner: dict | None = None) -> dict:
+         late: list | None = None, owner: dict | None = None, search_closed: bool = False) -> dict:
     """The ONE Yes card, written by the Core from the plan's data. *rows*: the Registry's rows, so a tool is said
     by what it does (its own description), never by its name. *shop*: the PuffPAI store's apps (lane I10c).
     *knowledge*: the plan's knowledge leg (lane I11): its Knowledge section says what is read, from which
@@ -449,8 +467,10 @@ def card(goal: str, jobs: list[dict], setup: list[dict], choice: dict, company: 
     leg with no topics: one plain line says no knowledge is read (D84), only when :func:`no_topics_said`.
     *asked*: the topic asks' counts (``no_answer``, ``timed_out``; D84).
     *limited*: ``{slowed, skipped}``, GitHub's limit during the plan, said in one line with where a key goes (D85).
-    *by_place*, *whole*, *places*, *late*: the other places looked in and not looked in (D99, :func:`places_lines`)."""
-    lines = []
+    *by_place*, *whole*, *places*, *late*: the other places looked in and not looked in (D99, :func:`places_lines`).
+    *search_closed*: every search was refused for a closed Bridge (D151): one line, first, in place of the reasons that
+    closed Bridge would give otherwise. It is on the card, so ``card_sha`` covers it and her Yes names it."""
+    lines = [PLAN_BRIDGE_CLOSED_LINE] if search_closed else []
     offers = []
     for j in jobs:
         p = j["plan"]
@@ -493,9 +513,10 @@ def card(goal: str, jobs: list[dict], setup: list[dict], choice: dict, company: 
                          + (f" {later} of the others need{'s' if later == 1 else ''} a program installed on this "
                             "computer." if later else ""))
         else:
-            lines.append(f"{j['name']}: {nothing_line(j, find.pasted_any(jobs), code_said=True)}" + (
+            lines.append(f"{j['name']}: {nothing_line(_without_closed(j) if search_closed else j, find.pasted_any(jobs), code_said=True)}" + (
                 f" After your Yes, Toolsmith looks further with {company or choice.get('provider')}'s model."     # D121
-                if choice.get("where") == "cloud" and not j.get("pasted") else ""))
+                if choice.get("where") == "cloud" and not j.get("pasted") else
+                " After your Yes, Toolsmith looks further." if choice.get("looks") and not j.get("pasted") else ""))    # D154
         hers = [c["name"] for c in p["candidates"] if c.get("source") == find.ORIGIN]
         if hers:                                   # D135
             lines.append(f"{j['name']}: {find.ORIGIN}: {_named(hers)}.")
@@ -515,6 +536,8 @@ def card(goal: str, jobs: list[dict], setup: list[dict], choice: dict, company: 
         if choice.get("consent_changed"):          # only a bot whose saved Yes is for an earlier sentence (D118)
             lines.append(f"{choice['consent_changed']} Toolsmith sends it nothing until you say yes to that in Settings.")
         lines.append(found_line(company or str(choice.get("provider") or "")))
+    elif choice.get("looks"):                      # D154
+        lines.append(LOCAL_LOOK_LINE)
     n = len(jobs)
     sentence = (f"Toolsmith finds and installs apps for {n} job{'s' if n != 1 else ''}"
                 f" for \"{cut_text(goal, 120, '...')}\", using {who}.")    # ends at a word or sentence (D85), says it is cut
@@ -531,7 +554,10 @@ def card(goal: str, jobs: list[dict], setup: list[dict], choice: dict, company: 
     lines += [ln for ln in (held_line(held.get("topics"), "topics"),) if ln]
     searched = search_lines(searches, by_place, owner)
     lines += searched
-    lines += places_lines(places, whole, late, list((by_place or {}).keys()), owner)
+    if search_closed and isinstance(places, dict):     # "Searched" and "your search Yes does not name them" would be untrue
+        lines += places_lines({**places, "github": False, "asked": [], "not_asked": [], "down": {}}, whole, late, [], owner)
+    else:
+        lines += places_lines(places, whole, late, list((by_place or {}).keys()), owner)
     limited = limited if isinstance(limited, dict) else {}
     lines += [ln for ln in (find.limit_line(limited.get("slowed"), limited.get("skipped")),) if ln]
     lines += [ln for ln in (held_line(held.get("searches"), "searches"),) if ln]
@@ -660,7 +686,7 @@ class Builds:
 
     def set_plan(self, build_id: str, body: dict, choice: dict, company: str,
                  installed: set[str] | None = None, rows: list[dict] | None = None,
-                 shop: list[dict] | None = None, models: list[dict] | None = None) -> dict:
+                 shop: list[dict] | None = None, models: list[dict] | None = None, search_closed: bool = False) -> dict:
         """Keep Toolsmith's plan (checked field by field) and work out the envelope and the card.
         *installed*: the ids an offer may name (an installed app or tool); None keeps no offer. *rows*: the
         Registry's own rows (what each installed tool does, in its own words, for the card)."""
@@ -726,7 +752,7 @@ class Builds:
                                | {h for j in out_jobs for c in j["plan"]["candidates"]
                                   for h in adopt.INSTALL_HOSTS.get(c["runtime"], [])})
         plan_hosts = install_hosts
-        if choice.get("where") == "cloud" and policy.TRY_FOUND_APPS:
+        if (choice.get("where") == "cloud" or choice.get("looks")) and policy.TRY_FOUND_APPS:
             # A found app must be able to install (D121): each project host and each registry, shown on the card.
             install_hosts = sorted({*install_hosts, *adopt.PROJECT_HOSTS, *(h for hs in adopt.INSTALL_HOSTS.values() for h in hs)})
         envelope = {"goal": b["goal"],
@@ -770,7 +796,8 @@ class Builds:
                                searches=x.get("github_searches"), held=x.get("held_names"), models=offered,
                                left_out=x.get("left_out"), limited=limited, asked=asked,
                                by_place=x.get("searches_by_place"), whole=x.get("read_whole"),
-                               places=body.get("places"), late=list(x.get("knowledge_down") or []), owner=owner))
+                               places=body.get("places"), late=list(x.get("knowledge_down") or []), owner=owner,
+                               search_closed=search_closed))
             x.pop("held_names", None)              # said once, in the card's own line; kept nowhere else
             if x.get("books_only"):                    # the one line above her card
                 x["looked"] = knowledge_mod.looked(kp, x.get("knowledge_finds"), x.get("knowledge_down"), kp["topics"])

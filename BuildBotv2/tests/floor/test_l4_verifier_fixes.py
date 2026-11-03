@@ -32,6 +32,16 @@ from puffpai_core.zone3.service import Zone3
 from z3helpers import HttpUpstream, grant, manifest, send_all, zone
 
 
+#: What these forms name exists only on Windows. On Linux and Mac a backslash and a colon are letters of a file name and
+#: two slashes are one: tests/test_d132_posix_floor.py holds those cases.
+odd_forms = pytest.mark.skipif(os.name != "nt", reason="UNC, device and NTFS stream paths exist only on Windows")
+
+
+def _drop_link(link):
+    """The link itself, never what it points to."""
+    os.rmdir(link) if os.name == "nt" else os.unlink(link)
+
+
 @pytest.fixture(autouse=True)
 def _no_keyring(monkeypatch):
     monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
@@ -393,7 +403,7 @@ def test_a_link_inside_the_package_asks(db, tmp_path):
         v = db.check_package(root, manifest("pkgx"))
         assert v["verdict"] == HOLD and "cant_check" in v["reasons"], made
     finally:
-        os.rmdir(link)                             # removes the link itself, never what it points to
+        _drop_link(link)
 
 
 # -- 6. Toolsmith's zone and lane L3's folders ------------------------------------------------------
@@ -761,6 +771,7 @@ def test_no_write_into_any_site_packages_by_any_copy_x23(places):
     assert _check(st, folder, os.path.join(site, "plain.py")).verdict == "allow", "reading it is fine"
 
 
+@odd_forms
 def test_ntfs_streams_are_denied_x23(places):
     st, folder, _linked, _data = places
     for target in ("q.pth::$DATA", "a.txt:hidden", "a.txt:hidden:$DATA", os.path.join("sub", "x.py:evil")):
@@ -769,10 +780,15 @@ def test_ntfs_streams_are_denied_x23(places):
         assert _check(st, folder, full).verdict == "deny", target
     assert _cmd(st, folder, 'copy a.pth "q.pth::$DATA"') == "deny"
     assert _cmd(st, folder, 'echo import os > x.pth:ads') == "deny"
+
+
+def test_a_colon_that_names_no_stream_stays_fine_x23(places):
+    st, folder, _linked, _data = places
     for fine in ("curl localhost:8080", "docker run -p 8080:80 alpine", "python -m http.server 8000"):
         assert _cmd(st, folder, fine) != "deny", fine
 
 
+@odd_forms
 def test_odd_prefixes_deny_writes_and_ask_for_reads_x23(places):
     st, folder, _linked, _data = places
     bs = "\\"
@@ -785,6 +801,7 @@ def test_odd_prefixes_deny_writes_and_ask_for_reads_x23(places):
     assert _cmd(st, folder, f'copy a.py "{unc}"') == "deny"
 
 
+@odd_forms
 def test_odd_prefix_read_of_the_tries_own_folder_asks_x23(places):
     st, folder, _linked, _data = places
     bs = "\\"
@@ -795,6 +812,7 @@ def test_odd_prefix_read_of_the_tries_own_folder_asks_x23(places):
         assert _check(st, folder, target, write=True).verdict == "deny", target
 
 
+@odd_forms
 def test_odd_prefix_read_of_any_other_place_stays_denied_x23(places):
     st, folder, _linked, data = places
     bs = "\\"
@@ -807,6 +825,7 @@ def test_odd_prefix_read_of_any_other_place_stays_denied_x23(places):
         assert _check(st, folder, target, write=True).verdict == "deny", target
 
 
+@odd_forms
 def test_odd_prefix_carve_never_clears_a_place_inside_it_or_a_start_hook_x23(places):
     st, folder, _linked, _data = places
     bs = "\\"
@@ -822,6 +841,7 @@ def test_odd_prefix_carve_never_clears_a_place_inside_it_or_a_start_hook_x23(pla
     assert zone.classify(bs * 2 + "?" + bs + hook)[0] == toolsmith_zone.DENY
 
 
+@odd_forms
 def test_odd_prefix_read_through_a_link_in_the_own_folder_stays_denied_x23(places):
     st, folder, _linked, _data = places
     bs = "\\"
@@ -842,6 +862,7 @@ def test_odd_prefix_read_through_a_link_in_the_own_folder_stays_denied_x23(place
         os.rmdir(link)                             # removes the link itself, never what it points to
 
 
+@odd_forms
 def test_odd_prefix_never_looks_up_a_share_outside_the_own_folder_x23(places, monkeypatch):
     st, folder, _linked, _data = places
     bs = "\\"
@@ -924,6 +945,7 @@ def test_odd_path_link_a_normal_path_would_strip_down_to_is_denied_x23(places, j
         _refused_both_ways(st, folder, DEVICE + os.path.join(folder, tail))
 
 
+@odd_forms
 def test_odd_path_trailing_dot_only_passes_on_a_last_name_in_the_own_folder_x23(places, tmp_path):
     st, folder, _linked, _data = places
     for tail in ("a.py.", "a.py ", "a.py. ."):
@@ -937,6 +959,7 @@ def test_odd_path_trailing_dot_only_passes_on_a_last_name_in_the_own_folder_x23(
         _refused_both_ways(st, folder, target)
 
 
+@odd_forms
 @pytest.mark.parametrize("name", ["a.pth.", "a.pth..", "a.pth. .", "a.pth ", "sitecustomize.py.", "usercustomize.py "])
 def test_odd_path_start_hook_with_a_trailing_dot_or_space_is_denied_x23(places, tmp_path, name):
     st, folder, _linked, _data = places
@@ -968,6 +991,7 @@ def test_start_hook_and_site_packages_through_a_link_are_denied_x23(places, junc
     assert _check(st, folder, os.path.join(named, "plain.py"), write=True).verdict == "deny"
 
 
+@odd_forms
 def test_mixed_slash_starts_are_the_same_odd_form_x23(places, tmp_path, monkeypatch):
     st, folder, _linked, _data = places
     other = _other_app(st)
@@ -998,6 +1022,7 @@ def test_mixed_slash_starts_are_the_same_odd_form_x23(places, tmp_path, monkeypa
         assert _cmd(st, folder, command) == "deny", command
 
 
+@odd_forms
 def test_mixed_slash_start_of_her_keys_denies_like_the_plain_path_x23(places, tmp_path, monkeypatch):
     st, folder, _linked, _data = places
     home = tmp_path / "fakehome"
@@ -1028,6 +1053,7 @@ def test_loopback_admin_share_reads_as_the_local_path_x23(places, junctions, tmp
     assert _check(st, folder, _admin_share(os.path.join(folder, "a.py"), host)).verdict == "ask"
 
 
+@odd_forms
 def test_long_unc_and_this_computers_own_name_read_as_the_local_path_x23(places, monkeypatch):
     st, folder, _linked, _data = places
     other = _other_app(st)
@@ -1039,6 +1065,7 @@ def test_long_unc_and_this_computers_own_name_read_as_the_local_path_x23(places,
     assert _check(st, folder, LONG + "UNC" + BS + _admin_share(os.path.join(folder, "a.py"))[2:]).verdict == "ask"
 
 
+@odd_forms
 @pytest.mark.parametrize("target", [
     "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\x", "\\\\.\\Volume{00000000-0000-0000-0000-000000000000}\\x",
     "/\\?\\Volume{00000000-0000-0000-0000-000000000000}\\x", "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume3\\x",
@@ -1091,6 +1118,7 @@ def test_short_names_are_expanded_before_the_check_x23(places, tmp_path):
         assert toolsmith_zone.zone_for(folder, state=str(st)).classify(LONG + buf.value)[1] == toolsmith_zone.PYSTART
 
 
+@odd_forms
 def test_odd_forms_never_look_up_a_host_the_model_named_x23(places, monkeypatch):
     st, folder, _linked, _data = places
     host = BS * 2 + "nas-nobody" + BS + "share"

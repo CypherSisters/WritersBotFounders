@@ -39,6 +39,11 @@ JSON types first (tuples and sets to lists, bytes to UTF-8 text with bad bytes
 replaced, keys to strings, anything else to its text), and :func:`clean_value`
 gates every string in it, dict keys included. :meth:`Gate.clean` is the one
 call the chat tool route, the brain loop and ``package_chat`` use.
+
+**A document she marked "no vault" (D146).** Its words come as
+``zone1.gate.OwnWords``, a mark only the Core makes. They pass here and in
+:func:`model_messages` as they are, key included: she chose that. Every other
+string in the same result still gets the gate.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..zone1 import secret_detector
+from ..zone1.gate import OwnWords
 from .errors import BrainError
 
 Prepare = Callable[[str, bool], tuple[str, list]]
@@ -292,6 +298,8 @@ def clean_value(value: Any, fn: Callable[[str], str]) -> Any:
     keys included; a dict's string value is also key-checked with its key next
     to it (D50 rule 2)."""
     def walk(v: Any, label: str | None) -> Any:
+        if isinstance(v, OwnWords):
+            return v
         if isinstance(v, str):
             out = fn(v)
             return no_keys_after(label, out) if label else out
@@ -307,6 +315,15 @@ def clean_value(value: Any, fn: Callable[[str], str]) -> Any:
             return out
         return v
     return walk(as_json(value), None)
+
+
+def _has_own_words(v: Any) -> bool:
+    """An :class:`OwnWords` anywhere in *v*, a value from :func:`as_json`."""
+    if isinstance(v, dict):
+        return any(_has_own_words(x) for x in v.values())
+    if isinstance(v, list):
+        return any(_has_own_words(x) for x in v)
+    return isinstance(v, OwnWords)
 
 
 def _text(value: Any, limit: int) -> str:
@@ -332,7 +349,9 @@ def model_messages(messages: list[dict], specs: list | None = None) -> tuple[lis
     for m in messages:
         m = dict(m)
         c = m.get("content")
-        if isinstance(c, str):
+        if isinstance(c, OwnWords):
+            m["content"] = c                           # its other strings were gated when ``clean`` built this text
+        elif isinstance(c, str):
             m["content"] = no_keys(c)
         else:
             m["content"] = "" if c is None else _text(clean_value(c, no_keys), 10 ** 12)
@@ -379,6 +398,10 @@ class Gate:
         """
         if not for_model:
             return clean_value(value, self.keep)
+        v = as_json(value)
+        if _has_own_words(v):
+            text = _text(clean_value(v, lambda s: self.for_model(s, real_values=real_values)[0]), 10 ** 12)
+            return OwnWords(text if limit is None else _cut(text, limit))
         if limit is None:
             return self.for_model(_text(value, 10 ** 12), real_values=real_values)[0]
         text = _text(value, limit * 2)                 # gated before the last cut: no key is cut in half

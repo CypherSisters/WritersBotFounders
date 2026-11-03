@@ -390,20 +390,21 @@ def _finder(tmp_path, link):
     return f
 
 
-def test_both_asks_picking_a_store_app_put_it_on_the_plan(tmp_path):
+def test_the_listings_words_put_a_store_app_on_the_plan_with_no_ask(tmp_path):
+    """D163: the store on every plan, by the jobs' words first; the brain is asked only when they match nothing."""
     link = StoreLink(["freshtable", "freshtable"])
     plan = _finder(tmp_path, link).plan_job({**SHOP, "pasted": []}, [], [], {})
-    assert plan["store"] == {"package": "freshtable", "name": "FreshTable", "tool": "freshtable.add_shopping",
-                             "picked": [{"ask": "Put milk on my shopping list", "tool": "freshtable.add_shopping"},
-                                        {"ask": "keep a shopping list", "tool": "freshtable.add_shopping"}]}
-    assert link.asked == ["Put milk on my shopping list", "keep a shopping list"]
+    assert plan["store"]["package"] == "freshtable" and plan["store"]["name"] == "FreshTable" and link.asked == []
 
 
 @pytest.mark.parametrize("answers", [["freshtable", ""], ["", "freshtable"], ["freshtable", "example-page"],
                                      ["not-in-store", "not-in-store"]])
-def test_one_ask_or_an_unknown_app_is_no_store_suggestion(tmp_path, answers):
+def test_one_ask_or_an_unknown_app_lets_the_listings_own_words_decide(tmp_path, answers):
+    """D154: it was no suggestion at all. Asks that don't agree decide nothing, and a match is not lost."""
     plan = _finder(tmp_path, StoreLink(answers)).plan_job({**SHOP, "pasted": []}, [], [], {})
-    assert "store" not in plan
+    assert plan["store"]["package"] == "freshtable" and plan["store"]["picked"] == []
+    other = _finder(tmp_path, StoreLink(answers)).plan_job({**SHOP, "name": "Stargazing", "does": "which stars I saw", "pasted": []}, [], [], {})
+    assert "store" not in other
 
 
 def test_a_pasted_project_gets_no_store_suggestion(tmp_path):

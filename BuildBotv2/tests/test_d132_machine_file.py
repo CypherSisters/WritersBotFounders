@@ -378,7 +378,7 @@ def test_no_usable_wrap_key_closes_with_the_plain_reason(wrap, tmp_path):
 def test_a_bot_folder_copied_without_the_wrap_key_stays_closed(wrap, tmp_path, monkeypatch):
     path = tmp_path / "settings" / "anchor.key"
     assert anchor.Anchor(path).available
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "another-computer"))
+    monkeypatch.setenv("PUFFPAI_HOME", str(tmp_path / "another-computer"))     # moves the wrap key on every system
     a = anchor.Anchor(path)
     assert not a.available and a.problem == "machine_key_unreadable"
 

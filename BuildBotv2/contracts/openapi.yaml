@@ -61,15 +61,23 @@ info:
     its pages (19100 and up, 100 per bot). The 127.0.0.1 addresses above do not change. A connection is refused before
     any route unless its real socket peer is home-network or link-local (never public, never loopback; no forwarded
     header is read; else 403 in plain text) and its Host is this computer's own home-network address or own name, <hostname>
-    or <hostname>.local, on that listener's port (else 421 in plain text). A VPN address in 100.64.0.0/10 counts as neither. There the only credential is a paired browser's cookie,
-    puffpai_device_<port>, with its second half in X-PuffPAI-Device; an owner API key, package token, Toolsmith token or
-    the terminal key is refused (403). A POST, PUT, PATCH or DELETE must send Origin http://<that Host> (or, with no
+    or <hostname>.local, on that listener's port (else 421 in plain text). A VPN address in 100.64.0.0/10 counts as neither. There a credential is a paired browser's cookie,
+    puffpai_device_<port>, with its second half in X-PuffPAI-Device, or (D147, PROPOSED) a program key on the program routes
+    below. An owner API key, package token, Toolsmith token or the terminal key is refused (403). A POST, PUT, PATCH or
+    DELETE signed in by the cookie must send Origin http://<that Host> (or, with no
     Origin, Sec-Fetch-Site: same-origin) and X-PuffPAI: 1, POST /v1/pair included. A device with no paired cookie gets
     GET / and GET /window/ as a 302 to GET /pair, and 401 for the rest but /v1/pair and /v1/signin. GET / and /ui/ there serve only the built-in Desktop, whichever she chose on this computer. Past that a paired
     device gets everything the owner gets on this computer, the vault, keys, floor-level Yes, the command line and
     shutdown included (the owner's decision for now; roles come later). There is no TLS, so anyone watching the network
     can see PINs and keys and act as that device, the command line included. /openai/v1 and /ollama/api work there with
-    the same cookie and second half, not with an owner key. On this address POST /v1/knowledge/files/open answers the
+    the same cookie and second half, not with an owner key, and (D147, PROPOSED) with a program key: no cookie needed, a
+    cookie beside it is not read, no Origin or X-PuffPAI needed. A turn with a program key there is the same full turn as
+    on this computer: the bot's tools, her pinned documents and knowledge, and real values while the vault is open. A tools
+    list in the body is not read, on either. The one difference: there a conversation_id or user names a conversation of
+    that key's own, so it can't name her chat, and on this computer it can. At most 8 such
+    turns run at once, and over that POST answers 429 with code "key_busy". On those routes anything else sent as a key gets 403 with one answer and counts with wrong pairing codes
+    (429 with code "key_wait" while limited; a right key never waits). Any key on any other route, a program key
+    included, gets that same 403, not counted. On this address POST /v1/knowledge/files/open answers the
     file itself, POST /v1/window/open and POST /v1/terminal/open open nothing and name a page in {"url"}.
     Package pages there need that package's page pass (GET /v1/network/pages); adopted apps and tries have no port.
 
@@ -734,7 +742,7 @@ paths:
   /v1/vault/status:
     get:
       tags: [vault]
-      summary: 'not_set_up | open | locked | missing | throttled, ways in (labels only), store health, idle time left, inbox waiting'
+      summary: 'not_set_up | open | locked | missing | throttled, ways in (labels only), store health, idle time left, inbox waiting. idle_lock_minutes is the idle time in force now: 60 while a live build or unfinished setup exists (D153), else her setting. idle_own_minutes is her setting, which applies again after that'
       x-access: owner
       x-lane: L3
       responses: { "200": { description: 'Vault status; never a value' } }
@@ -1156,7 +1164,7 @@ paths:
       summary: 'Toolsmith now: its model (local, or a frontier provider with the cap), and the builds with each job''s status'
       x-access: owner
       x-lane: L6
-      description: 'Each build also carries library (lane I19b), its knowledge fetch: null when its plan reads none, else {state: waiting|fetching|done, done, of, up_to, sources: [names], now, line}. done counts what is in the library; of is what was found to read, or with up_to true the plan''s cap while it still searches.'
+      description: 'Each build also carries library (lane I19b), its knowledge fetch: null when its plan reads none, else {state: waiting|fetching|short|done, done, of, up_to, sources: [names], now, line}. done counts what is in the library; of is what was found to read, or with up_to true the plan''s cap while it still searches. short (D160): it ended without all it planned, its line says what is missing and why, and Check again reads the rest.'
       responses: { "200": { description: '{where, provider?, model?, company?, cost_cap_usd?, consent_changed? (D118: only when her saved Yes is for an earlier sentence, why it asks again), builds: [{id, goal, created_at, jobs: [{id, name, status}], library}]}' } }
   /v1/toolsmith/providers:
     get:
@@ -1192,7 +1200,7 @@ paths:
       x-lane: L6
       parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
       responses:
-        "200": { description: 'The build.' }
+        "200": { description: 'The build. knowledge_missing (D160): what its ended fetch did not read, in plain words, "" when nothing.' }
         "404": { description: 'No such build.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /v1/toolsmith/builds/{build_id}/start:
     post:
@@ -1209,8 +1217,8 @@ paths:
   /v1/toolsmith/builds/{build_id}/again:
     post:
       tags: [toolsmith]
-      summary: '"Check again" (lane I18e): try the build''s unfinished jobs once more (held, not_yet, nothing_found). Jobs that work stay as they are; each job tried again starts its tries over, with her hold-card answers kept. Body {consent_id?}.'
-      description: 'Her Yes is reused only when the same plan sha has its Yes still live (not taken back, not past its end) for exactly this plan, and Toolsmith''s model and cost cap are what that card said. Otherwise ONE new Yes card is raised the normal way (kind package, this build''s target, bound to the plan sha) and the build''s "again" record says {consent_id, jobs, state: asking}; it covers only the jobs tried again and their install hosts from the plan, and the cost cap counts what the build spent already. POST again with that consent_id (or POST start with it, as the Desktop does after a plan card Yes) to start. When it starts, "again".state is started and that Yes is the build''s Yes.'
+      summary: '"Check again" (lane I18e): try the build''s unfinished jobs once more (held, not_yet, nothing_found), and read what its knowledge fetch did not (D160). Jobs that work stay as they are; each job tried again starts its tries over, with her hold-card answers kept. Body {consent_id?}.'
+      description: 'Her Yes is reused only when the same plan sha has its Yes still live (not taken back, not past its end) for exactly this plan, naming the plan''s knowledge hosts when its fetch came up short, and, with a job to try, Toolsmith''s model and cost cap are what that card said. Otherwise ONE new Yes card is raised the normal way (kind package, this build''s target, bound to the plan sha) and the build''s "again" record says {consent_id, jobs, state: asking}; it covers only the jobs tried again and their install hosts from the plan, the plan''s knowledge hosts when its fetch came up short, and the cost cap counts what the build spent already. With no job to try, jobs is empty, no key is borrowed and a locked vault does not stop it. POST again with that consent_id (or POST start with it, as the Desktop does after a plan card Yes) to start. When it starts, "again".state is started and that Yes is the build''s Yes.'
       x-access: owner
       x-lane: I18e
       parameters: [ { name: build_id, in: path, required: true, schema: { type: string } } ]
@@ -1345,6 +1353,24 @@ paths:
       responses:
         "200": { description: 'Done (plain words in said where it says no).' }
         "409": { description: 'It could not be done: {error, kind: not_built|refused|job_held|cloud_held|cloud_offline|cloud_wait_vault|cloud_error, code}.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/toolsmith/agent/jobs/{job_id}/store:
+    post:
+      tags: [toolsmith]
+      summary: 'A store app the goal''s conversation asks for on a cloud build, through its normal add and its own Yes card (D152).'
+      x-access: toolsmith
+      x-lane: toolsmith-composes
+      responses:
+        "200": { description: 'Its card is up: {ok, consent_id, name}.' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|...}.' }
+  /v1/toolsmith/agent/store/{consent_id}:
+    get:
+      tags: [toolsmith]
+      summary: 'Her answer to that card and how its install went: {waiting}, or {ok, said} (D152).'
+      x-access: toolsmith
+      x-lane: toolsmith-composes
+      responses:
+        "200": { description: 'The state, in plain words in said.' }
+        "409": { description: 'It could not be done: {error, kind: not_built|refused|...}.' }
   /v1/toolsmith/agent/jobs/{job_id}/found:
     post:
       tags: [toolsmith]
@@ -1632,7 +1658,8 @@ paths:
         uploads folder under that name. No path from the client is ever used. The name must be plain and end in .txt, .md,
         .docx or .pdf; the same check as a pinned file runs (folders.file_problem). At most 50 MB, enforced while reading.
         A second upload of one name replaces the first, whole, and the reply says so. Answers
-        {"ok": true, "name", "path", "size", "replaced": bool, "pinned": bool, "line"}. A paired browser with both halves
+        {"ok", "said", "documents", "name", "path", "size", "replaced": bool, "pinned": bool, "line"}: "ok" is whether the bot
+        could read it, "said" is the Core's line on that, "documents" is as GET /v1/knowledge/documents. A paired browser with both halves
         (with its Origin and X-PuffPAI: 1), or this computer's terminal key; never an owner API key or a package token.
       x-access: owner_device
       x-lane: D134
@@ -1641,6 +1668,7 @@ paths:
       responses:
         "200": { description: 'Saved.' }
         "400": { description: 'A name that can not be used, the wrong kind of file, an empty file, or a place that can not be checked.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'In a data folder she chose: a file of that name is there that BuildBot did not save. It is hers, and nothing was saved.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 'Over 50 MB. On the network listener a declared size over 86 MB is refused from its headers, in plain text.' }
         "507": { description: 'It could not be saved (out of room).', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /v1/knowledge/sources:
@@ -1651,7 +1679,8 @@ paths:
         Built by I11. Read from the data folder's knowledge\<source>\meta.json files only (nothing reaches the
         network). Reply {"items": [{"source": "wikipedia | gutenberg", "title", "url", "license", "size",
         "fetched_at", "file"}], "count", "bytes", "libraries": [{"source", "title", "size", "zim", "line"}], "waiting":
-        [{"name", "line"}], "drop_folder"}, newest first (D136). An address that is not its source's own is "". The owner
+        [{"name", "line"}], "drop_folder"}, newest first (D136). "waiting" also has a row for each Word or PDF file left at the
+        top of that folder, saying to use Add documents. An address that is not its source's own is "". The owner
         on a paired device only: an owner API key, a package token and a Toolsmith token are refused.
       x-access: owner_device
       x-lane: I11
@@ -1778,11 +1807,23 @@ paths:
         "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/files/remove:
+    post:
+      tags: [knowledge]
+      summary: 'Delete one file from My files'
+      description: 'D161. Body {"path"}, a file inside My files and no other. Reply {"removed": true, "said"}. 400 {"error"}, a plain reason.'
+      x-access: owner_device
+      x-lane: D161
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/knowledge/pinned:
     get:
       tags: [knowledge]
       summary: 'The documents pinned to this bot'
-      description: 'Reply {"pinned": [{"name", "path", "line"}], "line"}.'
+      description: 'Reply {"pinned": [{"name", "path", "there", "line", "fiction"}], "line"}.'
       x-access: owner
       x-lane: D125
       responses:
@@ -1813,11 +1854,74 @@ paths:
         "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/pinned/fiction:
+    post:
+      tags: [knowledge]
+      summary: 'No vault for one pinned document: it is an ordinary file'
+      description: 'D146. Body {"path", "on": true | false}. Off by default, for that document only. On, the gate does not scan or hold anything from it. Reply: as the GET of /v1/knowledge/pinned. 400 {"error"}. 404 {"error"}: that file is not pinned.'
+      x-access: owner_device
+      x-lane: D146
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'That file is not pinned.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/knowledge/documents:
+    get:
+      tags: [knowledge]
+      summary: 'Her one list of documents: pinned, added, and the copies BuildBot saved in uploads'
+      description: 'PROPOSED for v3, built, not yet tested by her. Reply {"documents": [{"name", "path", "there", "line", "ok", "named", "copy", "fiction"}]}. "ok" is true only when the file is there, passes the one file check and is indexed.'
+      x-access: owner
+      x-lane: V3-1
+      responses:
+        "200": { description: 'The answer.' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [knowledge]
+      summary: 'Add one file to her list, and read it through the gate now'
+      description: 'PROPOSED for v3. Body {"path"}. The same one check as a pin (folders.file_problem). Already on the list is no error. Not named in chats. Reply {"name", "path", "ok", "said", "documents"}. 400 {"error"}.'
+      x-access: owner_device
+      x-lane: V3-1
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/documents/named:
+    post:
+      tags: [knowledge]
+      summary: 'Name one document in every chat, or stop'
+      description: 'PROPOSED for v3. Body {"path", "on": true | false}. On is a pin. Off takes it out of pinned, clears No vault (D146) and reads it again through the gate. Reply {"documents"}. 400 {"error"}. 404 {"error"}: not on her list. 409 {"error"}: a scan is running, and nothing changed.'
+      x-access: owner_device
+      x-lane: V3-1
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'That file is not on her list.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'A scan is running, and nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/knowledge/documents/remove:
+    post:
+      tags: [knowledge]
+      summary: 'Take one document off her list. A copy in uploads is deleted; an original never is'
+      description: 'PROPOSED for v3. Body {"path"}. Its words leave the index unless a walk still reads the file. What the vault holds is not touched. Reply {"said", "documents"}. 400 {"error"}. 404 {"error"}: not on her list. 409 {"error"}: a scan is running or the copy is held open, and nothing changed.'
+      x-access: owner_device
+      x-lane: V3-1
+      responses:
+        "200": { description: 'The answer.' }
+        "400": { description: 'A plain reason.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: 'That file is not on her list.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: 'A scan is running or the copy is held open, and nothing changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /v1/knowledge/pick:
     post:
       tags: [knowledge]
       summary: 'Windows''s own Open dialog, on this computer'
-      description: 'Body {"kind": "file | folder"}. Reply {"path"}, "" if she closed it, or {"path": "", "typed": true, "line"} from another device or off Windows. 409 {"error"}: one is open already.'
+      description: 'Body {"kind": "file | files | folder"}. Reply {"path"}, "" if she closed it; with files, {"paths": [...]}, none if she closed it. {"path": "", "typed": true, "line"} from another device or off Windows, with "upload": true for file and files. 409 {"error"}: one is open already.'
       x-access: owner_device
       x-lane: D127
       responses:
@@ -1841,7 +1945,7 @@ paths:
     post:
       tags: [knowledge]
       summary: 'Send one file to a package that takes files'
-      description: 'Body {"file_name", "content_b64"} or {"path"}, a pinned file or one inside a linked folder and no other. Reply {"line"}. 400 or 409 {"error"}.'
+      description: 'Body {"file_name", "content_b64"} or {"path"}, a document on her list or one inside a linked folder and no other. Reply {"line"}. 400 or 409 {"error"}.'
       x-access: owner_device
       x-lane: D127
       responses:
@@ -1899,7 +2003,7 @@ paths:
     post:
       tags: [settings]
       summary: 'Check a moved bot, every hash, and say what it holds. Nothing changes'
-      description: 'D141. Body {"path"}. Reply {"name", "apps", "not_here", "left_out", "books", "linked", "pinned", "added", "stays"}.'
+      description: 'D141. Body {"path"}. Reply {"name", "apps", "not_here", "left_out", "books", "linked", "pinned", "documents", "added", "stays"}.'
       x-access: owner_device
       x-lane: D141
       responses:
@@ -1917,6 +2021,17 @@ paths:
       responses:
         "200": { description: 'Brought in.' }
         "400": { description: 'A plain reason. Nothing was changed.', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/knowledge/index:
+    get:
+      tags: [knowledge]
+      summary: 'Whether it is indexing now, how far along, and when it last finished'
+      description: 'D159. Reply {"running": bool, "done": n, "of": n or null while it lists the files, "now": "<one file name>", "started_at": seconds, "files": n, "pieces": n, "not_read": n, "last_finished": seconds or 0, "last_took_s": n, "last_new": n, "downloading": bool, "learning": bool}. files and pieces are what can be searched now. Only reads, and needs no vault.'
+      x-access: owner_device
+      x-lane: D159
+      responses:
+        "200": { description: 'The answer.' }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /v1/knowledge/recommended:
@@ -2013,7 +2128,7 @@ paths:
     get:
       tags: [settings]
       summary: 'Active Desktop, avatar, Bridge posture'
-      description: 'Reply {"ui": "<id>", "avatar": {"id", "name", "preview"} or null, "bridge": "open | closed | not_set", "wizard_complete": bool, "pages": "http://127.0.0.1:8422", "bot": {"name", "theme"}, "opens": "window | chat | dashboard"}. bot is the bot''s own name and look (lane I10c, settings\bot.json), "Puff" and "clean" until she picks (D90; a bot whose setup finished with no look saved reads "puff"). opens is what opens when BuildBot starts (D94, settings\opens.json), "window" until she picks (D81). preview is a /pkg/<id>/<file> path on the pages address ("pages", D49) or null.'
+      description: 'Reply {"ui": "<id>", "own_desktop": bool (D144: the active ui is one of PuffPAI''s own), "avatar": {"id", "name", "preview"} or null, "bridge": "open | closed | not_set", "wizard_complete": bool, "pages": "http://127.0.0.1:8422", "bot": {"name", "theme"}, "opens": "window | chat | dashboard"}. bot is the bot''s own name and look (lane I10c, settings\bot.json), "Puff" and "clean" until she picks (D90; a bot whose setup finished with no look saved reads "puff"). opens is what opens when BuildBot starts (D94, settings\opens.json), "window" until she picks (D81). preview is a /pkg/<id>/<file> path on the pages address ("pages", D49) or null.'
       x-access: owner
       x-lane: L5
       responses:
@@ -2073,7 +2188,7 @@ paths:
     post:
       tags: [settings]
       summary: 'Open the real terminal chat from the window''s switch (D115)'
-      description: 'Starts this bot''s own terminal chat in a console window of its own and returns at once, in the chat named by the body {"conversation": "<id>"} (optional, "main" when left out). It takes nothing else from the request: an id that is not letters, digits, - and _ is a 400, never a command, a path or a folder. Only a paired-device token, as /v1/window/open. Two presses in one chat within 3 seconds open one; another chat opens its own. Reply {"ok": bool, "line": "<one plain line>"}; a computer that can''t open one here is ok false with its line, not an error. Safe mode: a 409, and no console starts, as /v1/dev/shell.'
+      description: 'Starts this bot''s own terminal chat in a console window of its own and returns at once, in the chat named by the body {"conversation": "<id>"} (optional, "main" when left out). It takes nothing else from the request: an id that is not letters, digits, - and _ is a 400, never a command, a path or a folder. Only a paired-device token, as /v1/window/open. Two presses in one chat within 3 seconds open one; another chat opens its own. Reply {"ok": bool, "line": "<one plain line>"}; a computer that can''t open one here is ok false with its line, not an error. Off Windows (D144) the reply also has "pane": true, and the window opens the Developer page''s command line in its side pane. Safe mode: a 409, and no console starts, as /v1/dev/shell.'
       x-access: owner_device
       x-lane: window-switch
       responses:

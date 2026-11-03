@@ -591,6 +591,8 @@ def rows(kp: dict, run: dict | None = None) -> list[dict]:
         failed = (run.get("failed") or {}).get(f["source"])
         if run.get("state") == "done":
             status = failed or f"read {n} {f['kind'] if n != 1 else f['kind'][:-1]}"
+            if not failed and any(u.get("source") == f["source"] for u in run.get("retry") or []):
+                status += ", more to read"         # D160: Check again reads the rest
         elif run.get("state") == "fetching":
             status = f"reading ({n} so far)"
         else:
@@ -614,7 +616,8 @@ def rows(kp: dict, run: dict | None = None) -> list[dict]:
 
 def progress(b: dict) -> dict | None:
     """The build's library fetch for Home, Building and Knowledge (``GET /v1/toolsmith``, lane I19b), or None
-    when its plan reads nothing: ``{state: waiting|fetching|done, done, of, up_to, sources, now, line}``.
+    when its plan reads nothing: ``{state: waiting|fetching|short|done, done, of, up_to, sources, now, line}``. ``short``
+    (D160): it ended without all it planned, and its line says what is missing and why.
     *done* is what is in the library now; *of* is what the searches found to read, or (``up_to``) the plan's
     cap while a search is still to run. Counts and names only."""
     kp = b.get("knowledge_plan") or {}
@@ -628,8 +631,9 @@ def progress(b: dict) -> dict | None:
     cap = sum(int(f.get("max_items") or 0) for f in fetch)
     state = {"fetching": "fetching", "done": "done"}.get(str(run.get("state") or ""), "waiting")
     searching = state == "waiting" or any(isinstance(u, dict) and u.get("do") == "search" for u in run.get("queue") or [])
-    up_to = state != "done" and searching
-    return {"state": state, "done": done, "of": cap if up_to else max(found, done), "up_to": up_to,
+    retry = (run.get("retry") or []) if state == "done" else []
+    up_to = (state != "done" and searching) or any(u.get("do") == "search" for u in retry)
+    return {"state": "short" if retry else state, "done": done, "of": cap if up_to else max(found, done), "up_to": up_to,
             "sources": [str(f.get("name") or f["source"]) for f in fetch], "now": str(run.get("now") or ""),
             "line": str(run.get("line") or "")}
 
@@ -648,7 +652,7 @@ def start_run(kp: dict, ticked: list[str] | None = None) -> dict:
     time."""
     queue = [{"do": "search", "source": f["source"], "topic": t, "n": i + 1}
              for f in kp["fetch"] for i, t in enumerate(kp["topics"])]
-    queue += [{"do": "download", "value": o["value"], "source": o["source"], "stage": "start"}
+    queue += [{"do": "download", "value": o["value"], "source": o["source"], "stage": "start", "title": o["title"]}
               for o in kp.get("offers") or [] if (o["ticked"] if ticked is None else o["value"] in ticked)]
     return {"state": "fetching", "queue": queue, "counts": {f["source"]: 0 for f in kp["fetch"]},
             "planned": {f["source"]: 0 for f in kp["fetch"]}, "seen": [], "failed": {}, "nothing": {},
@@ -688,13 +692,63 @@ def finish(run: dict, stopped: bool = False) -> None:
             notes.append(str(d["line"]).rstrip(".") + ".")
     if stopped:
         notes.append("Toolsmith stopped before it read everything planned.")
-    run["notes"] = notes
+    run["retry"] = list(run.get("retry") or []) + list(run.get("queue") or [])   # D160: Check again reads these
+    run["notes"] = notes + ([missing_line(run)] if run["retry"] else [])
     run["state"] = "done"
     run["queue"] = []
     run["now"] = ""
     run["line"] = summary(run)
     run["lines"] = (run["lines"] + [run["line"]])[-40:]
     run["ended_at"] = settings_mod.now()
+
+
+def missing_line(run: dict) -> str:
+    """D160: what a fetch that ended did not read, in plain words, or "". Why is in its notes. Counts, topics and titles."""
+    retry = [u for u in run.get("retry") or [] if isinstance(u, dict)]
+    bits = []
+    for sid in dict.fromkeys(str(u.get("source")) for u in retry if u.get("do") != "download"):
+        row = _cfg()["fetch"].get(sid) or {}
+        short = str(row.get("short") or sid)
+        gets = sum(1 for u in retry if u.get("do") == "get" and u.get("source") == sid)
+        topics = list(dict.fromkeys(str(u.get("topic")) for u in retry if u.get("do") == "search" and u.get("source") == sid))
+        if gets:
+            bits.append(_plural(gets, f"{short} {_one_kind(sid)}", f"{short} {_one_kind(sid)}s"))
+        if topics:
+            bits.append(f"{short} on {', '.join(topics)}")
+    for u in retry:
+        if u.get("do") == "download":
+            bits.append(str(u.get("title") or ((run.get("downloads") or {}).get(u.get("value")) or {}).get("title") or "a download"))
+    return f"Still missing: {', '.join(bits)}. Check again reads what is missing." if bits else ""
+
+
+def missing(b: dict) -> str:
+    """D160: :func:`missing_line` for a build whose fetch has ended, "" for any other."""
+    run = b.get("knowledge_run") if isinstance(b.get("knowledge_run"), dict) else {}
+    return missing_line(run) if run.get("state") == "done" else ""
+
+
+def read_again(b: dict) -> bool:
+    """D160, Check again: what the fetch did not read goes back in its queue. What it read stays, and a source that failed
+    is asked again. True when there is something to read."""
+    kp = b.get("knowledge_plan") or {}
+    run = b.get("knowledge_run") if isinstance(b.get("knowledge_run"), dict) else {}
+    retry = run.get("retry") or []
+    if not retry or run.get("state") != "done":
+        return False
+    for u in retry:
+        run.get("failed", {}).pop(u.get("source"), None)
+        run.get("detail", {}).pop(u.get("source"), None)
+        d = (run.get("downloads") or {}).get(u.get("value"))
+        if isinstance(d, dict):
+            d.pop("failed", None)
+            d["line"] = ""
+        others = [m for m in u.get("mirrors") or [] if m != u.get("url")] if u.get("stage") == "bytes" else []
+        if others:                                 # every mirror on her card gets another turn, the last one to fail last
+            u.update(url=others[0], spare=others[1:] + [u["url"]])
+    run.update(state="fetching", queue=list(retry), retry=[], notes=[], line="", now="", steps=0)
+    b["knowledge_run"] = run
+    b["knowledge"] = rows(kp, run)
+    return True
 
 
 def end_unfinished(b: dict) -> bool:
@@ -838,6 +892,7 @@ class Fetcher:
                 line = str(exc) if isinstance(exc, (SourceDown, fetched.StoreAway)) else \
                     f"{src['short']} could not be read (the Core hit {type(exc).__name__})"
                 run["failed"][unit["source"]] = line
+                run.setdefault("retry", []).extend([unit] + [u for u in run["queue"] if u.get("source") == unit["source"]])
                 detail = getattr(exc, "detail", "") or ("" if isinstance(exc, SourceDown) else repr(exc)[:200])
                 if detail:                         # the build log's detail, never her line
                     run.setdefault("detail", {})[unit["source"]] = detail
@@ -994,8 +1049,9 @@ class Fetcher:
                 return self._not_kept(run, src, unit, off_goal=False)   # missing, a page of meanings, or empty
             title, text, url, revision, pageid, about = page
             mark = f"{sid}:page:{pageid}"
-            if mark in run["seen"]:
+            if mark in run["seen"] and unit.get("mark") != mark:        # its own mark: a retry after the store went away
                 return self._not_kept(run, src, unit, off_goal=False)   # two search titles for one article
+            unit["mark"] = mark
             run["seen"] = (run["seen"] + [mark])[-2000:]
             if not fits_goal(f"{title}\n{about}\n{text[:fit]}", need):
                 return self._not_kept(run, src, unit, off_goal=True)
@@ -1222,6 +1278,7 @@ class Fetcher:
             if isinstance(exc, OSError) and not ours:      # the drive went away or filled up during this step
                 why = fetched.away_line(self.host.state, 1).rstrip(".") or why
             state.update(failed=True, line=f"{offer['title']} was not downloaded: {why or type(exc).__name__}")
+            run.setdefault("retry", []).append(unit)
             run["lines"] = (run["lines"] + [state["line"]])[-40:]
             if isinstance(exc, downloads.DownloadFailed):
                 # A bad file. A drive or a network that went away keeps what it has (a big download is not lost).
@@ -1253,7 +1310,7 @@ class Fetcher:
             if not urls:
                 raise downloads.DownloadFailed("no mirror your plan names lists it")
             fetched.folder_for(self.host.state, pid, need=meta["size"])    # room first, on the drive she chose
-            unit.update(stage="bytes", url=urls[0], spare=urls[1:], sha=meta["sha256"], size=meta["size"], file=meta["file"])
+            unit.update(stage="bytes", url=urls[0], spare=urls[1:], mirrors=urls, sha=meta["sha256"], size=meta["size"], file=meta["file"])
             return True
         if stage == "bytes":
             size = int(unit["size"])
@@ -1292,12 +1349,13 @@ class Fetcher:
         batch, rest = unit["picked"][:downloads.READ_PER_STEP], unit["picked"][downloads.READ_PER_STEP:]
         run["now"] = f"Keeping {offer['title']}'s articles as text ({len(rest)} to go)"
         room = int(row.get("extract_kb") or 80000) * 1000 - int(state.get("kept_bytes") or 0)
-        for title, text in downloads.read_articles(target, batch):
+        for title, text in downloads.read_articles(target, batch)[int(unit.get("batch_at") or 0):]:   # a retry goes on from here
             if room <= 0:
                 rest = []
                 break
             room -= self._keep_text(run, pid, offer, row, title, text, unit["url"], state)
-        unit["picked"] = rest
+            unit["batch_at"] = int(unit.get("batch_at") or 0) + 1
+        unit.update(picked=rest, batch_at=0)
         if rest:
             return True
         n = int(state.get("kept") or 0)

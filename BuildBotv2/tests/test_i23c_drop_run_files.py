@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from test_d61_allowlist import WIN, _checked, needs_jobs, world  # noqa: F401 - shared
+from test_d61_allowlist import WIN, _checked, world  # noqa: F401 - shared
 from test_i2a_part_c import _adopted_manifest, _plan_yes, _try_that_served, real_world  # noqa: F401 - shared
 from puffpai_core.packages import fsutil
 from puffpai_core.zone3.drawbridge import tree_sha
@@ -71,7 +71,6 @@ def test_the_folders_a_run_made_are_not_in_what_is_added(tried, shape):
     assert json.loads((staged / ".buildbot" / "puffpai.json").read_text(encoding="utf-8"))["id"] == rec.pkg_id
 
 
-@needs_jobs
 def test_the_real_package_manager_installs_it_without_the_run_folders(real_world, tmp_path):  # noqa: F811
     w = real_world
     w.ports.fixture_repo = _repo(tmp_path)

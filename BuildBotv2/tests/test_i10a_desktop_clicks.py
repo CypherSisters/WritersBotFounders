@@ -462,7 +462,7 @@ def test_i16_who_your_bot_is_you_looks_knowledge_store_ticks_and_updates(state, 
         # -- Knowledge: nothing read yet, then one Wikipedia article with its credit -------------------
         _rail(b, "knowledge")
         assert b.wait(_has_text("#view-knowledge [data-said=sources-empty]", "Nothing has been read yet."), timeout_s=30), b.js(WHERE)
-        assert b.js(_has_text("#view-knowledge", "Linked folders"))
+        assert b.js(_has_text("#view-knowledge", "Add a whole folder"))
         fetched.save(state, "wikipedia", "soil-1", "Soil\n\nFrom Wikipedia.", {
             "title": "Soil", "url": "https://en.wikipedia.org/wiki/Soil", "license": "CC BY-SA 4.0",
             "fetched_at": "2026-10-26T09:00:00+00:00"})

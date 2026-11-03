@@ -180,6 +180,7 @@ class ConsentStore:
         self.anchor = anchor or _anchor.for_state(self.path.parent)
         self.verify_pin = verify_pin
         self._cond = threading.Condition(threading.RLock())
+        self.write_lock = threading.RLock()    # D151: held across a new generation and its seal; the unlock check reads under it
         self._answer_listeners: list[Callable[[dict], None]] = []
         self._yes_listeners: list[Callable[[dict], None]] = []
         self.on_generation: Callable[[int], None] | None = None   # D54: the vault copy (zone3.vault_anchor)
@@ -537,27 +538,28 @@ class ConsentStore:
         if rec is None:
             return False
         live = [r for r in self.live() if r["consent_id"] != consent_id]
-        with self._cond:
-            with closing(self._connect()) as db, db:
-                g = self.generation(db)
-                if g is None:
-                    return False
-                changed = db.execute("UPDATE cards SET status = 'revoked', mac = NULL WHERE id = ? AND "
-                                     "status = 'granted'", (consent_id,)).rowcount
-                if not changed:
-                    return False
-                new = g + 1
-                db.execute("INSERT OR REPLACE INTO meta (name, value, mac) VALUES ('generation', ?, ?)",
-                           (str(new), self._gen_mac(new)))
-                for r in live:
-                    db.execute("UPDATE cards SET mac = ? WHERE id = ? AND status = 'granted'",
-                               (self._rec_mac(r["sha"], new), r["consent_id"]))
+        with self.write_lock:
+            with self._cond:
+                with closing(self._connect()) as db, db:
+                    g = self.generation(db)
+                    if g is None:
+                        return False
+                    changed = db.execute("UPDATE cards SET status = 'revoked', mac = NULL WHERE id = ? AND "
+                                         "status = 'granted'", (consent_id,)).rowcount
+                    if not changed:
+                        return False
+                    new = g + 1
+                    db.execute("INSERT OR REPLACE INTO meta (name, value, mac) VALUES ('generation', ?, ?)",
+                               (str(new), self._gen_mac(new)))
+                    for r in live:
+                        db.execute("UPDATE cards SET mac = ? WHERE id = ? AND status = 'granted'",
+                                   (self._rec_mac(r["sha"], new), r["consent_id"]))
+            if self.on_generation is not None:
+                try:
+                    self.on_generation(new)
+                except Exception:  # noqa: BLE001 - the revoke stands; the vault copy is retried at unlock
+                    logger.warning("could not hand the consent generation to the vault")
         self._publish("consent.revoked", {"consent_id": consent_id, "scope": rec["scope"]})
-        if self.on_generation is not None:
-            try:
-                self.on_generation(new)
-            except Exception:  # noqa: BLE001 - the revoke stands; the vault copy is retried at unlock
-                logger.warning("could not hand the consent generation to the vault")
         return True
 
     # -- what the Bridge asks -------------------------------------------------------
