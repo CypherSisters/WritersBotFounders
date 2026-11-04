@@ -27,7 +27,9 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NAME="${NAME:-writersbot-box}"
-export BOT="${BOT:-writersbot}"
+# The bot's name inside an existing container, so a bot set up by hand under another name is found too.
+BOT_OF_BOX="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null | sed -n 's/^PUFFPAI_BOT=//p' | head -n 1 || true)"
+export BOT="${BOT:-${BOT_OF_BOX:-writersbot}}"
 export IMAGE="${IMAGE:-puffpai-box}"
 export MEMORY="${MEMORY:-8g}"
 export CPUS="${CPUS:-4}"
@@ -247,7 +249,14 @@ run_install() {
 }
 
 # Installed means the command is there and no install was cut off (run.sh install leaves .installing until it succeeds).
-installed() { [ -e "$DATA/code/.venv/bin/puffpai" ] && [ ! -e "$DATA/.installing" ]; }
+installed() {
+    # Asked inside the container when it keeps this folder: the folder may not be readable by this user on the host.
+    if [ -n "$(mount_of)" ] && [ "$(mount_of)" = "$DATA" ]; then
+        docker start "$NAME" >/dev/null 2>&1 || true
+        if docker exec "$NAME" bash -c '[ -x /data/bot/code/.venv/bin/puffpai ] && [ ! -e /data/bot/.installing ]' 2>/dev/null; then return 0; fi
+    fi
+    [ -e "$DATA/code/.venv/bin/puffpai" ] && [ ! -e "$DATA/.installing" ]
+}
 
 need_terminal() {
     if [ ! -t 0 ]; then
@@ -634,7 +643,7 @@ case "$verb" in
         fi
         exec bash "$RUN" stop ;;
     update)
-        if ! installed; then echo "WritersBot is not installed in $DATA yet. Run ./install-writersbot.sh first."; exit 1; fi
+        if ! installed; then echo "WritersBot is not installed in $DATA yet (no $DATA/code/.venv/bin/puffpai, checked through the container $NAME too). Run ./install-writersbot.sh first."; exit 1; fi
         check_port
         box_up
         if ! setup_done; then echo "Setup has not finished, so there is nothing to update yet. Setup brings the newest apps: ./install-writersbot.sh setup"; exit 1; fi
@@ -643,7 +652,7 @@ case "$verb" in
     setup|start|pair|chat)
         if [ "$verb" = setup ]; then need_terminal "Setup"; fi
         if [ "$verb" = start ]; then echo "  Later, to stop it: ./install-writersbot.sh stop (the stop-buildbot.sh it may name is not on this computer)"; fi
-        if ! installed; then echo "WritersBot is not installed in $DATA yet. Run ./install-writersbot.sh first."; exit 1; fi
+        if ! installed; then echo "WritersBot is not installed in $DATA yet (no $DATA/code/.venv/bin/puffpai, checked through the container $NAME too). Run ./install-writersbot.sh first."; exit 1; fi
         drop_stale
         case "$verb" in start|pair) address_check ;; esac
         check_port
