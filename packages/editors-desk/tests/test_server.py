@@ -32,6 +32,7 @@ import engine  # noqa: E402
 import finders  # noqa: E402
 import frame_book  # noqa: E402
 import make_book  # noqa: E402
+import study_book  # noqa: E402
 from book import Book, locate  # noqa: E402
 
 TOKEN = "test-token-789"
@@ -91,7 +92,21 @@ EVIDENCE = ["\"Hold the line, and keep the mule between you and the wind,\" Harr
             "It opens what your grandfather buried", "Morning showed them tracks, three men and a cart", "There are", "On Monday, March 3, 1891"]
 
 
+def study_answer(user: str):
+    """A stand-in editor for Study a book: notes that quote real words of each passage, then the pointers in order."""
+    if "Passage A" not in user:
+        return [{"try": "Let a chapter close on a line of talk.", "why": "It leaves the reader leaning in.", "from": "ending"}]
+    a = user.split("Passage A, from the book she admires:\n<<<\n", 1)[1].split("\n>>>", 1)[0]
+    b = user.split("Passage B, from her manuscript:\n<<<\n", 1)[1].split("\n>>>", 1)[0]
+    few = lambda t: " ".join(t.split("\n\n")[0].split()[:6])      # noqa: E731 - exactly as written
+    return {"theirs_does": "Long sentences that carry the setting.", "mine_does": "Short lines, mostly talk.",
+            "pointers": [{"try": "Let one long sentence set the place before the talk starts.", "why": "It gives the reader somewhere to stand.",
+                          "their_quote": few(a), "my_quote": few(b)}]}
+
+
 def answer(system: str, user: str):
+    if "helping a writer learn from a book she admires" in system:
+        return study_answer(user)
     if "check an editor's notes" in system:
         return {"keep": [1, 2, 3]}
     if "check an editor's note" in system:
@@ -129,6 +144,8 @@ def answer(system: str, user: str):
             {"what": "Edmund Pryce is called late in the first pages, before he dies.", "why": "x", "fix": "y", "size": "medium",
              "quotes": [{"section": 1, "quote": "Found among the papers of the late Edmund Pryce"}, {"section": 8, "quote": "Edmund Pryce died in the spring"}]},
             {"what": f"Remove the search artifact {frame_book.HANDLE} from the manuscript.", "why": "x", "fix": "y", "size": "medium", "quotes": [{"section": 2, "quote": "a young sculptor named Wilcox"}]}]}
+    if "You are her editor" in system:
+        return "The words \"stayed in her coat\" are plain and strong."
     if "one-page synopsis" in system:
         return "A synopsis draft."
     if "query letter" in system:
@@ -530,7 +547,8 @@ def test_the_bot_tools_cannot_write_text(box):
     shas = {p.name: p.read_bytes() for p in (folder / "sections").iterdir()}
     _, listed = call(box.port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {t["name"] for t in listed["result"]["tools"]}
-    assert names == {"desk_checks", "desk_run", "desk_status", "desk_findings", "desk_mark", "desk_letter", "desk_ask", "desk_documents", "desk_stop"}
+    assert names == {"desk_checks", "desk_run", "desk_status", "desk_findings", "desk_mark", "desk_letter", "desk_ask", "desk_documents", "desk_stop",
+                     "desk_study", "desk_study_report"}
     for t in listed["result"]["tools"]:                 # nothing that could carry her text, or read as a file argument
         props = set(t["inputSchema"]["properties"])
         assert not props & {"text", "body", "content", "path", "file", "section", "document", "correct"}, t["name"]
@@ -540,6 +558,8 @@ def test_the_bot_tools_cannot_write_text(box):
     tool(box.port, "desk_letter", title=TITLE)
     tool(box.port, "desk_documents", title=TITLE)
     tool(box.port, "desk_ask", title=TITLE, question="What would change?")
+    tool(box.port, "desk_study", title=TITLE)
+    tool(box.port, "desk_study_report", title=TITLE)
     last = [f for f in box.view()["findings"] if f["state"] == "open" and not f.get("carried")][-1]
     text, _ = tool(box.port, "desk_mark", title=TITLE, id=last["id"], state="later", note="after the holidays")
     assert text.startswith("Marked Later")
@@ -881,9 +901,156 @@ def test_page_files(box):
     for name in ("app.js", "app.css"):
         code, body = call(box.port, "GET", "/" + name)
         assert code == 200 and body
-    words = (PKG / "web" / "index.html").read_text(encoding="utf-8") + (PKG / "web" / "app.js").read_text(encoding="utf-8")
-    for bad in ("—", "LLM", "warts", "bible.json", "API"):
+    words = "".join((PKG / "web" / n).read_text(encoding="utf-8") for n in ("index.html", "app.js", "write.js", "write.css", "app.css"))
+    for bad in ("—", "LLM", "warts", "bible.json", "API", "the model", " AI "):
         assert bad not in words, bad
+    code, body = call(box.port, "GET", "/write.js")
+    assert code == 200 and body
+    assert "style=" not in (PKG / "web" / "index.html").read_text(encoding="utf-8"), "no inline styles: the page's policy allows none"
+
+
+# -- the Writing Room ------------------------------------------------------------------------------------------------------
+
+def _mark_up(folder: Path) -> None:
+    """Italic and bold in two sections, as she would have them, and a scene break."""
+    for name, old, new in (("01 - Chapter One.md", "with the silver key in her coat", "with the *silver key* in her coat"),
+                           ("01 - Chapter One.md", "the night he died", "the night he **died**"),
+                           ("02 - Chapter Two.md", "The silver key stayed in her coat", "The silver key ***stayed*** in her coat\n\n* * *")):
+        p = folder / "sections" / name
+        p.write_text(p.read_text(encoding="utf-8").replace(old, new), encoding="utf-8", newline="\n")
+
+
+def test_the_whole_book_in_one_call_and_reading_changes_nothing(tmp_path):
+    box2 = Box(tmp_path)
+    try:
+        folder = make_book.write_book(box2.shelf)
+        _mark_up(folder)
+        before = {p: p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+        code, got = call(box2.port, "GET", "/api/book?" + q(title=TITLE))
+        assert code == 200 and [s["n"] for s in got["sections"]] == list(range(1, 9))
+        one = got["sections"][0]
+        assert set(one) >= {"n", "heading", "text", "sha", "unread", "versions"} and one["heading"] == "Chapter One"
+        assert one["text"].startswith("Mara Quill came down") and "with the *silver key* in her coat" in one["text"], "marks reach the page as they are"
+        assert one["versions"] == 0 and one["unread"] is True, "marked up after reading, so changed since"
+        assert "\n\n* * *" in got["sections"][1]["text"]
+        raw = (folder / "sections" / "01 - Chapter One.md").read_bytes()
+        assert one["sha"] == hashlib.sha256(raw).hexdigest()
+        assert before == {p: p.read_bytes() for p in folder.rglob("*") if p.is_file()}, "opening the book writes nothing"
+        assert not list(box2.data.rglob("versions/*"))
+    finally:
+        box2.close()
+
+
+def test_marks_never_reach_the_engine(tmp_path):
+    folder = make_book.write_book(tmp_path)
+    _mark_up(folder)
+    b = Book(folder)
+    s1, s2 = b.section(1), b.section(2)
+    assert "*silver key*" in s1.raw and "silver key" in s1.text and "*silver" not in s1.text and "**died**" not in s1.text
+    assert "***stayed***" in s2.raw and "The silver key stayed in her coat" in s2.text and "* * *" in s2.text, "a scene break stays"
+    assert s1.story == s1.text or "*" not in s1.story.replace("* * *", "")
+    for name in finders.FINDERS:                       # every finder's quote still locates, in the words and in the raw text
+        for c in finders.run(name, b):
+            for w in c.get("where") or []:
+                sec = b.section(w["section"])
+                assert locate(sec.text, w["quote"]) and locate(sec.raw, w["quote"]), (name, w)
+    a, z = locate(s1.raw, "with the silver key in her coat")
+    assert s1.raw[a:z] == "with the *silver key* in her coat", "the place is right in the raw text"
+    a, z = locate(s2.raw, "The Silver Key ‘stayed’ in her coat".replace("‘", "").replace("’", ""))
+    assert s2.raw[a:z] == "The silver key ***stayed*** in her coat"
+
+
+def test_autosave_keeps_a_version_at_most_every_ten_minutes(tmp_path):
+    box2 = Box(tmp_path)
+    try:
+        folder = make_book.write_book(box2.shelf)
+        file = folder / "sections" / "03 - Chapter Three.md"
+        first = file.read_text(encoding="utf-8")
+        _, sec = call(box2.port, "GET", "/api/section?" + q(title=TITLE, n=3))
+        sha, text = sec["sha"], sec["text"]
+        for i in range(4):                             # she types; it saves as she goes
+            text += f" Word{i}."
+            code, got = call(box2.port, "POST", "/api/save", {"title": TITLE, "n": 3, "text": text, "sha": sha, "auto": True})
+            assert code == 200 and got["changed"], got
+            sha = got["sha"]
+            assert len(got["versions"]) == 1, "one version for a run of autosaves"
+        assert got["version"] is None and file.read_text(encoding="utf-8").rstrip("\n").endswith("Word3.")
+        _, v1 = call(box2.port, "GET", "/api/version?" + q(title=TITLE, n=3, id=got["versions"][0]["id"]))
+        assert "# " not in v1["text"][:2] and v1["text"] == first.split("\n\n", 1)[1].rstrip("\n"), "the very first, before she changed it, is kept"
+        # Ctrl+S, or any save that is not auto, keeps one as today
+        text += " Saved by hand."
+        code, got = call(box2.port, "POST", "/api/save", {"title": TITLE, "n": 3, "text": text, "sha": sha})
+        assert code == 200 and len(got["versions"]) == 2
+        sha = got["sha"]
+        # ten minutes on, an autosave keeps one again
+        vdir = next((box2.data / "books").iterdir()) / "versions" / "3"
+        from datetime import datetime, timedelta
+        for p in vdir.glob("*.md"):
+            old = (datetime.strptime(p.stem[:15], "%Y%m%d-%H%M%S") - timedelta(minutes=11)).strftime("%Y%m%d-%H%M%S") + p.stem[15:]
+            p.rename(vdir / f"{old}.md")
+        text += " Later."
+        code, got = call(box2.port, "POST", "/api/save", {"title": TITLE, "n": 3, "text": text, "sha": sha, "auto": True})
+        assert code == 200 and len(got["versions"]) == 3 and got["version"]
+    finally:
+        box2.close()
+
+
+def test_a_save_over_changed_text_keeps_both(tmp_path):
+    box2 = Box(tmp_path)
+    try:
+        folder = make_book.write_book(box2.shelf)
+        _, sec = call(box2.port, "GET", "/api/section?" + q(title=TITLE, n=4))
+        file = folder / "sections" / "04 - Chapter Four.md"
+        file.write_text(file.read_text(encoding="utf-8") + "\nChanged in another window.\n", encoding="utf-8")
+        mine = sec["text"] + "\n\nMy new line."
+        code, err = call(box2.port, "POST", "/api/save", {"title": TITLE, "n": 4, "text": mine, "sha": sec["sha"], "auto": True})
+        assert code == 400 and err["stale"] is True and "Changed in another window." in err["text"] and err["sha"] != sec["sha"]
+        assert "My new line." not in file.read_text(encoding="utf-8")
+        code, got = call(box2.port, "POST", "/api/save", {"title": TITLE, "n": 4, "text": mine, "sha": err["sha"]})   # Keep mine
+        assert code == 200 and "My new line." in file.read_text(encoding="utf-8")
+        _, other = call(box2.port, "GET", "/api/version?" + q(title=TITLE, n=4, id=got["versions"][0]["id"]))
+        assert "Changed in another window." in other["text"], "the other text goes to the versions"
+    finally:
+        box2.close()
+
+
+def test_ask_your_editor(tmp_path):
+    box2 = Box(tmp_path)
+    try:
+        folder = make_book.write_book(box2.shelf)
+        _mark_up(folder)
+        before = {p.name: p.read_bytes() for p in (folder / "sections").iterdir()}
+        code, got = call(box2.port, "POST", "/api/ask", {"title": TITLE, "n": 2, "passage": "The silver key ***stayed*** in her coat", "question": "Does this drag?"})
+        assert code == 200, got
+        a = got["ask"]
+        assert a["state"] == "done" and "stayed in her coat" in a["answer"] and a["quote"] == "The silver key stayed in her coat"
+        system, user = box2.core.asks[-1]
+        assert "You are her editor" in system and "Never write replacement sentences" in system and "never write her story" in system
+        assert "Does this drag?" in user and "The silver key stayed in her coat" in user and "*" not in user.replace("* * *", "")
+        assert "Elias Wren" in user or "He laughed" in user, "the paragraphs around it go too"
+        saved = json.loads(next(box2.data.rglob("asks.json")).read_text(encoding="utf-8"))
+        assert saved[-1]["id"] == a["id"] and saved[-1]["answer"] == a["answer"] and saved[-1]["n"] == 2
+        _, listed = call(box2.port, "GET", "/api/asks?" + q(title=TITLE))
+        assert [x["id"] for x in listed["asks"]] == [a["id"]]
+        code, _ = call(box2.port, "POST", "/api/asks", {"title": TITLE, "id": a["id"]})
+        assert code == 200 and call(box2.port, "GET", "/api/asks?" + q(title=TITLE))[1]["asks"] == []
+        code, err = call(box2.port, "POST", "/api/ask", {"title": TITLE, "n": 2, "passage": "  ", "question": "x"})
+        assert code == 400
+        assert {p.name: p.read_bytes() for p in (folder / "sections").iterdir()} == before, "an ask never writes her text"
+    finally:
+        box2.close()
+
+
+def test_asks_keep_the_last_hundred(tmp_path):
+    import server
+    folder = make_book.write_book(tmp_path / "shelf")
+    desk = server.Desk.__new__(server.Desk)
+    desk.asks_lock = threading.Lock()
+    desk._asks_file = lambda f: tmp_path / "asks.json"
+    for i in range(105):
+        desk._ask_put(folder, {"id": f"a{i}", "n": 1, "quote": "x"})
+    got = json.loads((tmp_path / "asks.json").read_text(encoding="utf-8"))
+    assert len(got) == 100 and got[0]["id"] == "a5" and got[-1]["id"] == "a104"
 
 
 def _lum(h: str) -> float:
@@ -897,7 +1064,171 @@ def test_contrast_on_both_looks():
     light = dict(re.findall(r"--d-([a-z-]+):\s*(#[0-9a-fA-F]{6})", css.split("@media (prefers-color-scheme: dark)")[0]))
     dark = {**light, **dict(re.findall(r"--d-([a-z-]+):\s*(#[0-9a-fA-F]{6})", css.split("@media (prefers-color-scheme: dark)")[1].split("}")[0]))}
     for look in (light, dark):
-        for fg, bg in (("ink", "bg"), ("ink", "card"), ("muted", "bg"), ("muted", "card"), ("accent", "bg"), ("accent", "card"), ("on", "accent"), ("big", "card"), ("error", "bg"), ("ok", "card"), ("mark-ink", "mark"), ("ink", "chosen")):
+        for fg, bg in (("ink", "bg"), ("ink", "card"), ("muted", "bg"), ("muted", "card"), ("accent", "bg"), ("accent", "card"), ("on", "accent"), ("big", "card"), ("error", "bg"), ("ok", "card"), ("mark-ink", "mark"), ("ink", "chosen"),
+                       ("ink", "note"), ("ink", "note-big"), ("ink", "note-q"), ("ink", "asked"), ("muted", "note-q")):
             a, b = _lum(look[fg]), _lum(look[bg])
             ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
             assert ratio >= 4.5, (fg, bg, ratio)
+
+
+
+# -- Study a book ------------------------------------------------------------------------------------------------------
+
+THEIRS = make_book.TITLE                 # the book she admires
+MINE = study_book.TITLE                  # her manuscript, in these tests
+
+
+def study_box(root: Path) -> Box:
+    b = Box(root)
+    make_book.write_book(b.shelf)
+    idx_path = b.shelf / THEIRS / "manuscript.json"
+    idx = json.loads(idx_path.read_text(encoding="utf-8"))
+    idx["study"] = True                   # added with "Add a book to study"
+    idx_path.write_text(json.dumps(idx), encoding="utf-8")
+    study_book.write_study_book(b.shelf)
+    return b
+
+
+def study_asks(b: Box) -> list:
+    return [u for s_, u in b.core.asks if "learn from a book she admires" in s_]
+
+
+def study_done(b: Box, seconds=60) -> dict:
+    end = time.time() + seconds
+    while time.time() < end:
+        st = b.view(MINE)["status"] or {}
+        if st.get("check") == "study" and st.get("state") in ("done", "failed", "stopped"):
+            return st
+        time.sleep(0.1)
+    raise AssertionError(f"the comparison never finished: {st}")
+
+
+@pytest.fixture(scope="module")
+def sbox(tmp_path_factory):
+    b = study_box(tmp_path_factory.mktemp("study"))
+    yield b
+    b.close()
+
+
+def test_study_books_and_numbers_need_no_brain(sbox):
+    code, got = call(sbox.port, "GET", "/api/study/books?" + q(title=MINE))
+    assert code == 200 and got["books"] == [{"title": THEIRS, "study": True, "words": got["books"][0]["words"]}]
+    listed = {b["title"]: b for b in call(sbox.port, "GET", "/api/list")[1]["books"]}
+    assert listed[THEIRS]["study"] is True and listed[MINE]["study"] is False
+    before = len(sbox.core.asks)
+    code, n = call(sbox.port, "GET", "/api/study/numbers?" + q(title=MINE, theirs=THEIRS))
+    assert code == 200, n
+    assert n["numbers"]["mine"]["words"] > 200 and n["numbers"]["theirs"]["words"] > 200
+    assert n["apart"] and all(x["line"] for x in n["apart"])
+    assert n["pairs_count"] >= 3 and n["steps"] == n["pairs_count"] + 1
+    assert "time_left" in n and "alike" in n
+    assert len(sbox.core.asks) == before, "the numbers never ask the brain"
+    homes = list((sbox.data / "books").glob("*/study/measure.json"))
+    assert len(homes) == 2                # each book's measure, kept by its sections' shas
+    again = call(sbox.port, "GET", "/api/study/numbers?" + q(title=MINE, theirs=THEIRS))[1]
+    assert again == n
+    assert call(sbox.port, "GET", "/api/study?" + q(title=MINE, theirs=THEIRS))[1]["report"] is None
+    assert call(sbox.port, "GET", "/api/study?" + q(title=MINE))[1] == {"reports": []}
+    code, got = call(sbox.port, "GET", "/api/study/numbers?" + q(title=MINE, theirs=MINE))
+    assert code == 400 and "different book" in got["error"]
+    assert "\u2014" not in json.dumps(n["apart"] + n["alike"], ensure_ascii=False)
+
+
+def test_study_tools_start_nothing_without_her_yes(sbox):
+    text, err = tool(sbox.port, "desk_study", title=MINE)
+    assert not err and THEIRS in text and "a book to study" in text
+    before = len(sbox.core.asks)
+    text, err = tool(sbox.port, "desk_study", title=MINE, theirs=THEIRS)
+    assert not err and text.startswith("This has not started. Ask the writer:") and "confirm true" in text
+    text, err = tool(sbox.port, "desk_study", title=MINE, theirs=THEIRS, confirm="yes")
+    assert not err and text.startswith("This has not started.")
+    assert not json.loads((sbox.data / "jobs.json").read_text(encoding="utf-8")) if (sbox.data / "jobs.json").exists() else True
+    assert (sbox.view(MINE)["status"] or {}).get("check") != "study"
+    text, err = tool(sbox.port, "desk_study_report", title=MINE, theirs=THEIRS)
+    assert not err and "Where the two books differ most:" in text and "has not compared passages" in text
+    time.sleep(0.5)
+    assert len(sbox.core.asks) == before
+    names = {t["name"]: t for t in call(sbox.port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[1]["result"]["tools"]}
+    assert names["desk_study"]["annotations"]["readOnlyHint"] is False and names["desk_study_report"]["annotations"]["readOnlyHint"] is True
+
+
+def test_study_runs_in_the_line_and_a_second_run_asks_nothing_again(sbox):
+    before = len(study_asks(sbox))
+    code, got = call(sbox.port, "POST", "/api/study", {"title": MINE, "theirs": THEIRS, "focus": "how she moves between scenes"})
+    assert code == 200 and got["job"]["check"] == "study", got
+    code, again = call(sbox.port, "POST", "/api/study", {"title": MINE, "theirs": THEIRS})
+    assert code == 400 and "already comparing" in again["error"]
+    st = study_done(sbox)
+    assert st["state"] == "done" and "compared" in st["step"], st
+    asked = study_asks(sbox)[before:]
+    n = call(sbox.port, "GET", "/api/study/numbers?" + q(title=MINE, theirs=THEIRS))[1]
+    assert len(asked) == n["steps"]
+    r = call(sbox.port, "GET", "/api/study?" + q(title=MINE, theirs=THEIRS))[1]["report"]
+    assert r["state"] == "done" and r["theirs"] == THEIRS and r["focus"] == "how she moves between scenes"
+    done = [p for p in r["pairs"] if p["state"] == "done"]
+    assert done and all(p["pointers"] and p["pointers"][0]["my_quote"] in p["mine"]["text"] for p in done)
+    assert r["pointers"] and r["pointers"][0]["try"]
+    assert call(sbox.port, "GET", "/api/study?" + q(title=MINE))[1]["reports"][0]["theirs"] == THEIRS
+    text, err = tool(sbox.port, "desk_study_report", title=MINE)
+    assert not err and "What to try first:" in text and "1. Let a chapter close on a line of talk." in text
+    # the same pair and focus again: every answer is saved, so your editor is not asked again
+    count = len(study_asks(sbox))
+    text, err = tool(sbox.port, "desk_study", title=MINE, theirs=THEIRS, confirm=True, focus="how she moves between scenes")
+    assert not err and "is comparing passages" in text
+    assert study_done(sbox)["state"] == "done"
+    assert len(study_asks(sbox)) == count, "a run over saved answers makes no second call"
+    files = sorted(x.name for x in (next((sbox.data / "books").glob("Night Ferry*")) / "study").iterdir())
+    assert len(files) == 4, files        # measure, one report, its saved answers, its step count: nothing grows
+
+
+def test_study_stops_and_goes_on_after_a_restart(tmp_path):
+    b = study_box(tmp_path)
+    try:
+        b.core.slow = 0.4
+        code, got = call(b.port, "POST", "/api/study", {"title": MINE, "theirs": THEIRS})
+        assert code == 200, got
+        end = time.time() + 30
+        while len(study_asks(b)) < 1 and time.time() < end:
+            time.sleep(0.05)
+        assert call(b.port, "POST", "/api/stop", {"title": MINE})[0] == 200
+        st = study_done(b)
+        assert st["state"] == "stopped", st
+        assert call(b.port, "GET", "/api/study?" + q(title=MINE, theirs=THEIRS))[1]["report"] is None
+        stopped_at = len(study_asks(b))
+        assert stopped_at < 4
+        # pressed again, then the app dies in the middle; started again, it goes on by itself
+        call(b.port, "POST", "/api/study", {"title": MINE, "theirs": THEIRS})
+        end = time.time() + 30
+        while len(study_asks(b)) < stopped_at + 1 and time.time() < end:
+            time.sleep(0.05)
+        b.stop()
+        answered = set(study_asks(b))
+        count = len(study_asks(b))
+        b.core.slow = 0
+        b.start()
+        assert study_done(b)["state"] == "done"
+        again = study_asks(b)[count:]
+        assert sum(1 for u in again if u in answered) <= 1, "at most the call that was cut off"
+        n = call(b.port, "GET", "/api/study/numbers?" + q(title=MINE, theirs=THEIRS))[1]
+        assert len(set(study_asks(b))) == n["steps"], "each ask paid for once, but the one cut off"
+        assert call(b.port, "GET", "/api/study?" + q(title=MINE, theirs=THEIRS))[1]["report"]["state"] == "done"
+    finally:
+        b.close()
+
+
+def test_word_copy_is_a_reading_copy_in_her_files(sbox):
+    folder = sbox.shelf / THEIRS
+    before = {p.name: p.read_bytes() for p in (folder / "sections").iterdir()}
+    code, got = call(sbox.port, "POST", "/api/wordcopy", {"title": THEIRS})
+    assert code == 200, got
+    assert got["message"] == "Saved in your files at: " + got["where"]
+    assert got["where"].startswith(f"My files/Editor's Desk/{THEIRS}/") and got["where"].endswith(".docx")
+    path = sbox.root / got["where"]
+    with zipfile.ZipFile(path) as z:
+        doc = z.read("word/document.xml").decode("utf-8")
+    assert "Times New Roman" in doc and "Courier" not in doc and "Mara Quill came down to the harbor" in doc
+    assert {p.name: p.read_bytes() for p in (folder / "sections").iterdir()} == before
+    code, d = call(sbox.port, "GET", "/api/desk?" + q(title=THEIRS))
+    assert any(x["kind"] == "reading-copy" for x in d["documents"])
+    code, got = call(sbox.port, "POST", "/api/wordcopy", {"title": "No Such Book"})
+    assert code == 400

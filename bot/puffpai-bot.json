@@ -10,6 +10,13 @@
    "version": "1.0.0"
   },
   {
+   "id": "dewey-avatar",
+   "kind": "avatar",
+   "name": "Dewey",
+   "source": "apps/dewey-avatar",
+   "version": "1.0.0"
+  },
+  {
    "id": "document-convert",
    "kind": "tool",
    "name": "Document convert",
@@ -29,14 +36,14 @@
    "kind": "app",
    "name": "Editor's Desk",
    "source": "apps/editors-desk",
-   "version": "0.2.1"
+   "version": "0.3.0"
   },
   {
    "id": "manuscript",
    "kind": "app",
    "name": "Manuscript",
    "source": "apps/manuscript",
-   "version": "0.5.1"
+   "version": "0.6.0"
   },
   {
    "id": "maps",
@@ -50,7 +57,7 @@
    "kind": "skill",
    "name": "Novel mode",
    "source": "apps/novel-mode",
-   "version": "1.0.6"
+   "version": "1.0.7"
   },
   {
    "commit": "4a8e072c072df4222e7853f75d107ce3b266581e",

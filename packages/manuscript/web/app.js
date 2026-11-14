@@ -214,7 +214,7 @@
   function drawBooks() {
     const sel = $('book');
     sel.textContent = '';
-    for (const b of S.books) { const o = node('option', '', b.title); o.value = b.title; sel.appendChild(o); }
+    for (const b of S.books) { const o = node('option', '', b.study ? b.title + ' (a book to study)' : b.title); o.value = b.title; sel.appendChild(o); }
     sel.disabled = !S.books.length;
     $('remove').disabled = !S.books.length;
     if (S.book) sel.value = S.book;
@@ -264,7 +264,8 @@
         const raw = String(s.text || '');
         const m = /^# .*\n+/.exec(raw);
         S.strip = m ? m[0].length : 0;
-        S.body = raw.slice(S.strip);
+        S.pieces = markRuns(raw.slice(S.strip));
+        S.body = S.pieces.map(x => x.t).join('');       // her words without the marks: places and finds are in these
       } catch (e) { S.sec = null; emptyReader(e.message); return; }
     }
     drawSection(mark);
@@ -292,12 +293,58 @@
           (!mark.quote || norm(S.body.slice(a, b)) === norm(mark.quote))) range = {start: a, end: b};
       else range = findRange(S.body, [mark.quote]);
     } else if (mark) range = findRange(S.body, [mark.text, mark.hint]);
-    if (!range) { t.textContent = S.body; r.scrollTop = 0; return; }
-    t.appendChild(document.createTextNode(S.body.slice(0, range.start)));
-    const hl = node('mark', mark.kind === 'pointer' ? 'hl-pointer' : 'hl-find', S.body.slice(range.start, range.end));
-    t.appendChild(hl);
-    t.appendChild(document.createTextNode(S.body.slice(range.end)));
+    if (!range) { drawPieces(t, S.pieces, null, null); r.scrollTop = 0; return; }
+    const hl = node('mark', mark.kind === 'pointer' ? 'hl-pointer' : 'hl-find');
+    drawPieces(t, S.pieces, range, hl);
     requestAnimationFrame(() => hl.scrollIntoView({block: 'center', behavior: smooth}));
+  }
+
+  // Italics and bold in her text, as the section file keeps them (marks.py): *italic*, **bold**, ***both***, inside one
+  // line. A line of only stars and spaces is a scene break and stays as it is. The same rule as marks.py runs().
+  const MARK = /(\*{1,3})(?=[^\s*])([^*\n]*?[^\s*]|[^\s*])\1(?!\*)/g;
+  function markRuns(text) {
+    const out = [];
+    String(text || '').split('\n').forEach((line, k) => {
+      if (k) out.push({t: '\n', i: false, b: false});
+      if (/^[\s*]*$/.test(line)) { if (line) out.push({t: line, i: false, b: false}); return; }
+      let at = 0, m;
+      MARK.lastIndex = 0;
+      while ((m = MARK.exec(line)) !== null) {
+        if (m.index > at) out.push({t: line.slice(at, m.index), i: false, b: false});
+        const n = m[1].length;
+        out.push({t: m[2], i: n === 1 || n === 3, b: n === 2 || n === 3});
+        at = m.index + m[0].length;
+      }
+      if (at < line.length) out.push({t: line.slice(at), i: false, b: false});
+    });
+    return out;
+  }
+
+  // The pieces into box as text nodes, inside em and strong where marked; the part in range goes into hl instead.
+  function drawPieces(box, pieces, range, hl) {
+    let pos = 0, placed = false;
+    const put = (where, text, p) => {
+      if (!text) return;
+      let n = document.createTextNode(text);
+      if (p.b) { const s = document.createElement('strong'); s.appendChild(n); n = s; }
+      if (p.i) { const e = document.createElement('em'); e.appendChild(n); n = e; }
+      where.appendChild(n);
+    };
+    for (const p of pieces) {
+      const a = pos, b = pos + p.t.length;
+      pos = b;
+      if (!range || b <= range.start || a >= range.end) {
+        if (range && a >= range.end && !placed) { box.appendChild(hl); placed = true; }
+        put(box, p.t, p);
+        continue;
+      }
+      const s = Math.max(range.start, a) - a, e = Math.min(range.end, b) - a;
+      put(box, p.t.slice(0, s), p);
+      if (!placed) { box.appendChild(hl); placed = true; }
+      put(hl, p.t.slice(s, e), p);
+      put(box, p.t.slice(e), p);
+    }
+    if (range && !placed) box.appendChild(hl);
   }
 
   // A click on any section in a block.
@@ -971,7 +1018,9 @@
     if (S.sec) drawSection(null);
   };
 
-  $('upload').onclick = () => $('file').click();
+  let asStudy = false;                       // the file picked next is a book to study: added with no reading
+  $('upload').onclick = () => { asStudy = false; $('file').click(); };
+  $('addstudy').onclick = () => { asStudy = true; $('file').click(); };
   $('remove').onclick = async () => {
     if (!S.book) return;
     if (!confirm('Put "' + S.book + '" away? Its folder moves into a Removed folder inside Manuscripts, with the original file. Nothing is deleted.')) return;
@@ -984,6 +1033,8 @@
   };
   $('file').onchange = () => {
     const f = $('file').files[0];
+    const study = asStudy;
+    asStudy = false;
     $('file').value = '';
     if (!f) return;
     // The Core's page route takes 25 MB of base64, about 18.7 MB of file, and its refusal would only confuse.
@@ -996,7 +1047,9 @@
     rd.onload = async () => {
       const b64 = String(rd.result).split(',', 2)[1] || '';
       try {
-        const got = await call('api/upload', 'POST', {file_name: f.name, content_b64: b64});
+        const body = {file_name: f.name, content_b64: b64};
+        if (study) body.read = false;
+        const got = await call('api/upload', 'POST', body);
         say($('upsay'), got.message || '');
         const keep = S.book;
         await loadList();

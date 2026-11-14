@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import marks
 from brainline import read_json, sha_of, write_atomic, write_json
 
 SHELF = "Manuscripts"
@@ -29,6 +30,7 @@ KEEP_RECENT = 20                 # the last saves, all of them
 KEEP_DAILY = 30                  # then the newest of each day for this many days, then the newest of each month
 KEEP_MOST = 60                   # and never more than this for one section
 TEXT_MAX = 1_500_000
+AUTO_GAP_S = 600                 # an autosave keeps a version only when the newest one kept is older than this
 HEAD = re.compile(r"\A# [^\n]*\n*")
 
 
@@ -56,12 +58,16 @@ PARAGRAPH = re.compile(r"[^\n]+(?:\n(?![ \t]*\n)[^\n]+)*")
 
 
 class Section:
-    __slots__ = ("n", "heading", "file", "head", "text", "sha", "words", "story")
+    """``raw`` is the section as the file has it, italic and bold marks and all: for the page and for saving. ``text`` is
+    the words alone (``marks.strip``): what the engine, the finders and every brain ask read."""
+    __slots__ = ("n", "heading", "file", "head", "raw", "text", "sha", "words", "story")
 
     def __init__(self, n: int, heading: str, file: str, head: str, text: str, sha: str) -> None:
-        self.n, self.heading, self.file, self.head, self.text, self.sha = n, heading, file, head, text, sha
-        self.words = len(re.findall(r"\S+", text))
-        self.story = text              # the text with front matter blanked, same length, so a place in one is a place in the other
+        self.n, self.heading, self.file, self.head, self.sha = n, heading, file, head, sha
+        self.raw = text
+        self.text = marks.strip(text)
+        self.words = len(re.findall(r"\S+", self.text))
+        self.story = self.text         # the text with front matter blanked, same length, so a place in one is a place in the other
 
 
 def _blank(chars: list[str], a: int, b: int) -> None:
@@ -174,11 +180,33 @@ def find_book(shelf: Path, title: Any) -> Path:
 _SAME = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "\u2014": "-", "\u2013": "-"})
 
 
+def _unmarked(text: str) -> tuple[str, list[int]]:
+    """The text with its italic and bold marks taken out (``marks.strip``), with where each letter came from."""
+    if "*" not in text:
+        return text, list(range(len(text)))
+    out, where = [], []
+    at = 0
+    for line in text.split("\n"):
+        pos = 0
+        for words, _i, _b in marks.runs(line):
+            i = line.find(words, pos)          # a marked piece starts just after its stars, a plain one where the last ended
+            out.append(words)
+            where.extend(range(at + i, at + i + len(words)))
+            pos = i + len(words)
+        out.append("\n")
+        where.append(at + len(line))
+        at += len(line) + 1
+    return "".join(out)[:-1], where[:-1]
+
+
 def _folded(text: str) -> tuple[str, list[int]]:
-    """The text in one spacing and one kind of quote mark, lowercase, with where each letter came from."""
+    """The text in one spacing and one kind of quote mark, lowercase, with no italic or bold marks, and where each letter
+    came from in the text as given."""
     out, where = [], []
     space = False
-    for i, ch in enumerate(text):
+    words, back = _unmarked(text)
+    for j, ch in enumerate(words):
+        i = back[j]
         if ch.isspace():
             if not space and out:
                 out.append(" ")
@@ -192,8 +220,9 @@ def _folded(text: str) -> tuple[str, list[int]]:
 
 
 def locate(text: str, quote: str) -> tuple[int, int] | None:
-    """Where a quote really is in this text, by any spacing, case and kind of quote mark. Exact words or nothing."""
-    q = _folded(quote.strip().strip('"“”'))[0].strip()
+    """Where a quote really is in this text, by any spacing, case, kind of quote mark and italic or bold marks. Exact
+    words or nothing. The place is in the text as given, so it is right in a section's raw text too."""
+    q = _folded(marks.strip(quote.strip().strip('"“”')))[0].strip()
     if not q:
         return None
     hay, where = _folded(text)
@@ -259,9 +288,29 @@ def thin(base: Path, today: datetime | None = None) -> None:
             p.unlink(missing_ok=True)
 
 
-def save_section(folder: Path, root: Path, n: Any, text: Any, base_sha: Any, by: str = "you") -> dict:
+class Stale(Refused):
+    """The section changed somewhere else since the page had it. Carries what is there now, so the page can show it."""
+
+    def __init__(self, msg: str, sha: str, text: str) -> None:
+        super().__init__(msg)
+        self.extra = {"stale": True, "sha": sha, "text": text}
+
+
+def _recent(base: Path, seconds: float) -> bool:
+    """Is the newest version kept for this section younger than ``seconds``?"""
+    stems = sorted((p.stem for p in base.glob("*.md") if STAMP.match(p.stem)), reverse=True) if base.is_dir() else []
+    if not stems:
+        return False
+    when = datetime.strptime(stems[0][:15], "%Y%m%d-%H%M%S")
+    return 0 <= (datetime.now() - when).total_seconds() < seconds
+
+
+def save_section(folder: Path, root: Path, n: Any, text: Any, base_sha: Any, by: str = "you", auto: bool = False) -> dict:
     """The one writer of section text. The old file is kept first; the heading line stays; a stale page is refused, so
-    nothing she typed elsewhere is lost. Reached only from the page's routes, never from a tool."""
+    nothing she typed elsewhere is lost. Reached only from the page's routes, never from a tool.
+
+    ``auto``: a save made as she types. It keeps the old file as a version only when the newest version kept is ten minutes
+    old or more, or there is none, so the very first (her text before she ever changed it) is always kept."""
     if not isinstance(text, str):
         raise Refused("Say what the section's text is.")
     if len(text) > TEXT_MAX:
@@ -272,10 +321,10 @@ def save_section(folder: Path, root: Path, n: Any, text: Any, base_sha: Any, by:
         raise Refused("I could not find that section.")
     path = section_path(folder, idx, c)
     raw = path.read_bytes()
-    if base_sha and base_sha != sha_of(raw):
-        raise Refused("This section changed somewhere else since you opened it, so nothing was saved. Copy your words, "
-                      "open it again and put them back.")
     old = raw.decode("utf-8", errors="replace")
+    if base_sha and base_sha != sha_of(raw):
+        raise Stale("This section changed somewhere else since you opened it, so nothing was saved. Your words are still "
+                    "on the page.", sha_of(raw), HEAD.sub("", old.replace("\r\n", "\n")).rstrip("\n"))
     m = HEAD.match(old)
     head = m.group() if m else ""
     body = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
@@ -284,10 +333,13 @@ def save_section(folder: Path, root: Path, n: Any, text: Any, base_sha: Any, by:
         return {"sha": sha_of(raw), "words": len(body.split()), "changed": False}
     stamp = _stamp() + BY_MARK.get(by, "")
     base = root / str(int(c.get("n") or 0))
-    base.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(path, base / f"{stamp}.md")
+    kept = not (auto and by == "you" and _recent(base, AUTO_GAP_S))
+    if kept:
+        base.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, base / f"{stamp}.md")
     write_atomic(path, new)
-    thin(base)
+    if kept:
+        thin(base)
     fresh = sha_of(new.encode("utf-8"))
     words = len(re.findall(r"\S+", body))
     stored = read_json(folder / INDEX, {})                 # as Manuscript wrote it, with this section's new sha and words
@@ -296,4 +348,4 @@ def save_section(folder: Path, root: Path, n: Any, text: Any, base_sha: Any, by:
             if isinstance(e, dict) and e.get("n") == c.get("n"):
                 e["sha"], e["words"] = fresh, words
     write_json(folder / INDEX, stored)
-    return {"sha": fresh, "words": words, "changed": True, "version": stamp}
+    return {"sha": fresh, "words": words, "changed": True, "version": stamp if kept else None}

@@ -1,12 +1,14 @@
 /* Editor's Desk, the page. Every call goes to the page's own origin with no token; the PuffPAI Desktop's proxy adds the key.
-   The server sends data, never markup: everything here is built with text nodes. Her text changes only from Save, Bring this
-   version back, and Use this. */
+   The server sends data, never markup: everything here is built with text nodes. Her text changes only from her own typing
+   in Write (write.js), Bring this back, and Use this. This file is the shell: the book picker, the views, and the desk. */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
   const SIZE = {big: 'Big', medium: 'Worth a look', small: 'Small'};
   const STATE = [['open', 'Open'], ['later', 'Later'], ['fixed', 'Fixed'], ['not_a_problem', 'Not a problem']];
-  const S = {books: [], book: null, v: null, filter: 'open', only: '', sec: null, sections: [], editing: false, dirty: false, opened: {}, ask: null, typed: {}, old: null};
+  const S = {books: [], book: null, v: null, view: null, filter: 'open', only: '', opened: {}, typed: {}};
+  const Write = window.WriteView;
+  const Study = window.StudyView;
 
   // ---------------------------------------------------------------- small helpers
 
@@ -53,20 +55,22 @@
       clear($('letter')).append(el('h1', {text: "Your editor's letter"}), el('p', {text: 'There are no books yet. Add one on the Manuscript page, let your bot read it, and come back.'}));
       return;
     }
-    for (const x of S.books) b.appendChild(el('option', {value: x.title, text: x.title}));
+    const order = S.books.filter(x => !x.study).concat(S.books.filter(x => x.study));    // books to study last
+    for (const x of order) b.appendChild(el('option', {value: x.title, text: x.title + (x.study ? ' (a book to study)' : '')}));
     b.disabled = false;
     const want = new URLSearchParams(location.search).get('title');
-    const first = S.books.find(x => x.read) || S.books[0];        // a read book first, not one still waiting
+    const first = order.find(x => x.read && !x.study) || order.find(x => !x.study) || order[0];   // her own book, read first
     await pick(want && S.books.some(x => x.title === want) ? want : first.title);
   }
 
   async function pick(title) {
-    if (!leaveOk()) { $('book').value = S.book; return; }
+    if (S.book) await Write.flush(true);            // her words in the book she leaves are saved first
     S.book = title;
     $('book').value = title;
-    closePane();
     try { await call('api/open', {title}); } catch (e) { /* the view below says what is wrong */ }
     await refresh();
+    if (S.view === 'write') Write.open(title);
+    if (S.view === 'study') Study.open(title);
   }
 
   async function refresh() {
@@ -76,10 +80,11 @@
       const same = S.seen === JSON.stringify({...got, status: null});
       S.seen = JSON.stringify({...got, status: null});
       S.v = got;
+      Write.desk(got);
+      Study.desk(got);
       if (same) { drawWork(); return; }                // nothing but the progress line moved: leave what she has open
     } catch (e) {
-      clear($('work')).appendChild(el('span', {text: e.message}));
-      $('work').hidden = false;
+      for (const id of ['work', 'swork']) { clear($(id)).appendChild(el('span', {text: e.message})); $(id).hidden = false; }
       return;
     }
     draw();
@@ -97,8 +102,13 @@
 
   // ---------------------------------------------------------------- what your editor is doing
 
+  // The same line shows on the desk and in Study a book: one line of work, whichever view she is in.
   function drawWork() {
-    const box = clear($('work'));
+    workInto($('work'));
+    workInto($('swork'));
+  }
+  function workInto(target) {
+    const box = clear(target);
     const st = S.v.status;
     const live = st && ['running', 'waiting', 'queued'].includes(st.state);
     box.hidden = !st;
@@ -278,8 +288,8 @@
       el('div', {cls: 'what', text: f.what}),
     ]);
     for (const w of f.where || []) {
-      if (w.quote) card.appendChild(el('button', {cls: 'q', type: 'button', on: {click: () => openAt(w.section, w.quote)}}, [w.quote, el('small', {text: 'Go to section ' + w.section})]));
-      else card.appendChild(el('button', {cls: 'link', type: 'button', text: 'Go to section ' + w.section, on: {click: () => openAt(w.section, '')}}));
+      if (w.quote) card.appendChild(el('button', {cls: 'q', type: 'button', on: {click: () => openAt(w.section, w.quote, f.id)}}, [w.quote, el('small', {text: 'Go to section ' + w.section})]));
+      else card.appendChild(el('button', {cls: 'link', type: 'button', text: 'Go to section ' + w.section, on: {click: () => openAt(w.section, '', f.id)}}));
     }
     if (f.why) card.appendChild(el('p', {}, [el('span', {cls: 'lab', text: 'Why it matters'}), f.why]));
     if (f.fix) card.appendChild(el('p', {}, [el('span', {cls: 'lab', text: 'One way to fix it'}), f.fix]));
@@ -357,8 +367,8 @@
         try {
           const got = await call('api/use', {title: S.book, id: f.id});
           await refresh();
+          await Write.refreshQuiet();
           openAt(got.n, f.correct);
-          sayText(got.message);
         } catch (e) { say.textContent = e.message; }
       }}}),
       el('button', {type: 'button', text: 'Not now', on: {click: () => box.remove()}}),
@@ -407,123 +417,11 @@
     row.after(wrap);
   }
 
-  // ---------------------------------------------------------------- the text pane
+  // ---------------------------------------------------------------- to her words, in Write
 
-  function sayText(line, bad) {
-    const n = $('saved');
-    n.textContent = line || '';
-    n.className = 'saved' + (bad ? ' bad' : '');
-  }
-  function leaveOk() {
-    if (!S.dirty) return true;
-    return window.confirm('Your changes to this section are not saved. Leave them?');
-  }
-  function closePane() {
-    S.sec = null; S.editing = false; S.dirty = false;
-    $('pane').hidden = true;
-    $('wrap').classList.remove('open');
-  }
-  async function openAt(n, quote) {
-    if (S.sec && S.sec.n === n && S.editing) { placeInEditor(quote); return; }
-    if (!leaveOk()) return;
-    S.dirty = false; S.editing = false;
-    await loadSection(n, quote);
-  }
-  async function loadSection(n, quote) {
-    let got;
-    try { got = await call('api/section?' + q({title: S.book, n})); } catch (e) { sayText(e.message, true); return; }
-    S.sec = got;
-    $('pane').hidden = false;
-    $('wrap').classList.add('open');
-    const sel = clear($('sec'));
-    for (const s of S.v.sections) sel.appendChild(el('option', {value: s.n, text: s.n + '. ' + s.heading}));
-    sel.value = got.n;
-    $('unread').hidden = !got.unread;
-    sayText('');
-    drawReader(quote);
-    drawVersions();
-    closeOld();
-    $('pane').scrollTop = 0;
-    const m = $('reader').querySelector('mark');
-    if (m) m.scrollIntoView({block: 'center'});
-  }
-  // the first place the words are, by any spacing and either kind of quote mark
-  function findIn(text, quote) {
-    if (!quote) return null;
-    const folded = s => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[\u2013\u2014]/g, '-').toLowerCase();
-    const pat = folded(quote).trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
-    const m = new RegExp(pat).exec(folded(text));
-    return m ? [m.index, m.index + m[0].length] : null;
-  }
-  function drawReader(quote) {
-    const box = clear($('reader'));
-    const text = S.sec.text;
-    const at = findIn(text, quote);
-    if (at) box.append(text.slice(0, at[0]), el('mark', {text: text.slice(at[0], at[1])}), text.slice(at[1]));
-    else box.textContent = text;
-    box.hidden = false;
-    $('editor').hidden = true;
-    $('edit').hidden = false; $('save').hidden = true; $('cancel').hidden = true;
-  }
-  function startEdit(quote) {
-    S.editing = true;
-    const ed = $('editor');
-    ed.value = S.sec.text;
-    ed.hidden = false;
-    $('reader').hidden = true;
-    $('edit').hidden = true; $('save').hidden = false; $('cancel').hidden = false;
-    placeInEditor(quote);
-  }
-  function placeInEditor(quote) {
-    const ed = $('editor');
-    ed.focus();
-    const at = findIn(ed.value, quote);
-    if (at) {
-      ed.setSelectionRange(at[0], at[1]);
-      ed.scrollTop = Math.max(0, ed.scrollHeight * at[0] / Math.max(1, ed.value.length) - ed.clientHeight / 2);
-    }
-  }
-  async function save() {
-    try {
-      const got = await call('api/save', {title: S.book, n: S.sec.n, text: $('editor').value, sha: S.sec.sha});
-      S.dirty = false; S.editing = false;
-      const n = S.sec.n;
-      await refresh();
-      await loadSection(n, '');
-      const t = new Date().toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'});
-      sayText(got.changed ? 'Saved at ' + t + '. Your earlier version is kept.' : got.message);
-    } catch (e) { sayText(e.message, true); }
-  }
-  function drawVersions() {
-    const vs = S.sec.versions || [];
-    const box = $('versions');
-    box.hidden = !vs.length;
-    $('vcount').textContent = 'Earlier versions (' + vs.length + ')';
-    const list = clear($('vlist'));
-    for (const x of vs) {
-      list.appendChild(el('li', {}, [el('button', {cls: 'link', type: 'button', text: when(x.saved_at), on: {click: () => seeOld(x)}}), el('span', {cls: 'fine', text: plural(x.words, 'word') + (x.by && x.by !== 'you' ? ', before ' + x.by : '')})]));
-    }
-  }
-  async function seeOld(x) {
-    let got;
-    try { got = await call('api/version?' + q({title: S.book, n: S.sec.n, id: x.id})); } catch (e) { sayText(e.message, true); return; }
-    S.old = x;
-    $('olderline').textContent = 'As it was before ' + when(x.saved_at) + ':';
-    $('oldtext').textContent = got.text;
-    $('older').hidden = false;
-    $('older').scrollIntoView({block: 'nearest'});
-  }
-  function closeOld() { $('older').hidden = true; S.old = null; }
-  async function restore() {
-    if (!S.old || !leaveOk()) return;
-    try {
-      const got = await call('api/restore', {title: S.book, n: S.sec.n, id: S.old.id, sha: S.sec.sha});
-      S.dirty = false;
-      const n = S.sec.n;
-      await refresh();
-      await loadSection(n, '');
-      sayText(got.message);
-    } catch (e) { sayText(e.message, true); }
+  async function openAt(n, quote, fid) {
+    showView('write');
+    await Write.goTo(n, quote, fid);
   }
   function openManuscript() {
     if (window.parent !== window) window.parent.postMessage({puffpai: 'open', pkg: 'manuscript', query: q({title: S.book})}, '*');
@@ -532,20 +430,43 @@
 
   // ---------------------------------------------------------------- wiring
 
+  // ---------------------------------------------------------------- the views
+
+  // One line per view. A view is a <section class="view" id="v-..."> in index.html; show() runs each time it opens.
+  const VIEWS = [
+    {id: 'write', label: 'Write', show: () => { if (S.book) Write.open(S.book); Write.show(); }},
+    {id: 'desk', label: "Editor's desk", show: () => refresh()},
+    {id: 'study', label: 'Study a book', show: () => { if (S.book) Study.open(S.book); }},
+  ];
+  function drawViews() {
+    const box = clear($('views'));
+    for (const v of VIEWS) {
+      box.appendChild(el('button', {type: 'button', role: 'tab', id: 'tab-' + v.id, 'aria-selected': String(S.view === v.id), 'aria-controls': 'v-' + v.id,
+        text: v.label, on: {click: () => showView(v.id)}}));
+    }
+  }
+  function showView(id) {
+    const v = VIEWS.find(x => x.id === id) || VIEWS[0];
+    if (S.view === 'write' && v.id !== 'write') Write.flush(true);
+    S.view = v.id;
+    for (const x of VIEWS) { const n = $('v-' + x.id); if (n) n.hidden = x.id !== v.id; }
+    drawViews();
+    try { sessionStorage.setItem('editors-desk-view', v.id); } catch (e) { /* private window */ }
+    v.show();
+  }
+  Write.hooks.changed = () => refresh();
+  Study.hooks.goTo = (n, quote) => openAt(n, quote);
+  Study.hooks.manuscript = openManuscript;
+  Study.hooks.refresh = () => refresh();
+  Write.hooks.words = total => {
+    if (S.v) $('count').textContent = plural(S.v.sections.length, 'section') + ', ' + total.toLocaleString() + ' words';
+  };
+  let firstView = 'write';
+  try { firstView = sessionStorage.getItem('editors-desk-view') || 'write'; } catch (e) { /* private window */ }
+  S.view = null;
+  showView(firstView);
+
   $('book').addEventListener('change', e => pick(e.target.value));
-  $('sec').addEventListener('change', e => {
-    if (!leaveOk()) { $('sec').value = S.sec.n; return; }
-    S.dirty = false; S.editing = false;
-    loadSection(Number(e.target.value), '');
-  });
-  $('edit').addEventListener('click', () => startEdit(($('reader').querySelector('mark') || {}).textContent || ''));
-  $('save').addEventListener('click', save);
-  $('cancel').addEventListener('click', () => { if (leaveOk()) { S.dirty = false; S.editing = false; drawReader(''); } });
-  $('editor').addEventListener('input', () => { S.dirty = true; sayText(''); });
-  $('editor').addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); } });
-  $('closepane').addEventListener('click', () => { if (leaveOk()) closePane(); });
-  $('restore').addEventListener('click', restore);
-  $('closeold').addEventListener('click', closeOld);
   $('vaultfree').addEventListener('change', e => { call('api/settings', {vault_free: e.target.checked}).catch(() => {}); });
   call('api/settings').then(g => { $('vaultfree').checked = g.settings.vault_free !== false; }).catch(() => {});
 
@@ -553,7 +474,7 @@
   setInterval(() => {
     const st = S.v && S.v.status;
     const live = st && ['running', 'waiting', 'queued'].includes(st.state);
-    const typing = document.activeElement && ['TEXTAREA', 'INPUT'].includes(document.activeElement.tagName) && document.activeElement.id !== 'editor';
+    const typing = document.activeElement && ['TEXTAREA', 'INPUT'].includes(document.activeElement.tagName);
     if (!typing && (live || document.visibilityState === 'visible')) refresh();
   }, 5000);
   loadBooks();

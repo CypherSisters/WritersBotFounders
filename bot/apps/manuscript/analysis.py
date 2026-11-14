@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import marks
 from blocks import slug
 
 BIBLE = "bible.json"
@@ -422,7 +423,8 @@ LOOKS_SYSTEM = (
 
 
 def split_words(text: str, most: int = PART_WORDS) -> list[str]:
-    """Pieces of at most *most* words, at paragraph boundaries; a paragraph longer than that is cut by words."""
+    """Pieces of at most *most* words, at paragraph boundaries; a paragraph longer than that is cut by words. Words are
+    counted without their italic and bold marks (marks.py); the pieces keep the marks."""
     paras: list[str] = []
     for p in re.split(r"\n\s*\n", text):
         w = p.split()
@@ -430,10 +432,10 @@ def split_words(text: str, most: int = PART_WORDS) -> list[str]:
             paras.append(" ".join(w[:most]))
             w = w[most:]
         if w:
-            paras.append(p.strip() if len(p.split()) <= most else " ".join(w))
+            paras.append(p.strip() if len(marks.strip(p).split()) <= most else " ".join(w))
     pieces, cur, n = [], [], 0
     for p in paras:
-        k = len(p.split())
+        k = len(marks.strip(p).split())
         if cur and n + k > most:
             pieces.append("\n\n".join(cur))
             cur, n = [], 0

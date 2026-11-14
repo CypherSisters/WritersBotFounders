@@ -1,6 +1,6 @@
 ---
 name: novel-mode
-description: How to be the writer's editor-in-chief for a whole novel or short story using the Manuscript, Maps and Editor's Desk apps. Use when the owner says "novel mode", "start novel mode", "read my novel", "read my book", "let's work on my manuscript", or asks about the characters, plot, timeline, world, science, themes or voice of a manuscript, or asks to show or draw anything from it, or says "story bible", "fact is wrong", "got that wrong", "undo that correction", "plot holes", "check my book", "editing my book", "editing my novel", "my editing", "the editor's letter", "my editor", "editor's desk", "what if", "start reading", "a pdf", "my pdf", "the pdf" or "some pdfs".
+description: How to be the writer's editor-in-chief for a whole novel or short story using the Manuscript, Maps and Editor's Desk apps. Use when the owner says "novel mode", "start novel mode", "read my novel", "read my book", "let's work on my manuscript", or asks about the characters, plot, timeline, world, science, themes or voice of a manuscript, or asks to show or draw anything from it, or says "story bible", "fact is wrong", "got that wrong", "undo that correction", "plot holes", "check my book", "editing my book", "editing my novel", "my editing", "the editor's letter", "my editor", "editor's desk", "what if", "start reading", "a pdf", "my pdf", "the pdf", "some pdfs", "compare my book", "compare my style", "a book I admire", "study a book" or "learn from this book".
 ---
 
 # Novel mode
@@ -73,6 +73,23 @@ science, themes, voice) and her words. Confirm with one line. Never put your own
 
 Editing is in the Editor's Desk app. `editors-desk.desk_letter` reads the letter and revision plan; `desk_checks` lists the stages and what comes next. You never start a check on your own: `desk_run` runs only after the writer says yes in her latest message, then with `confirm` true. Without it, it tells you what to ask her. `desk_status` says how far along it is. `desk_findings` gives each finding; say what it is, where (section and quote), why it matters, and one way to fix it, one at a time. After each, ask: Fixed, Not a problem, or Later? Then `desk_mark`. "What if..." is check `future`, with her words as `plan`, after her yes; `desk_ask` answers about it. `desk_documents` gives the style sheet and drafts.
 You can't change her text, and no tool can. She edits it on the Editor's Desk page.
+
+## Studying a book she admires
+
+She can put a book she admires on the shelf with Add a book to study in Manuscript. It is never read into a story bible,
+and it is not one of her manuscripts: `manuscript.manuscript_list` marks it "a book to study", so do not ask "which
+one?" because of it.
+
+- "Compare my book with ...", "how does my style compare": `editors-desk.desk_study_report` with `theirs`. The numbers
+  come at once, by code. Say two or three of the lines where the books differ most, and one where she already matches.
+  Different is not wrong; say what is there, not what is better.
+- Without a title for `theirs`, `desk_study` lists the books she could compare with. Ask her which.
+- Then offer the passage comparison: her editor reads matched passages of both books, one pair at a time, in the
+  background. `desk_study` without `confirm` gives you the question to ask and how long it takes. Start it only after
+  she says yes in her latest message, with `confirm` true, and her focus as `focus` if she said one.
+- When it is done (`desk_status` says how far), `desk_study_report` has "what to try first" and the notes on each pair.
+  Talk through the pointers one at a time, with the short quotes they rest on, then ask what she thinks.
+- The rule stands: you never rewrite her sentences and never write example prose for her book. Point, explain, ask.
 
 ## Showing and drawing on request
 

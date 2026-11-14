@@ -1445,7 +1445,7 @@ def test_add_file_is_listed_as_a_change_with_no_argument_the_core_reads_as_her_f
     # owner_files.FILE_ARGS in the Core: with one of these, "write" and a listed change, the tool is hidden while edits are off
     assert not set(me["inputSchema"]["properties"]) & {"path", "file", "file_path", "filepath", "filename", "file_name", "document"}
     manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
-    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.5.1"
+    assert "manuscript_add_file" in manifest["abilities"]["changes"] and manifest["version"] == "0.6.0"
     names = {t["name"] for t in got["result"]["tools"]}
     assert set(manifest["abilities"]["tools"]) == names and set(manifest["abilities"]["examples"]) <= names
     assert (PKG / "requirements.txt").read_text(encoding="utf-8").split() == ["python-docx==1.2.0", "pypdf==6.21.4", "cryptography==50.0.2"]
@@ -2239,7 +2239,7 @@ def test_manifest_and_tools_agree_on_the_new_tools():
     manifest = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
     sys.path.insert(0, str(PKG))
     import server
-    assert manifest["version"] == server.VERSION == "0.5.1"
+    assert manifest["version"] == server.VERSION == "0.6.0"
     assert {"manuscript_correct_undo", "manuscript_corrections"} <= set(manifest["abilities"]["tools"])
     assert set(manifest["abilities"]["tools"]) == set(server.TOOLS)
     assert "any fact" in manifest["abilities"]["tools"]["manuscript_correct"]
@@ -2888,3 +2888,143 @@ def test_real_two_people_still_go_to_the_brain():
     ask = asked(lambda u: json.dumps({"ops": [{"do": "merge", "ref": ref_in(u, "] Annie").split("]")[0], "into": ref_in(u, "] Anna").split("]")[0]}]}))
     got = fixing.already_one(b, "Anna and Annie are the same person")
     assert got == "" and fixing.already_one(fix_real(), "Anna is not Annie") == ""
+
+
+# -- 0.6.0: italics and bold from her Word file, kept as marks (marks.py) ----------------------------------------------
+
+def make_marked_docx() -> bytes:
+    import docx
+    from docx.enum.style import WD_STYLE_TYPE
+    d = docx.Document()
+    letter = d.styles.add_style("Letter", WD_STYLE_TYPE.PARAGRAPH)
+    letter.font.italic = True
+    shout = d.styles.add_style("Shout", WD_STYLE_TYPE.CHARACTER)
+    shout.font.bold = True
+    d.add_heading("Chapter One", 1)
+    p = d.add_paragraph("ALPHA. She said ")
+    p.add_run("no").italic = True
+    p.add_run(" and ")
+    p.add_run("meant").bold = True
+    r = p.add_run(" it all")
+    r.italic = r.bold = True
+    p.add_run(".")
+    p = d.add_paragraph("Then ")
+    p.add_run("LOUD", style="Shout")
+    p.add_run(" came.")
+    d.add_paragraph("2 * 3 * 4 is a sum she wrote herself.")
+    d.add_paragraph("She typed *this* herself.")
+    d.add_paragraph("* * *")
+    d.add_heading("Chapter Two", 1)
+    d.add_paragraph("Dear Tom, come home.", style="Letter")               # the whole paragraph italic, by its style
+    p = d.add_paragraph("Dear Tom, ", style="Letter")
+    p.add_run("not").italic = False                                      # her own setting wins over the style's
+    p.add_run(" yet.")
+    p = d.add_paragraph("A line")
+    p.add_run("\n")
+    p.add_run("broken").italic = True
+    p.add_run(" softly.")
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+MARKED_ONE = ("# Chapter One\n\nALPHA. She said *no* and **meant** ***it all***.\n\nThen **LOUD** came.\n\n"
+              "2 * 3 * 4 is a sum she wrote herself.\n\nShe typed *this* herself.\n\n* * *\n")
+MARKED_TWO = "# Chapter Two\n\n*Dear Tom, come home.*\n\n*Dear Tom,* not *yet.*\n\nA line\n*broken* softly.\n"
+
+
+def test_marks_docx_paragraphs_keep_italic_and_bold():
+    sys.path.insert(0, str(PKG))
+    import server
+    paras = server.docx_paragraphs(make_marked_docx())
+    assert ("Chapter One", True) in paras and ("Chapter Two", True) in paras
+    assert ("ALPHA. She said *no* and **meant** ***it all***.", False) in paras
+    assert ("She typed *this* herself.", False) in paras                 # her own stars, exactly as she typed them
+    assert server.docx_paragraphs(make_docx()) == [(p.text, p.style.name.lower() == "heading 1")
+                                                   for p in __import__("docx").Document(io.BytesIO(make_docx())).paragraphs]
+
+
+def test_marks_word_counts_and_parts_ignore_the_marks():
+    sys.path.insert(0, str(PKG))
+    import analysis
+    import server
+    assert server.words("She said *no* and **meant** ***it all***.") == 7
+    assert server.words("* * *") == 3 and server.words("") == 0
+    marked = "\n\n".join(" ".join(f"*w{i}x{j}*" if j % 2 else f"w{i}x{j}" for j in range(10)) for i in range(5))
+    parts = analysis.split_words(marked, 20)
+    assert len(parts) == 3 and "*w0x1*" in parts[0]                      # the pieces keep her marks
+    heads = server.split_sections([("*Chapter 3*", False), ("Some *words*.", False)])[0]
+    assert heads == [("Chapter 3", "Some *words*.")]                    # a heading is kept plain
+
+
+def test_marks_upload_reading_and_pointer(tmp_path):
+    proc, core, port = start_server(tmp_path)
+    try:
+        code, got = call(port, "POST", "/api/upload", {"file_name": "marked.docx", "title": "Marked",
+                                                       "content_b64": base64.b64encode(make_marked_docx()).decode()})
+        assert code == 200, got
+        folder = tmp_path / "My files" / "Manuscripts" / "Marked"
+        idx = json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))
+        files = [folder / "sections" / c["file"] for c in idx["sections"]]
+        assert [f.read_text(encoding="utf-8") for f in files] == [MARKED_ONE, MARKED_TWO]
+        assert [c["words"] for c in idx["sections"]] == [len(re.findall(r"\S+", t.split("\n\n", 1)[1]))
+                                                         for t in (MARKED_ONE, MARKED_TWO)]
+        assert [c["sha"] for c in idx["sections"]] == [hashlib.sha256(f.read_bytes()).hexdigest() for f in files]
+        st = wait_done(port, "Marked")
+        assert st["state"] == "done", st
+        asks = [m[1]["content"] for m in core.calls if "ALPHA" in m[1]["content"] or "Dear Tom" in m[1]["content"]]
+        assert any("She said no and meant it all." in u for u in asks)
+        assert any("Dear Tom, not yet." in u for u in asks)
+        for u in asks:                                                    # her own lone stars are words, not marks
+            assert "*" not in u.replace("2 * 3 * 4", "").replace("* * *", "").replace("She typed this", ""), u
+        assert not any("*this*" in u or "*no*" in u for u in asks)
+        text, err = tool(port, "manuscript_read", title="Marked", section="2")
+        assert not err and "*Dear Tom, come home.*" not in text and "Dear Tom, come home." in text
+        line, err = tool(port, "manuscript_point", title="Marked", section="1", quote="said no and meant it all")
+        assert not err and "at the words you gave" in line
+        ptr = call(port, "GET", "/api/pointer" + q(title="Marked"))[1]
+        plain = MARKED_ONE.replace("*no*", "no").replace("**meant**", "meant").replace("***it all***", "it all") \
+            .replace("**LOUD**", "LOUD").replace("*this*", "this")
+        assert plain[ptr["start"]:ptr["end"]] == "said no and meant it all" == ptr["quote"]
+        code, sec = call(port, "GET", "/api/section" + q(title="Marked", n=1))
+        assert code == 200 and sec["text"] == MARKED_ONE                  # the page gets her text whole and draws it
+    finally:
+        stop_server(proc, core)
+
+
+STUDY_BOOK = "".join(f"# Chapter {k}\n\nThe ferry leaves at nine. I am late, {k}. I run for the gate.\n\n" for k in ("One", "Two", "Three"))
+
+
+def test_a_book_to_study_is_added_with_no_reading_and_marked(tmp_path):
+    proc, core, port = start_server(tmp_path)
+    try:
+        code, got = call(port, "POST", "/api/upload", {"file_name": "ferry.md", "title": "Night Ferry", "read": False,
+                                                       "content_b64": base64.b64encode(STUDY_BOOK.encode()).decode()})
+        assert code == 200, got
+        assert "a book to study" in got["message"] and "reading it now" not in got["message"]
+        folder = tmp_path / "My files" / "Manuscripts" / "Night Ferry"
+        idx = json.loads((folder / "manuscript.json").read_text(encoding="utf-8"))
+        assert idx["study"] is True and len(idx["sections"]) == 3
+        time.sleep(1.5)
+        assert not core.log, "no reading started"
+        code, st = call(port, "GET", "/api/status" + q(title="Night Ferry"))
+        assert st.get("state") not in ("reading", "done", "failed") and not (folder / "bible.json").exists()
+        listed = {m["title"]: m for m in call(port, "GET", "/api/list")[1]["manuscripts"]}
+        assert listed["Night Ferry"]["study"] is True
+        # her ordinary Upload still starts the reading, and is not marked
+        code, got = call(port, "POST", "/api/upload", {"file_name": "mine.md", "title": "Mine",
+                                                       "content_b64": base64.b64encode(STUDY_BOOK.encode()).decode()})
+        assert code == 200 and "reading it now" in got["message"], got
+        end = time.time() + 15
+        while not core.log:
+            assert time.time() < end, "the ordinary upload never started its reading"
+            time.sleep(0.05)
+        idx = json.loads((tmp_path / "My files" / "Manuscripts" / "Mine" / "manuscript.json").read_text(encoding="utf-8"))
+        assert "study" not in idx
+        # the chat tool still adds a file from My files and starts nothing
+        (tmp_path / "My files" / "Loose Study.md").write_text(STUDY_BOOK, encoding="utf-8")
+        text, err = tool(port, "manuscript_add_file", source="Loose Study.md")
+        assert not err and text.startswith("Added Loose Study from My files: 3 sections"), text
+        assert "The reading has not started" in text
+    finally:
+        stop_server(proc, core)

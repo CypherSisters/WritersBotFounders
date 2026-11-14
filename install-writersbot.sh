@@ -385,7 +385,7 @@ box_cli() { docker exec -it "$NAME" bash -c "cd /data/bot/code && .venv/bin/puff
 PARTS_SUMS='find core packages contracts templates -type f ! -path "*/__pycache__/*" ! -name "*.pyc" ! -path "*.egg-info/*" ! -path "*/.venv/*" ! -path "*/node_modules/*" -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum'
 CORE_CHANGED=0
 
-UPDATE_ORDER="novel-mode manuscript editors-desk maps document-convert"
+UPDATE_ORDER="novel-mode manuscript editors-desk maps document-convert dewey-avatar"
 BUNDLE_RECORD="$HERE/bot/puffpai-bot.json"
 
 core_answers() { docker exec "$NAME" bash -c "cd /data/bot/code && .venv/bin/puffpai bridge status" >/dev/null 2>&1; }

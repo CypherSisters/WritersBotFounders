@@ -57,6 +57,11 @@ A section is what 0.1.0 called a chapter. Splitting, in this order:
 
 `manuscript.json` keeps `sections: [{n, heading, file, words, sha}]` and, for 0.1.0 readers, the same list as `chapters`.
 
+**0.6.0: section text keeps italics and bold.** A section file is her paragraphs with a blank line between each; inside
+one paragraph (one line) italic is `*words*`, bold `**words**`, both `***words***` (`marks.py`, the same file in Editor's
+Desk). A line of only stars and spaces is a scene break, never a mark. `words` and the splitting count words without the
+marks; the files keep them; headings are always plain.
+
 ## The story bible: `bible.json`
 
 ```json
@@ -265,7 +270,8 @@ Science for words of science, else Characters.
 The page polls `GET /api/pointer` every two seconds while open; when `set_at` changes it opens the section, scrolls to
 the range and highlights it, and shows `note` in a small bar above the text with a Clear button (`DELETE /api/pointer`).
 The server finds the range by exact quote, else by the longest common run of five or more words, else by the first
-paragraph that shares the most words with the quote.
+paragraph that shares the most words with the quote. **0.6.0**: the offsets are in the section's text with its italic and
+bold marks taken out (`marks.strip`), the words the page shows.
 
 ## Routes (all need the package token; GET and DELETE change no manuscript text)
 
@@ -593,3 +599,20 @@ it after any of those.
 `editors-desk` with `title=<book>`, the same `{puffpai: 'open'}` message as See in Maps; the window opens only an installed app and
 otherwise says "That app is not installed.". Outside a frame it is the link `/pkg/editors-desk/?title=<book>`. `POST /api/analyze`, the page's
 Start reading and Read again, starts the reading as the writer's own press (0.4.1 answered with the chat's "ask the writer first" line).
+
+## 0.6.0: her italics and bold are kept
+
+- **Upload.** A Word file's paragraphs are read run by run: a run's own italic and bold, else its character style's, else
+  its paragraph style's (and the styles they are based on), so a paragraph set in an italic style comes in italic. Each
+  paragraph becomes one marked line (`marks.wrap`); a soft line break stays a line break. Headings stay plain. When the
+  runs do not add up to the paragraph's text, the paragraph comes in plain, never with fewer words. A `.md` file's own
+  stars are kept as they are; `.txt` and PDFs come in as before.
+- **Stars she typed herself.** There is no way to tell a star she typed from a mark, so a plain `*word*` in her Word
+  file is kept exactly as she typed it and reads as italic, the old typewriter way of asking for italics. A star with a
+  space beside it (`2 * 3 * 4`) and a scene break line are always words.
+- **Nothing that reads for sense sees a star.** The reading (every ask about a section), the chat's question about the
+  book, `manuscript_read` and `manuscript_point` take `marks.strip` of the text. A section's sha is still of the file's
+  bytes, so the cache and `read_of` work as before.
+- **The page** draws the marks as italic and bold (text nodes in `em` and `strong`) and never shows the stars. The
+  pointer and a found passage land on the words without the marks.
+- **A book added before 0.6.0** has no marks: its Word file was read as plain words. Its sections stay as they are.

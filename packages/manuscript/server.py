@@ -5,8 +5,9 @@ One small server, bound to 127.0.0.1 (CONTRACT.md is the agreement with the page
 - ``/health``                 "ok"
 - ``/api/list``               GET: every manuscript with its sections and its reading status
 - ``/api/section``            GET ``?title=&n=``: one section's text (``/api/chapter?title=&chapter=``, as 0.1.0)
-- ``/api/upload``             POST ``{file_name, content_b64, title?}``: a new manuscript (.docx .txt .md .pdf); starts
-                              the reading
+- ``/api/upload``             POST ``{file_name, content_b64, title?, read?}``: a new manuscript (.docx .txt .md .pdf);
+                              starts the reading. ``read: false`` adds a book to study instead: no reading, marked
+                              ``"study": true`` in its manuscript.json
 - ``/api/status``             GET ``?title=``: the reading's progress
 - ``/api/analyze``            POST ``{title}``: start the reading again
 - ``/api/bible``              GET ``?title=``: the story bible
@@ -61,6 +62,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # its own modules, also when started with python -I
 import analysis  # noqa: E402
+import marks  # noqa: E402
 import pdf_text  # noqa: E402
 import tidy  # noqa: E402
 from analysis import (BASE, BIBLE, BUDGET, CACHE, STATUS, Brain, BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet,
@@ -76,7 +78,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "manuscript"
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 40 * 1024 * 1024                  # a long novel with pictures, as base64
@@ -192,10 +194,10 @@ def split_paragraphs(paras: list[tuple[str, bool]], by_words: bool = True) -> li
     head: str | None = None
     body: list[str] = []
     for text, heading in paras:
-        if heading or (by_words and is_chapter_line(text)):
+        if heading or (by_words and is_chapter_line(marks.strip(text))):
             if head is not None or any(b.strip() for b in body):
                 chapters.append((head or FRONT, body))
-            head, body = " ".join(text.split()), []
+            head, body = " ".join(marks.strip(text).split()), []          # a heading is kept plain
         else:
             body.append(text)
     if head is not None or any(b.strip() for b in body):
@@ -256,13 +258,55 @@ def split_sections(paras: list[tuple[str, bool]], by_words: bool = True) -> tupl
     return out, front
 
 
+def _style_says(style: Any, name: str) -> bool | None:
+    """Italic or bold as a style sets it, or as the style it is based on does; None when none of them says."""
+    seen = 0
+    while style is not None and seen < 20:
+        got = getattr(style.font, name, None)
+        if got is not None:
+            return bool(got)
+        style, seen = style.base_style, seen + 1
+    return None
+
+
+def _run_says(run: Any, para_style: Any, name: str) -> bool:
+    """A run's own italic or bold, else its character style's, else its paragraph style's."""
+    got = getattr(run.font, name, None)
+    if got is None:
+        got = _style_says(run.style, name)
+    if got is None:
+        got = _style_says(para_style, name)
+    return bool(got)
+
+
+def _marked(p: Any) -> str:
+    """One Word paragraph as one marked line (marks.py): its italic and bold kept, its words exactly as p.text has them.
+    A soft line break inside it stays a line break, and each line is marked on its own."""
+    pieces: list[tuple[str, bool, bool]] = []
+    for item in p.iter_inner_content():                     # runs, and the runs inside a link
+        for run in getattr(item, "runs", None) or [item]:
+            pieces.append((run.text, _run_says(run, p.style, "italic"), _run_says(run, p.style, "bold")))
+    if "".join(x[0] for x in pieces) != p.text:              # something it can't follow: her words plain, never fewer
+        return p.text
+    lines: list[list[tuple[str, bool, bool]]] = [[]]
+    for words, italic, bold in pieces:
+        for k, part in enumerate(words.split("\n")):
+            if k:
+                lines.append([])
+            lines[-1].append((part, italic, bold))
+    return "\n".join(marks.wrap(line) for line in lines)
+
+
 def docx_paragraphs(raw: bytes) -> list[tuple[str, bool]]:
+    """(text, is_heading) for each paragraph. A heading stays plain; any other paragraph keeps its italic and bold as
+    marks (marks.py). Stars she typed herself stay as she typed them."""
     import docx
     doc = docx.Document(io.BytesIO(raw))
     out = []
     for p in doc.paragraphs:
         style = (p.style.name if p.style is not None else "") or ""
-        out.append((p.text, style.lower() in ("heading 1", "heading 2")))
+        heading = style.lower() in ("heading 1", "heading 2")
+        out.append((p.text if heading else _marked(p), heading))
     return out
 
 
@@ -295,7 +339,7 @@ def chapter_text(body: list[str]) -> str:
 
 
 def words(text: str) -> int:
-    return len(re.findall(r"\S+", text))
+    return len(re.findall(r"\S+", marks.strip(text)))
 
 
 def sha_of(data: bytes) -> str:
@@ -602,6 +646,7 @@ class Manuscripts:
                 continue
             text = raw.decode("utf-8", errors="replace")
             body = re.sub(r"\A# [^\n]*\n*", "", text)              # the heading goes in the ask on its own
+            body = marks.strip(body)                               # the reading and the asks see words, never stars
             out.append((int(c.get("n") or 0), str(c.get("heading") or ""), body, sha_of(raw)))
         return str(idx.get("title") or folder.name), out
 
@@ -698,7 +743,11 @@ class Manuscripts:
             secs = idx["sections"]
             total = sum(int(c.get("words") or 0) for c in secs)
             st = self._status(folder, idx)
-            lines.append(f"{idx.get('title')}: {len(secs)} sections, {total} words. Reading: {st.get('step')}")
+            if idx.get("study") is True:
+                lines.append(f"{idx.get('title')}: {len(secs)} sections, {total} words. A book to study: the writer added it to "
+                             "compare with her own in Editor's Desk (desk_study), not to be read into a story bible.")
+            else:
+                lines.append(f"{idx.get('title')}: {len(secs)} sections, {total} words. Reading: {st.get('step')}")
             found = self.counts_line(self.counts(read_json(folder / BIBLE)))
             if found:
                 lines.append(f"  {found}")
@@ -711,7 +760,7 @@ class Manuscripts:
     def manuscript_read(self, title: str = "", section: Any = "", chapter: Any = "") -> str:
         folder, idx = self._find(title)
         c = self._section(idx, section if str(section or "").strip() else chapter)
-        text = self._section_text(folder, idx, c)
+        text = marks.strip(self._section_text(folder, idx, c))
         more = "" if len(text) <= READ_MAX else "\n\n(The section goes on; this is its first part.)"
         return f"{idx.get('title')}, section {c.get('n')}: {c.get('heading')}\n\n{text[:READ_MAX]}{more}"
 
@@ -931,7 +980,7 @@ class Manuscripts:
         texts = []
         for c in cands:
             try:
-                texts.append((c, self._section_text(folder, idx, c)))
+                texts.append((c, marks.strip(self._section_text(folder, idx, c))))   # places in the words the page shows
             except Refused:
                 continue
         if not texts:
@@ -1272,7 +1321,7 @@ class Manuscripts:
             secs = [{"n": c.get("n"), "heading": c.get("heading"), "words": c.get("words")} for c in idx["sections"]]
             out.append({"title": idx.get("title"), "folder": folder.name, "original": idx.get("original"),
                         "sections": secs, "chapters": secs, "status": self._status_vault(folder, idx),
-                        "counts": self.counts(read_json(folder / BIBLE))})
+                        "counts": self.counts(read_json(folder / BIBLE)), "study": idx.get("study") is True})
         return {"manuscripts": out, "tabs": [{"id": k, "label": v} for k, v in TABS.items()]}
 
     def section_view(self, title: str, section: str) -> dict:
@@ -1419,7 +1468,9 @@ class Manuscripts:
             _write(path, body if body.endswith("\n") or not body else body + "\n")
             return {"message": f"Saved the {TABS[key]} notes.", "stamp": _stamp(path)}
 
-    def upload(self, file_name: Any, content_b64: Any, title: Any = None) -> dict:
+    def upload(self, file_name: Any, content_b64: Any, title: Any = None, read: Any = True) -> dict:
+        """Her Upload. ``read`` False is "Add a book to study": a book she admires, put on the shelf for Editor's Desk to
+        compare with hers. It is never read into a story bible, and it is marked so the pages can say so."""
         name = os.path.basename(str(file_name or "").replace("\\", "/"))
         ext = os.path.splitext(name)[1].lower()
         if ext not in UPLOAD_TYPES:
@@ -1428,10 +1479,13 @@ class Manuscripts:
             raw = base64.b64decode(str(content_b64 or ""), validate=True)
         except (binascii.Error, ValueError):
             raise Refused("That file did not arrive whole. Try the upload again.") from None
-        got = self._add(name, ext, raw, title)
-        self.reader.start(got["folder"])
+        study = read is False
+        got = self._add(name, ext, raw, title, study=study)
+        if not study:
+            self.reader.start(got["folder"])
         self.tidy_due()
-        got["message"] = f"Added {got['title']}: {got['sections']} sections, {got['words']} words. Your bot is reading it now."
+        got["message"] = f"Added {got['title']}: {got['sections']} sections, {got['words']} words. " + (
+            "It is a book to study. Open Editor's Desk to compare it with yours." if study else "Your bot is reading it now.")
         if got.get("report"):
             got["message"] += " " + pdf_text.report_line(got["report"])
         return {k: v for k, v in got.items() if k not in ("folder", "words")}
@@ -1504,7 +1558,7 @@ class Manuscripts:
         names = ", ".join(str(p.relative_to(root)).replace("\\", "/") for p in found[:8])
         raise Refused(f"More than one file is called that: {names}. Say which, with its folder.")
 
-    def _add(self, name: str, ext: str, raw: bytes, title: Any) -> dict:
+    def _add(self, name: str, ext: str, raw: bytes, title: Any, study: bool = False) -> dict:
         """The one way in, for the page's Upload and for manuscript_add_file: the folder, the sections and the index.
         It starts no reading; the caller decides that."""
         if not raw:
@@ -1554,6 +1608,8 @@ class Manuscripts:
                       "version": VERSION, "sections": index, "chapters": index}
             if report:
                 record["pdf_report"] = report
+            if study:
+                record["study"] = True                      # a book she admires: compared in Editor's Desk, never read
             _write(folder / INDEX, json.dumps(record, ensure_ascii=False, indent=2) + "\n")
         got = {"title": shown, "sections": len(index), "chapters": len(index), "folder": folder,
                "words": sum(c["words"] for c in index)}
@@ -1847,7 +1903,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/notes":
             return self._json(200, a.notes_save(msg.get("title"), msg.get("tab"), msg.get("text"), msg.get("stamp")))
         if path == "/api/upload":
-            return self._json(200, a.upload(msg.get("file_name"), msg.get("content_b64"), msg.get("title")))
+            return self._json(200, a.upload(msg.get("file_name"), msg.get("content_b64"), msg.get("title"), msg.get("read", True)))
         if path == "/api/analyze":
             return self._json(200, a.analyze_view(msg.get("title")))
         if path == "/api/correct":

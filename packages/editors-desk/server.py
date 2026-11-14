@@ -5,15 +5,25 @@ One small server, bound to 127.0.0.1. The design is in WritersBot's EDITORS_DESK
 - ``/api/list``         GET: the books on the shelf
 - ``/api/open``         POST ``{title}``: brings the old desk's marks over, once
 - ``/api/desk``         GET ``?title=``: everything the page shows for one book
+- ``/api/book``         GET ``?title=``: every section in order, its text as the file has it (italic and bold marks and all),
+                        its sha, whether it changed since the book was read, and how many earlier versions it has
 - ``/api/section``      GET ``?title=&n=``: one section's text, its sha and its earlier versions
 - ``/api/version``      GET ``?title=&n=&id=``: one earlier version
-- ``/api/save``         POST ``{title, n, text, sha}``: the writer's own words. The old version is kept first
+- ``/api/save``         POST ``{title, n, text, sha, auto?}``: the writer's own words. The old version is kept first; an
+                        autosave keeps one at most every ten minutes. A stale sha is refused with the text there now
+- ``/api/ask``          POST ``{title, n, passage, question}``: her question about her own words, to her editor, ahead of a
+                        check's next call. ``/api/asks`` GET ``?title=``: the last 100; POST ``{title, id}`` removes one
 - ``/api/restore``      POST ``{title, n, id, sha}``: an earlier version back, the one before it kept too
 - ``/api/use``          POST ``{title, id}``: PROPOSED, Use this: a grammar or proofreading correction, on her click only
 - ``/api/run``          POST ``{title, check, plan?}``: her press; ``/api/stop`` POST ``{title}``
 - ``/api/mark``         POST ``{title, id, state?, note?}``
 - ``/api/document``     GET ``?title=&id=``; POST ``{title, id, text}``: a document she keeps, never the manuscript
 - ``/api/settings``     GET, POST ``{vault_free}``
+- ``/api/study/books``  GET ``?title=``: the other books on the shelf she could compare hers with, books to study first
+- ``/api/study/numbers`` GET ``?title=&theirs=``: the style numbers of both books side by side, by code, at once
+- ``/api/study``        POST ``{title, theirs, focus?}``: her press: your editor compares matched passages, in the same line
+                        as the checks. GET ``?title=&theirs=``: the latest report for that pair; ``?title=``: the list
+- ``/api/wordcopy``     POST ``{title}``: a Word copy of her book as it stands, to read or share, in My files
 
 Every route refuses a request without this package's PUFFPAI_TOKEN. GET never changes anything. No tool writes section
 text, and no brain answer reaches a section: only ``/api/save``, ``/api/restore`` and ``/api/use`` do, from her hand.
@@ -27,6 +37,7 @@ import argparse
 import hmac
 import json
 import os
+import re
 import shutil
 import sys
 import threading
@@ -42,7 +53,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # its own modules, also when started with python -I
 import book as books  # noqa: E402
+import docx_out  # noqa: E402
 import engine  # noqa: E402
+import marks  # noqa: E402
+import study  # noqa: E402
 from book import SHARED, Book, Refused, find_book, locate, read_index, save_section, section_path, version_text, versions  # noqa: E402
 from brainline import (BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet, Brain, now, plain, read_json, sha_of, strip_think,  # noqa: E402
                        tokens, write_atomic, write_json)
@@ -52,7 +66,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "editors-desk"
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 4 * 1024 * 1024
 WEB_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
@@ -68,6 +82,11 @@ DEFAULTS = {"vault_free": True, "context_tokens": 0}
 JOBS = "jobs.json"
 TIMING = "timing.json"
 SETTINGS = "settings.json"
+ASKS = "asks.json"
+ASKS_KEPT = 100
+ASK_PAGE_WAIT = float(os.environ.get("EDITORS_DESK_PAGE_ASK_WAIT_S") or 25)   # then the page asks again for the answer
+STUDY = "study"                 # in a book's working folder: its measure, and one report per book it was compared with
+STUDY_NAME = "Study a book"
 
 
 class CoreFiles:
@@ -135,6 +154,9 @@ class Desk:
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.stop_flag: set[str] = set()
+        self.asks_lock = threading.Lock()
+        self.asking: set[str] = set()
+        self.study_lock = threading.Lock()
         threading.Thread(target=self._worker, daemon=True, name="your editor").start()
 
     # settings
@@ -174,7 +196,12 @@ class Desk:
         return self.files.shelf()
 
     def _folder(self, title: Any) -> Path:
-        return find_book(self.shelf(), title)
+        shelf = self.shelf()
+        if not " ".join(str(title or "").split()):         # left empty: her one manuscript, not a book she studies
+            mine = [f for f in books.all_books(shelf) if read_index(f).get("study") is not True]
+            if len(mine) == 1:
+                return mine[0]
+        return find_book(shelf, title)
 
     def list_view(self) -> dict:
         out = []
@@ -182,7 +209,7 @@ class Desk:
             idx = read_index(f)
             out.append({"title": idx.get("title") or f.name, "sections": len(idx.get("sections") or []),
                         "words": sum(int(c.get("words") or 0) for c in idx.get("sections") or []),
-                        "read": (f / books.BIBLE).exists()})
+                        "read": (f / books.BIBLE).exists(), "study": idx.get("study") is True})
         return {"books": out}
 
     def open_book(self, title: Any) -> dict:
@@ -281,6 +308,9 @@ class Desk:
             self._run(job, shelf)
 
     def _run(self, job: dict, shelf: Path) -> None:
+        if job.get("kind") == STUDY:
+            self._run_study(job, shelf)
+            return
         folder = shelf / job["folder"]
         checks = engine.load_checks()
         c = checks.get(job.get("check"))
@@ -406,13 +436,23 @@ class Desk:
                 return {"check": None, "stage": s["name"], "why": f"{n} big thing{'s are' if n > 1 else ' is'} still open in {s['name']}. Settle {'them' if n > 1 else 'it'} before going on. Smaller work now may have to be done again."}
         return None
 
+    def book_view(self, title: str) -> dict:
+        """The whole book in one answer, for the Write view. Reading it changes nothing."""
+        folder = self._folder(title)
+        b = Book(folder)
+        unread = set(b.unread())
+        root = self._vroot(folder)
+        return {"title": b.title, "version": VERSION, "sections": [
+            {"n": s.n, "heading": s.heading, "text": _page_text(s.raw), "sha": s.sha, "words": s.words,
+             "unread": s.n in unread, "versions": len(versions(root, s.n))} for s in b.sections]}
+
     def section_view(self, title: str, n: str) -> dict:
         folder = self._folder(title)
         b = Book(folder)
         s = b.section(n)
         if s is None:
             raise Refused("I could not find that section.")
-        return {"n": s.n, "heading": s.heading, "text": s.text.rstrip("\n"), "sha": s.sha, "words": s.words, "unread": s.n in b.unread(),
+        return {"n": s.n, "heading": s.heading, "text": _page_text(s.raw), "sha": s.sha, "words": s.words, "unread": s.n in b.unread(),
                 "versions": versions(self._vroot(folder), s.n), "numbers": [x.n for x in b.sections]}
 
     def version_view(self, title: str, n: str, vid: str) -> dict:
@@ -430,7 +470,7 @@ class Desk:
     def save(self, msg: dict) -> dict:
         folder = self._folder(msg.get("title"))
         with self.lock:
-            got = save_section(folder, self._vroot(folder), msg.get("n"), msg.get("text"), msg.get("sha"))
+            got = save_section(folder, self._vroot(folder), msg.get("n"), msg.get("text"), msg.get("sha"), auto=msg.get("auto") is True)
         return {**got, "message": "Saved." if got["changed"] else "No change to save.", "versions": versions(self._vroot(folder), int(msg.get("n")))}
 
     def restore(self, msg: dict) -> dict:
@@ -456,10 +496,13 @@ class Desk:
             b = Book(folder)
             w = f["where"][0]
             s = b.section(w.get("section"))
-            span = locate(s.text, w.get("quote") or "") if s else None
+            span = locate(s.raw, w.get("quote") or "") if s else None
             if not span:
                 raise Refused("Those words are not in the section any more, so nothing was changed.")
-            text = s.text[:span[0]] + f["correct"] + s.text[span[1]:]
+            a, z = span
+            if marks.strip(s.raw[a:z]) != s.raw[a:z] or s.raw[a - 1:a] == "*" or s.raw[z:z + 1] == "*":
+                raise Refused("Those words have italics or bold in them, so nothing was changed. Make the change yourself in Write.")
+            text = s.raw[:a] + f["correct"] + s.raw[z:]
             got = save_section(folder, self._vroot(folder), s.n, text, s.sha, by="Use this")
             f.update(state="fixed", changed_at=now(), note=(f.get("note") or "") or "Used the correction.")
             engine.save_findings(folder, items)
@@ -659,14 +702,409 @@ class Desk:
     def desk_stop(self, title: str = "") -> str:
         return self.stop(title)
 
+    def desk_study(self, title: str = "", theirs: str = "", confirm: Any = False, focus: str = "") -> str:
+        got = self.study_books(title)
+        if not str(theirs or "").strip():
+            if not got["books"]:
+                return (f"There is no other book on the shelf to compare {got['title']} with. She can add a book she admires on "
+                        "the Manuscript page with Add a book to study; it is not read into a story bible.")
+            names = "; ".join(f"{b['title']} ({b['words']:,} words{', a book to study' if b['study'] else ''})" for b in got["books"])
+            return f"Books she could compare {got['title']} with: {names}. Ask her which one."
+        n = self.study_numbers(title, theirs)
+        if not n["pairs_count"]:
+            return (f"There is not enough story in one of the books to set passages side by side. The numbers are ready at once: "
+                    f"call desk_study_report with theirs \"{n['theirs']}\".")
+        cost = f"{n['pairs_count']} pairs of passages" + (f", {n['time_left']}" if n["time_left"] else ", and I have not timed your bot yet")
+        if confirm is not True:
+            return (f"This has not started. Ask the writer: \"Shall your editor compare passages of {n['mine']} with {n['theirs']}?\" "
+                    f"That is {cost}. The numbers are ready now without it (desk_study_report). Start it only after she says yes, "
+                    "with confirm true.")
+        job = self.study_start(title, theirs, focus)
+        return (f"Your editor is comparing passages of {job['title']} with {n['theirs']} in the background: {cost}. "
+                "When it is done, desk_study_report has the pointers, and the Study a book page shows them beside the passages.")
+
+    def desk_study_report(self, title: str = "", theirs: str = "") -> str:
+        if not str(theirs or "").strip():
+            have = self.study_report(title)["reports"]
+            if len(have) != 1:
+                return self.desk_study(title)
+            theirs = have[0]["theirs"]
+        n = self.study_numbers(title, theirs)
+        lines = [f"{n['mine']} beside {n['theirs']}, measured by code. Different is not wrong.", "Where the two books differ most:"]
+        lines += [f"- {x['line']}" for x in n["apart"]] or ["- Nothing stands far apart."]
+        lines.append("Where she already matches:")
+        lines += [f"- {x['line']}" for x in n["alike"]] or ["- Nothing measured is close."]
+        rep_ = self.study_report(title, theirs)
+        r = rep_["report"]
+        if rep_["running"]:
+            lines.append("The passage comparison is running now (desk_status says how far).")
+        if not r:
+            lines.append("Her editor has not compared passages of these two books yet. Offer it; start it with desk_study only "
+                         "after her yes.")
+            return "\n".join(lines)
+        lines.append(f"Her editor compared passages on {str(r.get('made_at') or '')[:10]}. Her focus: {r.get('focus')}.")
+        if r.get("pointers"):
+            lines.append("What to try first:")
+            lines += [f"{i}. {p.get('try')} Why: {p.get('why')}" for i, p in enumerate(r["pointers"], 1)]
+        for p in r.get("pairs") or []:
+            if p.get("state") != "done":
+                continue
+            lines.append(f"{p.get('label')} (her section {p['mine'].get('section')}):")
+            lines.append(f"  Theirs: {p.get('theirs_does')}")
+            lines.append(f"  Hers: {p.get('mine_does')}")
+            for x in p.get("pointers") or []:
+                quotes = "; ".join(q for q in (f"theirs: \"{x.get('their_quote')}\"" if x.get("their_quote") else "",
+                                               f"hers: \"{x.get('my_quote')}\"" if x.get("my_quote") else "") if q)
+                lines.append(f"  - {x.get('try')} Why: {x.get('why')}" + (f" ({quotes})" if quotes else ""))
+        for s_ in r.get("skipped") or []:
+            lines.append(f"Left out: {s_.get('line')}")
+        lines.append("Talk through one pointer at a time. Never rewrite her sentences.")
+        return "\n".join(lines)
+
+    # Ask your editor: her question about words she selected in Write. Answers describe; they never write her book.
+
+    PAGE_ASK_SYSTEM = ("You are her editor, reading a passage of her novel with her. Point at her own words and quote them. "
+                       "Say what works and what does not, and why. Suggest what she might try. Never write replacement sentences "
+                       "or passages, and never write her story: every word of the book is hers. Answer in plain words, in a few "
+                       "short paragraphs.")
+
+    def _asks_file(self, folder: Path) -> Path:
+        return engine.home_of(folder) / ASKS
+
+    def _asks(self, folder: Path) -> list[dict]:
+        got = read_json(self._asks_file(folder), [])
+        return [a for a in got if isinstance(a, dict) and a.get("id")] if isinstance(got, list) else []
+
+    def _ask_put(self, folder: Path, rec: dict | None, drop: str = "") -> None:
+        with self.asks_lock:
+            items = [a for a in self._asks(folder) if a.get("id") not in (drop, (rec or {}).get("id"))]
+            if rec is not None:
+                items.append(dict(rec))
+            write_json(self._asks_file(folder), items[-ASKS_KEPT:])
+
+    def _ahead(self) -> str:
+        """The check whose call runs before her ask, if one is running now."""
+        run_ = next((j for j in self._jobs() if j.get("state") == "running"), None)
+        return str(run_.get("check_name") or "a check") if run_ else ""
+
+    def asks_view(self, title: str) -> dict:
+        folder = self._folder(title)
+        out = []
+        for a in self._asks(folder):
+            if a.get("state") == "waiting" and a.get("id") not in self.asking:      # the app stopped before it was answered
+                a = {**a, "state": "failed", "answer": "This was cut off when your editor stopped. Ask again."}
+            out.append(a)
+        return {"asks": out, "ahead": self._ahead()}
+
+    def ask_remove(self, msg: dict) -> dict:
+        folder = self._folder(msg.get("title"))
+        self._ask_put(folder, None, drop=str(msg.get("id") or "") or "-")
+        return {"message": "Removed."}
+
+    @staticmethod
+    def _around(s: Any, passage: str, room: int) -> str:
+        """The paragraphs around the passage in its section, nearest first, as far as the room allows."""
+        spans = [(m.start(), m.end()) for m in books.PARAGRAPH.finditer(s.text) if m.group().strip()]
+        if not spans:
+            return ""
+        at = locate(s.text, passage) or locate(s.text, " ".join(passage.split()[:12]))
+        lo = hi = 0
+        if at:
+            lo = next((i for i, (a, z) in enumerate(spans) if z > at[0]), 0)
+            hi = next((i for i, (a, z) in enumerate(spans) if z >= at[1]), lo)
+        take = list(range(lo, hi + 1))
+        used = sum(tokens(s.text[spans[i][0]:spans[i][1]]) for i in take)
+        sides = {-1: lo - 1, 1: hi + 1}                 # each side grows outward until a paragraph does not fit
+        while sides:
+            for d in list(sides):
+                i = sides[d]
+                cost = tokens(s.text[spans[i][0]:spans[i][1]]) if 0 <= i < len(spans) else None
+                if cost is None or used + cost > room:
+                    del sides[d]
+                    continue
+                take.append(i)
+                used += cost
+                sides[d] = i + d
+        return "\n\n".join(s.text[spans[i][0]:spans[i][1]].strip() for i in sorted(take))
+
+    @staticmethod
+    def _ask_facts(b: Book, passage: str) -> list[str]:
+        """A few story bible facts about who and where the passage names. Cheap: names only."""
+        out = []
+        for c in b.list_of("characters"):
+            names = [str(x) for x in [c.get("name")] + list(c.get("aliases") or []) if x]
+            if any(re.search(rf"\b{re.escape(n)}\b", passage) for n in names):
+                bits = [f"{c.get('name')} ({c.get('role') or 'a character'})"]
+                if c.get("wants"):
+                    bits.append(f"wants {c.get('wants')}")
+                if c.get("fears"):
+                    bits.append(f"fears {c.get('fears')}")
+                if c.get("traits"):
+                    bits.append("is " + ", ".join(map(str, c.get("traits") or [])))
+                out.append("; ".join(bits))
+        for p in b.list_of("places"):
+            if p.get("name") and re.search(rf"\b{re.escape(str(p['name']))}\b", passage):
+                out.append(f"{p['name']}: {p.get('kind') or 'a place'}" + (f", {p['notes']}" if p.get("notes") else ""))
+        return [books.scrub(x) for x in out[:8]]
+
+    def ask(self, msg: dict) -> dict:
+        folder = self._folder(msg.get("title"))
+        b = Book(folder)
+        s = b.section(msg.get("n"))
+        if s is None:
+            raise Refused("I could not find that part of your book.")
+        passage = "\n".join(" ".join(x.split()) for x in marks.strip(str(msg.get("passage") or "")).split("\n")).strip()[:3000]
+        if not passage:
+            raise Refused("Select some of your words first.")
+        q = " ".join(str(msg.get("question") or "").split())[:1000] or "How does this read?"
+        room = self.room() - tokens(self.PAGE_ASK_SYSTEM) - tokens(q) - tokens(passage) - 200
+        facts = engine.fit(self._ask_facts(b, passage), max(0, min(room // 5, 400)))
+        near = self._around(s, passage, max(0, room - tokens(facts)))
+        user = f"Her question: {q}\n\nThe words she chose, from section {s.n}:\n{passage}\n\nAround them in her book:\n{near or passage}"
+        if facts:
+            user += f"\n\nFrom the story bible:\n{facts}"
+        messages = [{"role": "system", "content": self.PAGE_ASK_SYSTEM}, {"role": "user", "content": books.scrub(user)}]
+        rec = {"id": f"a{int(time.time() * 1000)}", "n": s.n, "quote": passage, "question": q, "answer": "", "state": "waiting", "asked_at": now()}
+        self.asking.add(rec["id"])
+        self._ask_put(folder, rec)
+
+        def go() -> dict:
+            try:
+                text, _m = self.brain.chat(messages, patient=False)
+                words = "\n".join(re.sub("\\s*[\u2014\u2013]\\s*", ", ", x).rstrip() for x in strip_think(text).split("\n")).strip()
+                rec.update(state="done", answer=words or "Your editor had no answer to that.")
+            except BrainSlow:
+                rec.update(state="failed", answer="Your editor took too long on that. Try fewer words.")
+            except BrainDown as exc:
+                rec.update(state="failed", answer=str(exc))
+            finally:
+                self.asking.discard(rec["id"])
+                try:
+                    self._ask_put(folder, rec)
+                except OSError:
+                    pass
+            return rec
+        ahead = self._ahead()
+        job = self.queue.submit(go)                   # her ask goes ahead of a check's next call
+        try:
+            job.wait(ASK_PAGE_WAIT)
+        except NotYet:
+            pass
+        return {"ask": dict(rec), "ahead": ahead}
+
+    # Study a book: her manuscript beside a book she admires (study.py). The numbers are code and come at once; the passage
+    # comparison is her press, a job in the same line as the checks. Kept in this book's working folder, in study/: its
+    # measure, and for each book it was compared with, one report and the saved answers, each replaced by the next run.
+
+    def _study_home(self, folder: Path) -> Path:
+        return engine.home_of(folder) / STUDY
+
+    @staticmethod
+    def _pair_name(theirs: Path) -> str:
+        return sha_of(engine.book_key(theirs).encode("utf-8"))[:16]
+
+    def _measure(self, folder: Path, b: Book) -> dict:
+        """One book's style numbers, kept by the shas of its sections so a second look costs nothing."""
+        key = sha_of("|".join(f"{s.n}:{s.sha}" for s in b.sections).encode("utf-8"))
+        path = self._study_home(folder) / "measure.json"
+        got = read_json(path, {}) or {}
+        if isinstance(got, dict) and got.get("key") == key and isinstance(got.get("numbers"), dict):
+            return got["numbers"]
+        numbers = study.measure(b)
+        try:
+            write_json(path, {"key": key, "numbers": numbers})
+        except OSError:
+            pass
+        return numbers
+
+    def _other(self, folder: Path, theirs: Any) -> Path:
+        if not " ".join(str(theirs or "").split()):
+            raise Refused("Say which book to compare yours with.")
+        other = find_book(self.shelf(), theirs)
+        if other.name == folder.name:
+            raise Refused("Pick a different book to compare yours with.")
+        return other
+
+    def study_books(self, title: Any) -> dict:
+        folder = self._folder(title)
+        out = []
+        for f in books.all_books(self.shelf()):
+            if f.name == folder.name:
+                continue
+            idx = read_index(f)
+            out.append({"title": idx.get("title") or f.name, "study": idx.get("study") is True,
+                        "words": sum(int(c.get("words") or 0) for c in idx.get("sections") or [])})
+        out.sort(key=lambda x: (not x["study"], str(x["title"]).lower()))
+        return {"title": Book(folder).title, "books": out}
+
+    def study_numbers(self, title: Any, theirs: Any) -> dict:
+        """Both books' numbers, the lines where they differ most and where they match, and what the passages would cost.
+        No brain."""
+        folder = self._folder(title)
+        other = self._other(folder, theirs)
+        mine_b, their_b = Book(folder), Book(other)
+        mine_n, their_n = self._measure(folder, mine_b), self._measure(other, their_b)
+        diff = study.differences(mine_n, their_n)
+        room = self.room()
+        key = sha_of(json.dumps([[s.sha for s in mine_b.sections], [s.sha for s in their_b.sections], room]).encode("utf-8"))
+        path = self._study_home(folder) / f"{self._pair_name(other)}.steps.json"
+        got = read_json(path, {}) or {}
+        if isinstance(got, dict) and got.get("key") == key and isinstance(got.get("pairs"), int):
+            n = got["pairs"]
+        else:
+            n = len(study.pairs(mine_b, their_b, room))
+            try:
+                write_json(path, {"key": key, "pairs": n})
+            except OSError:
+                pass
+        steps = n + 1 if n else 0
+        left = self.timing.left(steps)
+        return {"mine": mine_b.title, "theirs": their_b.title, "numbers": {"mine": mine_n, "theirs": their_n},
+                "apart": diff["apart"], "alike": diff["alike"], "pairs_count": n, "steps": steps,
+                "time_left": _when_left(left).replace(" left", "") if left is not None else ""}
+
+    def study_start(self, title: Any, theirs: Any, focus: Any = "") -> dict:
+        """Her press, or her yes through desk_study. The only way a comparison starts."""
+        folder = self._folder(title)
+        other = self._other(folder, theirs)
+        mine_t, their_t = Book(folder).title, Book(other).title
+        words = plain(str(focus or ""), study.FOCUS_MAX)
+        with self.lock:
+            jobs = self._jobs()
+            if any(j.get("folder") == folder.name and j.get("kind") == STUDY for j in jobs):
+                raise Refused(f"Your editor is already comparing {mine_t} with a book. Wait for it, or press Stop.")
+            job = {"id": f"{int(time.time() * 1000)}-study", "kind": STUDY, "folder": folder.name, "title": mine_t,
+                   "check": STUDY, "check_name": f"{STUDY_NAME}: {their_t}", "theirs": other.name, "theirs_title": their_t,
+                   "plan": words, "state": "queued", "step": "In line", "done": 0, "total": 0, "found": 0, "problems": [],
+                   "started_at": None, "pressed_at": now()}
+            jobs.append(job)
+            self._save_jobs(jobs)
+        self.wake.set()
+        return job
+
+    def _run_study(self, job: dict, shelf: Path) -> None:
+        folder, other = shelf / job["folder"], shelf / str(job.get("theirs") or "")
+        if not folder.is_dir() or not job.get("theirs") or not other.is_dir():
+            self._finish(job, "failed", "One of the two books is no longer on the shelf.")
+            return
+        resumed = job.get("state") in ("running", "waiting")
+        job.update(state="running", started_at=job.get("started_at") or now(), resumed=resumed, done=0, total=0)
+
+        def put(**kw: Any) -> None:
+            job.update(kw)
+            self._update(job)
+            self._book_status(job)
+
+        def stopped() -> bool:
+            return job["id"] in self.stop_flag
+
+        # the same way a check asks: it waits while Manuscript reads, goes at a check's rank, and is timed
+        caller = _Run(folder, {"id": STUDY, "name": STUDY_NAME, "box_needed": False}, job, self.brain, self.queue, self.room,
+                      self.timing, put, stopped, self.shelf)
+        home = self._study_home(folder)
+        pair = self._pair_name(other)
+        saved = _Saved(home / f"{pair}.saved.json")
+
+        def progress(done: int, total: int, line: str) -> None:
+            put(step=line, done=done, total=total, left_s=self.timing.left(total - done))
+
+        put()
+        try:
+            report = study.run(Book(folder), Book(other), caller._call, self.room(), job.get("plan") or "", saved, progress, stopped)
+        except Stopped:
+            report = {"state": "stopped"}
+        except (BrainDown, Refused) as exc:
+            self._finish(job, "failed", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - never out of the thread; a plain line in the status
+            traceback.print_exc()
+            self._finish(job, "failed", f"The comparison stopped on an error ({type(exc).__name__}). Press it again and it goes on from where it was.")
+            return
+        if report.get("state") == "stopped":
+            self.stop_flag.discard(job["id"])
+            self._finish(job, "stopped", "Stopped. Press Compare again and it goes on from where it was.")
+            return
+        with self.study_lock:
+            write_json(home / f"{pair}.json", report)          # one report per book compared with, replaced
+            saved.keep_used()                                   # only what this run used is kept
+        n = sum(1 for p in report.get("pairs") or [] if p.get("state") == "done")
+        line = f"Your editor compared {n} pair{'s' if n != 1 else ''} of passages with {report.get('theirs')}. See Study a book."
+        self._finish(job, "done", line, problems=[x["line"] for x in report.get("skipped") or [] if x.get("line")])
+
+    def study_report(self, title: Any, theirs: Any = "") -> dict:
+        folder = self._folder(title)
+        home = self._study_home(folder)
+        if not " ".join(str(theirs or "").split()):
+            out = []
+            for p in sorted(home.glob("*.json")) if home.is_dir() else []:
+                if p.name.count(".") != 1 or p.name == "measure.json":
+                    continue
+                r = read_json(p, {}) or {}
+                if isinstance(r, dict) and r.get("theirs"):
+                    out.append({"theirs": r.get("theirs"), "made_at": r.get("made_at"), "state": r.get("state")})
+            out.sort(key=lambda r: str(r.get("made_at") or ""), reverse=True)
+            return {"reports": out}
+        other = self._other(folder, theirs)
+        got = read_json(home / f"{self._pair_name(other)}.json")
+        running = any(j.get("folder") == folder.name and j.get("kind") == STUDY and j.get("theirs") == other.name for j in self._jobs())
+        return {"report": got if isinstance(got, dict) else None, "running": running}
+
+    # a Word copy of her book, to read or share. It reads her sections and writes a new file in My files; nothing else.
+
+    def word_copy(self, title: Any) -> dict:
+        folder = self._folder(title)
+        b = Book(folder)
+        if not b.sections:
+            raise Refused("There is no text in this book yet.")
+        fmt = next((cid for cid, c in engine.load_checks().items() if c.get("makes") == "format"), "")
+        ran = read_json(engine.home_of(folder) / engine.RUNS, {}) or {}
+        author = str(((ran.get(fmt) or {}) if isinstance(ran, dict) else {}).get("plan") or "")    # her name, as she typed it for Submission format
+        raw, name = docx_out.build(b, author, plain=True)
+        rec = engine.save_document(folder, "reading-copy", name, "docx", raw, "wordcopy")
+        where = f"My files/{engine.EXPORTS}/{folder.name}/{rec['file']}"
+        return {"message": f"Saved in your files at: {where}", "where": where, "document": rec}
+
+
+def _page_text(raw: str) -> str:
+    """A section's text for the page: as the file has it, marks and all, one line a paragraph, no trailing newline."""
+    return raw.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+
 
 _Run = engine.Run
 
 
+class _Saved(dict):
+    """Saved answers for one comparison, written to disk as each one comes, so a stop or a restart pays only for what is
+    missing. It notes which it was asked for, so a finished run keeps only those."""
+
+    def __init__(self, path: Path) -> None:
+        got = read_json(path, {}) or {}
+        super().__init__({k: v for k, v in got.items() if isinstance(v, str)} if isinstance(got, dict) else {})
+        self.path, self.used = path, set()
+
+    def __getitem__(self, key: str) -> str:
+        self.used.add(key)
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: str, value: str) -> None:
+        super().__setitem__(key, value)
+        write_json(self.path, dict(self))
+
+    def keep_used(self) -> None:
+        write_json(self.path, {k: v for k, v in self.items() if k in self.used})
+
+
 # -- MCP ------------------------------------------------------------------------------------------
 
-CHANGES = ("desk_run", "desk_mark", "desk_stop")
+CHANGES = ("desk_run", "desk_mark", "desk_stop", "desk_study")
 _TITLE = {"type": "string", "description": "The manuscript's title. May be left empty when there is only one."}
+STUDY_TOOL = ("Compares the writer's manuscript with a book she admires, on the shelf: your editor reads matched passages of each, "
+              "one pair at a time, in the background, and gives pointers on style and flow. Without theirs it lists the books she "
+              "could compare with. It starts only after the writer said yes; asked without her yes it only tells your bot what to "
+              "ask her. It never writes her text.")
+STUDY_REPORT_TOOL = ("How the writer's manuscript compares with a book she admires: the style numbers at once, where the two "
+                     "differ most and where she already matches, and, once her editor compared passages, what to try first and the "
+                     "notes on each pair of passages.")
 TOOLS = {
     "desk_checks": ("The stages of editing for one manuscript and every check in them, when each last ran, what it found, and which comes next.", {"title": _TITLE}, []),
     "desk_run": ("Runs one editing check in the background. It starts only after the writer said yes; asked without her yes it only tells your bot what to ask her. A check can take a long time.",
@@ -682,6 +1120,10 @@ TOOLS = {
     "desk_ask": ("Answers a question about a change the writer is planning, from what Future plans and changes found and the story bible.", {"title": _TITLE, "question": {"type": "string"}}, ["question"]),
     "desk_documents": ("The documents made for one manuscript: the style sheet, length note, synopsis, query letter, submission copy. Gives one by name, or the list.", {"title": _TITLE, "name": {"type": "string"}}, []),
     "desk_stop": ("Stops the check running for one manuscript, after the call in progress. Pressed again, it goes on from where it was.", {"title": _TITLE}, []),
+    "desk_study": (STUDY_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she admires, on the shelf. Leave empty to list the books she could pick."},
+                                "confirm": {"type": "boolean", "description": "True only when the writer said yes to the comparison, in her latest message."},
+                                "focus": {"type": "string", "description": "What she most wants to learn from that book, in her words. May be left empty."}}, []),
+    "desk_study_report": (STUDY_REPORT_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she compared hers with."}}, []),
 }
 
 
@@ -783,7 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
             fn()
         except Refused as exc:
             if not self._sent:
-                self._json(400, {"error": str(exc)})
+                self._json(400, {"error": str(exc), **getattr(exc, "extra", {})})
         except Exception as exc:  # noqa: BLE001 - the answer says what kind of error it was
             self.close_connection = True
             if not self._sent:
@@ -814,6 +1256,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, a.list_view())
         if path == "/api/desk":
             return self._json(200, a.desk_view(q.get("title", "")))
+        if path == "/api/book":
+            return self._json(200, a.book_view(q.get("title", "")))
+        if path == "/api/asks":
+            return self._json(200, a.asks_view(q.get("title", "")))
         if path == "/api/section":
             return self._json(200, a.section_view(q.get("title", ""), q.get("n", "")))
         if path == "/api/version":
@@ -822,6 +1268,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, a.document_view(q.get("title", ""), q.get("id", "")))
         if path == "/api/settings":
             return self._json(200, {"settings": a.settings()})
+        if path == "/api/study/books":
+            return self._json(200, a.study_books(q.get("title", "")))
+        if path == "/api/study/numbers":
+            return self._json(200, a.study_numbers(q.get("title", ""), q.get("theirs", "")))
+        if path == "/api/study":
+            return self._json(200, a.study_report(q.get("title", ""), q.get("theirs", "")))
         name = urllib.parse.unquote(path.lstrip("/"))
         file = (WEB / name).resolve()
         if name and file.suffix.lower() in WEB_TYPES and WEB.resolve() in file.parents and file.is_file():
@@ -864,12 +1316,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, a.save(msg))
         if path == "/api/restore":
             return self._json(200, a.restore(msg))
+        if path == "/api/ask":
+            return self._json(200, a.ask(msg))
+        if path == "/api/asks":
+            return self._json(200, a.ask_remove(msg))
         if path == "/api/use" and USE_THIS:
             return self._json(200, a.use_this(msg))
         if path == "/api/document":
             return self._json(200, a.document_save(msg))
         if path == "/api/settings":
             return self._json(200, a.settings_save(msg))
+        if path == "/api/study":
+            job = a.study_start(msg.get("title"), msg.get("theirs"), msg.get("focus"))
+            return self._json(200, {"message": f"Your editor is comparing passages with {job['theirs_title']}.", "job": job})
+        if path == "/api/wordcopy":
+            return self._json(200, a.word_copy(msg.get("title")))
         self._json(404, {"error": "Editor's Desk has no page here."})
 
     def do_DELETE(self):
