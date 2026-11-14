@@ -1,4 +1,4 @@
-/* Maps 2.1.0: draws one board's spec ("maps/1", see draw.py) as an SVG that fills its pane. The server has laid
+/* Maps 2.2.0: draws one board's spec ("maps/1", see draw.py) as an SVG that fills its pane. The server has laid
    everything out; this file draws it, puts each edge label where it does not cover a name or another label,
    zooms (wheel, + and -), pans (drag on empty space), lets nodes be dragged on boards that allow it, and makes a
    PNG of the whole board in the browser. A board opens fitted to its pane, or at the view it was left at.

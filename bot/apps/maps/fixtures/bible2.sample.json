@@ -1,0 +1,903 @@
+{
+ "schema": "manuscript-bible/2",
+ "title": "Salt Moon",
+ "built_at": "2026-10-31T23:40:00Z",
+ "built_with": "qwen3:30b-a3b",
+ "sections_read": 8,
+ "sections_total": 8,
+ "characters": [
+  {
+   "id": "tamsin",
+   "name": "Tamsin Dray",
+   "aliases": [
+    "Tam"
+   ],
+   "role": "protagonist",
+   "traits": [
+    "curious",
+    "stubborn",
+    "protective"
+   ],
+   "wants": "to see what lies past the station's lights",
+   "fears": "being owned by the debt the way her parents are",
+   "appearances": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "first_seen": 1,
+   "arc": [
+    {
+     "section": 1,
+     "beat": "Keeps Pell from the window and repeats the station's rules."
+    },
+    {
+     "section": 2,
+     "beat": "Walks the flats alone and first thinks she could leave."
+    },
+    {
+     "section": 3,
+     "beat": "Hides Quill instead of reporting him."
+    },
+    {
+     "section": 5,
+     "beat": "Learns the Lantern is a meter for the debt."
+    },
+    {
+     "section": 7,
+     "beat": "Goes under the last gate alone."
+    },
+    {
+     "section": 8,
+     "beat": "Chooses to stay, now that she knows she could go."
+    }
+   ],
+   "relationships": [
+    {
+     "to": "pell",
+     "kind": "sister",
+     "note": "watches over him"
+    },
+    {
+     "to": "mira",
+     "kind": "daughter",
+     "note": "senses her mother is hiding something"
+    },
+    {
+     "to": "oren",
+     "kind": "daughter",
+     "note": "reads his silences"
+    },
+    {
+     "to": "quill",
+     "kind": "ally",
+     "note": "hides him from section 3"
+    },
+    {
+     "to": "halden",
+     "kind": "opponent",
+     "note": "confronts him over the files"
+    }
+   ],
+   "family": {
+    "parents": [
+     "mira",
+     "oren"
+    ],
+    "children": [],
+    "partners": []
+   },
+   "importance": "main",
+   "personality": "Curious and stubborn, she asks the question everyone else has stopped asking. She protects her brother before herself.",
+   "write_up": "Tamsin grows up on Brine Station under the Lantern. She hides a stranger, follows his warning into the station's files and learns the light is counting them. She chooses to stay and help switch it off.",
+   "looks": [
+    {
+     "detail": "short dark hair cut with a knife",
+     "section": 1,
+     "quote": "Her hair was short and dark, cut with the same knife she used on the tether knots."
+    },
+    {
+     "detail": "salt-white boots",
+     "section": 2,
+     "quote": "her boots were white to the ankle with salt"
+    },
+    {
+     "detail": "a scar across her chin",
+     "section": 3,
+     "quote": "the scar across her chin pulled tight when she grinned"
+    }
+   ],
+   "age_words": {
+    "words": "a girl of fourteen",
+    "section": 1,
+    "quote": "a girl of fourteen who knew every pump by its cough"
+   }
+  },
+  {
+   "id": "pell",
+   "name": "Pell Dray",
+   "aliases": [],
+   "role": "supporting",
+   "traits": [
+    "dreamy",
+    "observant"
+   ],
+   "wants": "to map the whole moon",
+   "fears": "the Brine Bell",
+   "appearances": [
+    1,
+    6,
+    8
+   ],
+   "first_seen": 1,
+   "arc": [],
+   "relationships": [
+    {
+     "to": "quill",
+     "kind": "friend",
+     "note": "shows Quill his map"
+    }
+   ],
+   "family": {
+    "parents": [
+     "mira",
+     "oren"
+    ],
+    "children": [],
+    "partners": []
+   },
+   "importance": "supporting",
+   "personality": "Dreamy and observant.",
+   "write_up": "Pell maps the warm channels under the crust."
+  },
+  {
+   "id": "mira",
+   "name": "Mira Dray",
+   "aliases": [
+    "her mother"
+   ],
+   "role": "supporting",
+   "traits": [
+    "guarded",
+    "skilled"
+   ],
+   "wants": "to keep her children out of the company's books",
+   "fears": "being recognised",
+   "appearances": [
+    1,
+    4,
+    5,
+    7
+   ],
+   "first_seen": 1,
+   "arc": [
+    {
+     "section": 1,
+     "beat": "Buried in pump schematics."
+    },
+    {
+     "section": 4,
+     "beat": "Found alone with a badge in another name."
+    },
+    {
+     "section": 5,
+     "beat": "Named by Halden as one of the meter's makers."
+    },
+    {
+     "section": 7,
+     "beat": "Cuts the meter loose herself."
+    }
+   ],
+   "relationships": [
+    {
+     "to": "oren",
+     "kind": "partner",
+     "note": ""
+    },
+    {
+     "to": "halden",
+     "kind": "former colleague",
+     "note": "they built the system together"
+    }
+   ],
+   "family": {
+    "parents": [],
+    "children": [
+     "tamsin",
+     "pell"
+    ],
+    "partners": [
+     "oren"
+    ]
+   },
+   "importance": "supporting",
+   "personality": "Guarded and skilled, she keeps her old name to herself.",
+   "write_up": "Mira helped build the meter under another name and is cutting it loose when her daughter finds her.",
+   "looks": [
+    {
+     "detail": "grey hair pulled back",
+     "section": 1,
+     "quote": "Mira's grey hair was pulled back hard"
+    },
+    {
+     "detail": "a burn on her left hand",
+     "section": 4,
+     "quote": "the old burn on her left hand, shiny as brine glass"
+    }
+   ],
+   "age_words": {
+    "words": "older than the station's records",
+    "section": 4,
+    "quote": "older than the station's records said she was"
+   }
+  },
+  {
+   "id": "oren",
+   "name": "Oren Dray",
+   "aliases": [],
+   "role": "supporting",
+   "traits": [
+    "quiet",
+    "careful"
+   ],
+   "wants": "to pay the debt down",
+   "fears": "his children inheriting it",
+   "appearances": [
+    1,
+    4,
+    8
+   ],
+   "first_seen": 1,
+   "arc": [],
+   "relationships": [],
+   "family": {
+    "parents": [],
+    "children": [
+     "tamsin",
+     "pell"
+    ],
+    "partners": [
+     "mira"
+    ]
+   },
+   "importance": "supporting",
+   "personality": "Quiet and careful.",
+   "write_up": "Oren counts the ration chits and says nothing about the debt."
+  },
+  {
+   "id": "quill",
+   "name": "Quill Asher",
+   "aliases": [
+    "the stranger"
+   ],
+   "role": "ally",
+   "traits": [
+    "charming",
+    "evasive"
+   ],
+   "wants": "to stay far from the company",
+   "fears": "being caught",
+   "appearances": [
+    3,
+    5,
+    6,
+    7,
+    8
+   ],
+   "first_seen": 3,
+   "arc": [
+    {
+     "section": 3,
+     "beat": "Found hiding in the pump house."
+    },
+    {
+     "section": 5,
+     "beat": "His tip leads Tamsin to the files."
+    },
+    {
+     "section": 6,
+     "beat": "Has already seen Pell's map."
+    },
+    {
+     "section": 7,
+     "beat": "Gives up his last tank for the swim."
+    },
+    {
+     "section": 8,
+     "beat": "Leaves on the next tide."
+    }
+   ],
+   "relationships": [
+    {
+     "to": "halden",
+     "kind": "opponent",
+     "note": "knows what the Lantern sends"
+    }
+   ],
+   "family": {
+    "parents": [],
+    "children": [],
+    "partners": []
+   },
+   "importance": "main",
+   "personality": "Charming and evasive, he tells half of every story.",
+   "write_up": "Quill comes over the flats with a warning about the Lantern, hides in the pump house and leaves once the light comes back white.",
+   "looks": [
+    {
+     "detail": "a long company coat with the badges torn off",
+     "section": 3,
+     "quote": "a long company coat with the badges torn off"
+    },
+    {
+     "detail": "taller than anyone on the station",
+     "section": 5,
+     "quote": "He was taller than anyone on Brine Station and stooped in every doorway."
+    }
+   ]
+  },
+  {
+   "id": "halden",
+   "name": "Halden Roe",
+   "aliases": [
+    "the administrator"
+   ],
+   "role": "antagonist",
+   "traits": [
+    "tired",
+    "frightened"
+   ],
+   "wants": "to keep the station calm",
+   "fears": "the company",
+   "appearances": [
+    4,
+    5,
+    8
+   ],
+   "first_seen": 4,
+   "arc": [],
+   "relationships": [],
+   "family": {
+    "parents": [],
+    "children": [],
+    "partners": []
+   },
+   "importance": "main",
+   "personality": "Tired and frightened, he keeps order by promising help that is not coming.",
+   "write_up": "Halden runs the station for the company and knows more about the meter than he says."
+  },
+  {
+   "id": "wick",
+   "name": "Wick Arlo",
+   "role": "supporting",
+   "importance": "minor",
+   "aliases": [],
+   "traits": [
+    "loud"
+   ],
+   "appearances": [
+    6
+   ],
+   "first_seen": 6,
+   "relationships": [],
+   "family": {
+    "parents": [],
+    "children": [],
+    "partners": []
+   },
+   "personality": "",
+   "write_up": "Wick Arlo is in section 6."
+  }
+ ],
+ "places": [
+  {
+   "id": "brine-station",
+   "name": "Brine Station",
+   "kind": "station",
+   "notes": "The mining station where the Drays live, under the Lantern.",
+   "appearances": [
+    1,
+    2,
+    4,
+    5,
+    8
+   ],
+   "details": [
+    {
+     "detail": "stacked tin domes",
+     "section": 1,
+     "quote": "the stacked tin domes of Brine Station"
+    },
+    {
+     "detail": "the smell of hot brine",
+     "section": 1,
+     "quote": "the smell of hot brine that never left the vents"
+    },
+    {
+     "detail": "pipes that knock at night",
+     "section": 2,
+     "quote": "the pipes knocked all night like someone wanting in"
+    }
+   ]
+  },
+  {
+   "id": "salt-flats",
+   "name": "The salt flats",
+   "kind": "wilderness",
+   "notes": "Crusted brine around the station; walked only on a tether.",
+   "appearances": [
+    1,
+    2,
+    8
+   ]
+  },
+  {
+   "id": "the-lantern",
+   "name": "The Lantern",
+   "kind": "relay",
+   "notes": "The light above the station and its only line to the company. Powered from the old dome.",
+   "appearances": [
+    1,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "details": [
+    {
+     "detail": "a white light on a tall mast",
+     "section": 1,
+     "quote": "the Lantern burned white on its tall mast"
+    },
+    {
+     "detail": "it hums when it sends",
+     "section": 4,
+     "quote": "it hummed when it sent, a low note in the floor"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "id": "e1",
+   "section": 1,
+   "order": 1,
+   "what": "The Brine Bell rings early.",
+   "who": [
+    "tamsin",
+    "pell"
+   ],
+   "where": "brine-station",
+   "when": "supper, the first day"
+  },
+  {
+   "id": "e2",
+   "section": 1,
+   "order": 2,
+   "what": "Oren counts the ration chits and says nothing about the debt.",
+   "who": [
+    "oren",
+    "tamsin"
+   ],
+   "where": "brine-station",
+   "when": "supper, the first day"
+  },
+  {
+   "id": "e3",
+   "section": 2,
+   "order": 1,
+   "what": "Tamsin walks the flats on the survey line.",
+   "who": [
+    "tamsin"
+   ],
+   "where": "salt-flats",
+   "when": "the morning after the surge"
+  },
+  {
+   "id": "e4",
+   "section": 2,
+   "order": 2,
+   "what": "She finds a stranger's boot prints heading to the dead pumps.",
+   "who": [
+    "tamsin"
+   ],
+   "where": "salt-flats",
+   "when": "the same morning"
+  },
+  {
+   "id": "e5",
+   "section": 3,
+   "order": 1,
+   "what": "Tamsin finds Quill in the pump house and hides him.",
+   "who": [
+    "tamsin",
+    "quill"
+   ],
+   "where": "salt-flats",
+   "when": "the second day"
+  },
+  {
+   "id": "e6",
+   "section": 4,
+   "order": 1,
+   "what": "The Lantern goes dark.",
+   "who": [],
+   "where": "the-lantern",
+   "when": "the fourth night"
+  },
+  {
+   "id": "e7",
+   "section": 4,
+   "order": 2,
+   "what": "Halden tells the station help is coming.",
+   "who": [
+    "halden"
+   ],
+   "where": "brine-station",
+   "when": "the fourth night"
+  },
+  {
+   "id": "e8",
+   "section": 4,
+   "order": 3,
+   "what": "Tamsin finds Mira holding a badge in another name.",
+   "who": [
+    "tamsin",
+    "mira"
+   ],
+   "where": "brine-station",
+   "when": "the fourth night"
+  },
+  {
+   "id": "e9",
+   "section": 5,
+   "order": 1,
+   "what": "Tamsin learns the Lantern is a meter for the debt.",
+   "who": [
+    "tamsin",
+    "halden"
+   ],
+   "where": "brine-station",
+   "when": "the fifth day"
+  },
+  {
+   "id": "e10",
+   "section": 6,
+   "order": 1,
+   "what": "Pell's map shows every channel ends at the dome.",
+   "who": [
+    "pell",
+    "tamsin"
+   ],
+   "where": "brine-station",
+   "when": "the fifth day"
+  },
+  {
+   "id": "e11",
+   "section": 7,
+   "order": 1,
+   "what": "Tamsin swims under the gate and finds Mira cutting the meter loose.",
+   "who": [
+    "tamsin",
+    "mira",
+    "quill"
+   ],
+   "where": "the-lantern",
+   "when": "low tide"
+  },
+  {
+   "id": "e12",
+   "section": 8,
+   "order": 1,
+   "what": "The Lantern comes back white and sends only what the station chooses.",
+   "who": [
+    "halden",
+    "oren",
+    "pell",
+    "quill",
+    "tamsin"
+   ],
+   "where": "brine-station",
+   "when": "the next tide"
+  }
+ ],
+ "threads": [
+  {
+   "id": "the-lantern",
+   "name": "The Lantern",
+   "kind": "main plot",
+   "sections": [
+    1,
+    3,
+    4,
+    5,
+    7,
+    8
+   ],
+   "setups": [
+    "section 1: the one line to the company",
+    "section 3: Quill says it is not sending what they think"
+   ],
+   "payoffs": [
+    "section 5: it is a meter",
+    "section 8: it comes back white"
+   ],
+   "open": false
+  },
+  {
+   "id": "miras-other-name",
+   "name": "Mira's other name",
+   "kind": "subplot",
+   "sections": [
+    4,
+    5,
+    7
+   ],
+   "setups": [
+    "section 4: the badge with another name"
+   ],
+   "payoffs": [
+    "section 7: she wears the badge to cut the meter"
+   ],
+   "open": true
+  },
+  {
+   "id": "quills-past",
+   "name": "Why Quill ran",
+   "kind": "subplot",
+   "sections": [
+    3,
+    7,
+    8
+   ],
+   "setups": [
+    "section 3: stolen filters and a practised smile"
+   ],
+   "payoffs": [],
+   "open": true
+  }
+ ],
+ "themes": [
+  {
+   "name": "a debt you inherit",
+   "evidence": [
+    {
+     "section": 1,
+     "quote": "said nothing about the debt, which was how Tamsin knew it had grown"
+    },
+    {
+     "section": 5,
+     "quote": "came back as debt"
+    }
+   ]
+  },
+  {
+   "name": "being seen and being counted",
+   "evidence": [
+    {
+     "section": 5,
+     "quote": "It was a meter."
+    },
+    {
+     "section": 8,
+     "quote": "it said only what Brine Station chose to send"
+    }
+   ]
+  },
+  {
+   "name": "leaving and staying",
+   "evidence": [
+    {
+     "section": 2,
+     "quote": "she thought, for the first time, that she could leave it"
+    },
+    {
+     "section": 8,
+     "quote": "That's why I can stay."
+    }
+   ]
+  }
+ ],
+ "world_rules": [
+  {
+   "rule": "The brine rises every thirty-one hours.",
+   "sections": [
+    1,
+    7
+   ]
+  },
+  {
+   "rule": "Nobody walks the flats without a tether.",
+   "sections": [
+    2,
+    8
+   ]
+  },
+  {
+   "rule": "The Brine Bell rings before a surge.",
+   "sections": [
+    1
+   ]
+  },
+  {
+   "rule": "The Lantern is the station's only line to the company.",
+   "sections": [
+    1,
+    4,
+    5
+   ]
+  }
+ ],
+ "science": [
+  {
+   "claim": "The brine rises every thirty-one hours as Varr pulls on the moon",
+   "section": 1,
+   "note": "A moon that always shows Varr the same face, in a round orbit, feels a steady pull, not a rising and falling one. A slightly oval orbit gives a tide once per orbit; one line saying so would settle it.",
+   "plausible": "unclear"
+  },
+  {
+   "claim": "Warm water under the crust, heated by Varr squeezing the moon",
+   "section": 6,
+   "note": "Tidal heating keeps water liquid under ice on moons like this. Pell's comparison to rubbing your hands is fair.",
+   "plausible": "yes"
+  },
+  {
+   "claim": "Tamsin holds her breath for six minutes",
+   "section": 7,
+   "note": "Far past what someone untrained can do; two minutes is already a lot. A small tank or a shorter swim would fix it.",
+   "plausible": "no"
+  }
+ ],
+ "continuity": [
+  {
+   "kind": "mismatch",
+   "sections": [
+    1,
+    6
+   ],
+   "note": "Pell is ten in section 1 and twelve in section 6, with only days between."
+  },
+  {
+   "kind": "mismatch",
+   "sections": [
+    3,
+    7
+   ],
+   "note": "Quill's ship is the Wren in section 3 and the Heron in section 7."
+  },
+  {
+   "kind": "gap",
+   "sections": [
+    4,
+    5
+   ],
+   "note": "Tamsin has the administrator's key in section 5, but the story never shows how she got it."
+  }
+ ],
+ "editing": [
+  {
+   "section": 1,
+   "kind": "pacing",
+   "note": "A lot of station detail comes before the first question; the Lantern could show up a paragraph sooner."
+  },
+  {
+   "section": 2,
+   "kind": "point of view",
+   "note": "The line about the first settlers drifts toward Mira's memory; keep it in what Tamsin knows."
+  },
+  {
+   "section": 3,
+   "kind": "dialogue",
+   "note": "The practised smile and the word kid tell us the same thing about Quill; one of them is enough."
+  },
+  {
+   "section": 4,
+   "kind": "clarity",
+   "note": "It is hard to tell whose name is on the badge until section 5. That may be the plan; check it reads as a choice."
+  },
+  {
+   "section": 7,
+   "kind": "clarity",
+   "note": "Six minutes under water reads as a slip. See the science note."
+  },
+  {
+   "section": 8,
+   "kind": "repetition",
+   "note": "Small and lit echoes section 2 on purpose. Keep it the only echo on the last page."
+  }
+ ],
+ "summary": {
+  "one_line": "A girl on a salt moon learns the light her station trusts is counting them, and helps her mother switch it off.",
+  "paragraph": "On Brine Station, Tamsin Dray grows up under the Lantern, the station's only line to the company that owns it. When she hides a stranger, Quill Asher, he tells her the Lantern is not what it seems. The light goes dark, Tamsin finds files that show it is a meter for the station's debt, and learns her mother helped build it under another name. Using her brother's map of the warm channels under the crust, she reaches the dome where her mother is already cutting the meter loose. The Lantern comes back sending only what the station chooses.",
+  "by_section": [
+   {
+    "section": 1,
+    "summary": "The Brine Bell rings early. The Drays at supper; the debt is growing; the Lantern blinks above."
+   },
+   {
+    "section": 2,
+    "summary": "Tamsin walks the flats on a tether and finds a stranger's prints. She first thinks she could leave."
+   },
+   {
+    "section": 3,
+    "summary": "She finds Quill Asher hiding in the pump house and hides him."
+   },
+   {
+    "section": 4,
+    "summary": "The Lantern goes dark. Halden promises help; Mira holds a badge with another name."
+   },
+   {
+    "section": 5,
+    "summary": "The files show the Lantern is a meter. Halden says Mira helped write it."
+   },
+   {
+    "section": 6,
+    "summary": "Pell's map shows every channel runs to the dome that powers the Lantern."
+   },
+   {
+    "section": 7,
+    "summary": "At low tide Tamsin swims under the gate and finds Mira cutting the meter loose."
+   },
+   {
+    "section": 8,
+    "summary": "The Lantern comes back white. Quill leaves; Tamsin chooses to stay."
+   }
+  ]
+ },
+ "setting": {
+  "world": "a salt moon",
+  "place_in_world": "Brine Station",
+  "era": "the far future",
+  "technology": "old mining machines",
+  "one_paragraph": "A mining station on a salt moon, under one light that is its only line to the company that owns it.",
+  "look": [
+   {
+    "detail": "old mining machines",
+    "section": 1
+   },
+   {
+    "detail": "tin domes",
+    "section": 1
+   },
+   {
+    "detail": "tether lines",
+    "section": 2
+   }
+  ]
+ },
+ "history": [
+  {
+   "when": "twenty years ago",
+   "what": "The Lantern was built.",
+   "sections": [
+    5
+   ]
+  }
+ ],
+ "briefs": {
+  "characters": "Tamsin leads a small cast [1].",
+  "world": "One station, the flats and the Lantern [1]."
+ },
+ "geography": [
+  {
+   "from": "salt-flats",
+   "to": "brine-station",
+   "note": "a day's walk on the tether line",
+   "section": 2,
+   "quote": "a day's walk out on the tether line, and a day back"
+  },
+  {
+   "from": "the-lantern",
+   "to": "brine-station",
+   "note": "above",
+   "section": 1,
+   "quote": "The Lantern stood above the station"
+  }
+ ]
+}

@@ -36,7 +36,7 @@
    "kind": "app",
    "name": "Editor's Desk",
    "source": "apps/editors-desk",
-   "version": "0.3.0"
+   "version": "0.4.0"
   },
   {
    "id": "manuscript",
@@ -50,14 +50,14 @@
    "kind": "app",
    "name": "Maps",
    "source": "apps/maps",
-   "version": "2.1.0"
+   "version": "2.2.0"
   },
   {
    "id": "novel-mode",
    "kind": "skill",
    "name": "Novel mode",
    "source": "apps/novel-mode",
-   "version": "1.0.7"
+   "version": "1.0.8"
   },
   {
    "commit": "4a8e072c072df4222e7853f75d107ce3b266581e",

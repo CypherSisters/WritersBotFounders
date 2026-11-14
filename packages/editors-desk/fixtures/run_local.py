@@ -75,6 +75,20 @@ def study_answer(user: str):
                           "their_quote": few(a, 6), "my_quote": few(b, 6)}]}
 
 
+def board_answer(user: str):
+    """Panels for the stand-in storyboard artist: real sentences of the passage as quotes, so they are proved."""
+    import re
+    passage = user.split("<<<", 1)[-1].split(">>>", 1)[0]
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", " ".join(passage.split())) if 6 <= len(x.split()) <= 30]
+    shots, moods = ("wide", "medium", "close"), ("quiet", "tense", "warm", "cold")
+    out = []
+    for i, sent in enumerate(sentences[::max(1, len(sentences) // 3)][:3]):
+        out.append({"what": "A moment from this part of the story, as a picture.", "where": "where the scene is set", "who": [],
+                    "mood": moods[i % 4], "shot": shots[i % 3], "frame": "The people in the scene, seen from a little way off.",
+                    "quote": " ".join(sent.split()[:12])})
+    return out
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -107,6 +121,8 @@ def stand_in_core(made: Path) -> ThreadingHTTPServer:
         def do_POST(self):
             got = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             msgs = got.get("messages") or [{}]
+            if "storyboard artist" in str(msgs[0].get("content")):
+                return self._out({"text": json.dumps(board_answer(str(msgs[-1].get("content")))), "model": "stand-in"})
             if "learn from a book she admires" in str(msgs[0].get("content")):
                 return self._out({"text": json.dumps(study_answer(str(msgs[-1].get("content")))), "model": "stand-in"})
             self._out({"text": ANSWER, "model": "stand-in"})

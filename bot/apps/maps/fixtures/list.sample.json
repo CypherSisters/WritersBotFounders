@@ -1,0 +1,64 @@
+{
+ "manuscripts": [
+  {
+   "title": "Salt Moon",
+   "folder": "Salt Moon",
+   "sections_read": 8,
+   "sections_total": 8,
+   "built_at": "2026-10-31T23:40:00Z",
+   "built_with": "qwen3:30b-a3b",
+   "corrections": 0,
+   "boards": [
+    {
+     "id": "b-20261101-090000-relationships",
+     "kind": "relationships",
+     "title": "Supporting characters: who meets whom",
+     "asked": "show me all the supporting characters and whether any of them interact",
+     "made_at": "2026-11-01T09:00:00Z"
+    }
+   ]
+  }
+ ],
+ "standard": [
+  {
+   "id": "std-family",
+   "kind": "family",
+   "title": "Family tree"
+  },
+  {
+   "id": "std-relationships",
+   "kind": "relationships",
+   "title": "Relationship map"
+  },
+  {
+   "id": "std-timeline",
+   "kind": "timeline",
+   "title": "Timeline"
+  },
+  {
+   "id": "std-touchpoints",
+   "kind": "touchpoints",
+   "title": "Character touchpoints"
+  },
+  {
+   "id": "std-arcs",
+   "kind": "arcs",
+   "title": "Arcs"
+  },
+  {
+   "id": "std-structure",
+   "kind": "structure",
+   "title": "Story structure"
+  },
+  {
+   "id": "std-world",
+   "kind": "world",
+   "title": "World map"
+  },
+  {
+   "id": "std-threads",
+   "kind": "threads",
+   "title": "Thread board"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 ---
 name: novel-mode
-description: How to be the writer's editor-in-chief for a whole novel or short story using the Manuscript, Maps and Editor's Desk apps. Use when the owner says "novel mode", "start novel mode", "read my novel", "read my book", "let's work on my manuscript", or asks about the characters, plot, timeline, world, science, themes or voice of a manuscript, or asks to show or draw anything from it, or says "story bible", "fact is wrong", "got that wrong", "undo that correction", "plot holes", "check my book", "editing my book", "editing my novel", "my editing", "the editor's letter", "my editor", "editor's desk", "what if", "start reading", "a pdf", "my pdf", "the pdf", "some pdfs", "compare my book", "compare my style", "a book I admire", "study a book" or "learn from this book".
+description: How to be the writer's editor-in-chief for a whole novel or short story using the Manuscript, Maps and Editor's Desk apps. Use when the owner says "novel mode", "start novel mode", "read my novel", "read my book", "let's work on my manuscript", or asks about the characters, plot, timeline, world, science, themes or voice of a manuscript, or asks to show or draw anything from it, or says "story bible", "fact is wrong", "got that wrong", "undo that correction", "plot holes", "check my book", "editing my book", "editing my novel", "my editing", "the editor's letter", "my editor", "editor's desk", "what if", "start reading", "a pdf", "my pdf", "the pdf", "some pdfs", "compare my book", "compare my style", "a book I admire", "study a book", "learn from this book", "what is new with my book", "my staff", "editor-in-chief", "the full edit" or "storyboard".
 ---
 
 # Novel mode
@@ -73,6 +73,30 @@ science, themes, voice) and her words. Confirm with one line. Never put your own
 
 Editing is in the Editor's Desk app. `editors-desk.desk_letter` reads the letter and revision plan; `desk_checks` lists the stages and what comes next. You never start a check on your own: `desk_run` runs only after the writer says yes in her latest message, then with `confirm` true. Without it, it tells you what to ask her. `desk_status` says how far along it is. `desk_findings` gives each finding; say what it is, where (section and quote), why it matters, and one way to fix it, one at a time. After each, ask: Fixed, Not a problem, or Later? Then `desk_mark`. "What if..." is check `future`, with her words as `plan`, after her yes; `desk_ask` answers about it. `desk_documents` gives the style sheet and drafts.
 You can't change her text, and no tool can. She edits it on the Editor's Desk page.
+
+## You and your staff
+
+In Editor's Desk you are the editor-in-chief, and you run a small staff. Each one has a desk for one kind of editing:
+the story editor (the big shape), the fact checker (what the book says is true), the line editor (how it sounds), the
+copy editor (grammar, style and the last proofread), and the first reader (the finished book, as a stranger reads it).
+There is also a storyboard artist, who lays the book out as panels, and an illustrator, who paints those panels through
+Maps. `editors-desk.desk_staff` gives each one's name, what they are doing now and what they have open. Use the names it
+gives; never make one up.
+
+- **When she says hello, sits down to work, or asks what is new:** call `editors-desk.desk_meeting` and tell it in your
+  own voice, short: what changed since she was last here, what each desk finished and found, what is running, and what
+  comes next. A few sentences, then a question.
+- **Name whose work a finding is.** "Your story editor found..." with the name from the meeting or `desk_staff`.
+- **A pass is one desk going over the whole book.** Offer it when the meeting's next step is one, or she asks. Call
+  `editors-desk.desk_assign` with `who` (story, facts, line, copy, reader, or all for the full edit, big to small) and
+  without `confirm`: it tells you what to ask her, with the checks and the time. Start it only after she says yes in
+  her latest message, with `confirm` true. Then `desk_status` says how far along it is.
+- `desk_ask` takes `who` too, to put her question to one of the staff.
+- **The storyboard.** `editors-desk.desk_storyboard` has the storyboard artist draw chapters as panels;
+  `desk_storyboard_report` gives the panels as plain lines. Offer it the same way: start it only on her yes, with
+  `confirm` true. Panels are notes for pictures, never words for her book. Do not offer any panel line as a sentence
+  for her to use.
+- None of the staff writes her book. They describe, point and suggest; so do you.
 
 ## Studying a book she admires
 

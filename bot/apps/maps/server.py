@@ -29,13 +29,20 @@ One small server, bound to 127.0.0.1:
 Every route refuses a request without this package's PUFFPAI_TOKEN. GET never changes anything.
 
 Where the files are: ``<data folder>\\My files\\Manuscripts\\<title>\\``, found by asking the Core where My files is
-(``GET /v1/owner-files``). Maps reads only ``bible.json``, ``views.json``, ``boards.json``, ``corrections.json`` and
-``pointer.json`` there, and writes only ``boards.json``, ``pointer.json``, ``pictures.json`` (the pictures and each
-character's and place's fixed seed), ``style.json``, ``illustrate.json`` and ``pictures\\<id>.png``. It
+(``GET /v1/owner-files``). Maps reads only ``bible.json``, ``views.json``, ``boards.json``, ``corrections.json``,
+``pointer.json`` and ``storyboard.json`` there, and writes only ``boards.json``, ``pointer.json``, ``pictures.json``
+(the pictures and each character's and place's fixed seed), ``style.json``, ``illustrate.json`` and
+``pictures\\<id>.png``. It
 never reads or writes section text. No brain calls: every board is built from the bible by fixed rules (draw.py), and
 every picture is painted by a picture program (ComfyUI) on another computer on the home network, from a prompt built
 from bible facts only (pictures.py). Its own data folder (PUFFPAI_DATA) holds ``maker.json``: that address, the style
 and the last ten picture times, for Illustrate's time line.
+
+The storyboard's panels (2.2): Editor's Desk writes ``storyboard.json`` in a book's folder when she presses "Have Wren
+paint these". While Maps runs, a small watcher looks at each book's file every few seconds and paints each panel once
+for each ``asked_at``, with kind ``panel``, from the prompt Editor's Desk built from the panel's notes. Each row says
+``panel`` and ``asked_at``, so a panel is never painted twice for the same press, also after a restart. Without a
+picture program set up, the watcher does nothing.
 
 Copyright (c) 2026 Cypher Sisters. Apache-2.0 License.
 """
@@ -70,7 +77,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "maps"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 1024 * 1024
 SHELF = "Manuscripts"
@@ -84,6 +91,14 @@ PICTURE_DIR = "pictures"
 MAKER = "maker.json"
 STYLE = "style.json"
 ILLUSTRATE = "illustrate.json"
+STORYBOARD = "storyboard.json"                 # written only by Editor's Desk: panels to paint
+PANEL = "panel"                                # the kind of a storyboard panel's picture
+PANEL_ID = re.compile(r"s[0-9]+-[0-9]+")       # whole, by fullmatch: "s3-1"
+PANELS_MOST = 40                               # panels taken from one storyboard.json
+PANEL_PROMPT_MAX = 600
+STORYBOARD_MAX = 1024 * 1024                   # a bigger file is not read
+SIZE_AS = {PANEL: "scene"}                     # a panel is painted at a scene's landscape size
+LOOK_S = 5.0                                   # how often the watcher looks at the storyboards
 TIMES_KEPT = 10
 ASK_PATH = "/v1/bridge/addresses/ask"
 ASK_STATUS = {"allowed": 200, "not_needed": 200, "waiting": 202}
@@ -220,6 +235,29 @@ def time_left(seconds: float) -> str:
     return said[0].upper() + said[1:] + " left."
 
 
+def panel_id(v: Any) -> str:
+    """A storyboard panel's id, like "s3-1", or nothing: the file is another app's, so its words are not trusted."""
+    return v if isinstance(v, str) and len(v) <= 20 and PANEL_ID.fullmatch(v) else ""
+
+
+def panel_prompt(v: Any) -> str:
+    """A panel's prompt from storyboard.json: no control characters, one line, at most 600 characters."""
+    if not isinstance(v, str):
+        return ""
+    return " ".join("".join(c if c.isprintable() else " " for c in v).split())[:PANEL_PROMPT_MAX].strip()
+
+
+def when(v: Any) -> datetime | None:
+    """An ISO time from another app's file, in UTC, or None. A time without a zone is taken as UTC."""
+    if not isinstance(v, str) or not 10 <= len(v) <= 40:
+        return None
+    try:
+        t = datetime.fromisoformat(v.strip().replace("Z", "+00:00").replace("z", "+00:00"))
+    except ValueError:
+        return None
+    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t.astimezone(timezone.utc)
+
+
 class Maps:
     def __init__(self, files: Any, data: Path | str | None = None) -> None:
         self.files = files
@@ -228,6 +266,7 @@ class Maps:
         self.jobs: queue.Queue = queue.Queue()
         self.queued: set[str] = set()                      # picture ids queued or being made now
         self.worker: threading.Thread | None = None
+        self.watcher: threading.Thread | None = None
 
     # where things are
 
@@ -626,6 +665,8 @@ class Maps:
             kind, who = old.get("kind"), old.get("who")
             if rid:
                 said = _s(old.get("note"), pictures.NOTE_MAX)          # a retry is the same picture again
+            if kind == PANEL:
+                return self._panel_again(folder, bible, old, base, style, said, retry=bool(rid))
         k = self._kind(kind)
         if k == "scene" and _s(event, 300) and not old:
             who = event
@@ -644,6 +685,121 @@ class Maps:
             self._save_pics(folder, pics, seeds)
             self._enqueue(folder, [rec["id"]])
         return rec
+
+    # the storyboard's panels: storyboard.json from Editor's Desk, each panel painted once for each asked_at
+
+    @staticmethod
+    def _panel_prompt(bible: dict, asked: str, style: str, note: str = "") -> str:
+        """The panel's description with each character's name put as a plain description, then the note and the
+        style, the way every other prompt ends."""
+        body = pictures._unnamed(asked, bible).strip(" .")
+        return pictures._finish([body], style, pictures._people_tokens(bible), note)
+
+    @staticmethod
+    def _panel_about(pid: str, asked_at: str, asked: str) -> dict:
+        return {"who": pid, "who_name": f"storyboard {pid}", "section": int(pid[1:].split("-")[0]), "panel": pid,
+                "asked_at": asked_at, "panel_prompt": asked}
+
+    def _panel_again(self, folder: Path, bible: dict, old: dict, base: str, style: str, note: str,
+                     retry: bool) -> dict:
+        """Retry, or Paint again with a note, for a panel's picture: from the description Editor's Desk sent."""
+        pid, asked = panel_id(old.get("panel")), panel_prompt(old.get("panel_prompt"))
+        if not pid or not asked:
+            raise Refused("That panel's description is not there any more. Have Wren paint it again in Editor's Desk.")
+        plain = self._panel_prompt(bible, asked, style)
+        prompt = self._panel_prompt(bible, asked, style, note) if note else plain
+        about = self._panel_about(pid, _s(old.get("asked_at"), 40), asked)
+        with self.lock:
+            pics, seeds = self._pictures(folder), self._seeds(folder)
+            pics, rec = self._record(folder, pics, seeds, PANEL, about, prompt, atlas.prompt_hash(plain), note, base,
+                                     reuse=old if retry else None, again=None if retry else old, style=style)
+            self._save_pics(folder, pics, seeds)
+            self._enqueue(folder, [rec["id"]])
+        return rec
+
+    def _queue_panels(self, folder: Path, base: str) -> int:
+        """Queue each panel of this book's storyboard.json not painted yet for its asked_at. Returns how many."""
+        path = folder / STORYBOARD
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > STORYBOARD_MAX:
+            return 0
+        got = read_json(path)                               # half-written or broken: None, and nothing happens
+        if not isinstance(got, dict) or not isinstance(got.get("panels"), list):
+            return 0
+        asked_raw = got.get("asked_at")
+        asked = when(asked_raw)
+        if asked is None or (asked - datetime.now(timezone.utc)).total_seconds() > 600:
+            return 0                                        # no date, or one from the future: not her press
+        bible = read_json(folder / BIBLE, {})
+        bible = bible if isinstance(bible, dict) else {}
+        style = self._style(folder)
+        with self.lock:
+            pics, seeds = self._pictures(folder), self._seeds(folder)
+            rows = [(panel_id(p.get("panel")), when(p.get("asked_at"))) for p in pics if p.get("kind") == PANEL]
+            rows = [(i, t) for i, t in rows if i and t is not None]
+            if rows and asked < max(t for _i, t in rows):
+                return 0                                    # an older request than what was already painted
+            done = set(rows)
+            seen = read_json(folder / PICTURES, {})
+            seen = seen.get("panels_asked") if isinstance(seen, dict) else None
+            seen = seen if isinstance(seen, dict) and seen.get("asked_at") == _s(asked_raw, 40) and isinstance(seen.get("ids"), list) else None
+            done |= {(i, asked) for i in (seen or {}).get("ids", []) if isinstance(i, str)}    # asked for this press before, even if she deleted it since
+            jobs: list[str] = []
+            took: list[str] = []
+            for x in got["panels"][:PANELS_MOST]:
+                pid = panel_id(x.get("id")) if isinstance(x, dict) else ""
+                said = panel_prompt(x.get("prompt")) if pid else ""
+                if not said or (pid, asked) in done:
+                    continue
+                done.add((pid, asked))
+                took.append(pid)
+                prompt = self._panel_prompt(bible, said, style)
+                pics, rec = self._record(folder, pics, seeds, PANEL, self._panel_about(pid, _s(asked_raw, 40), said),
+                                         prompt, atlas.prompt_hash(prompt), "", base, style=style)
+                jobs.append(rec["id"])
+            if jobs:
+                self._save_pics(folder, pics, seeds)
+                kept = read_json(folder / PICTURES, {})
+                if isinstance(kept, dict):                  # which panels this press has had, so a deleted one stays deleted
+                    ids = sorted({*((seen or {}).get("ids", [])), *took})[:PANELS_MOST * 4]
+                    write_json(folder / PICTURES, {**kept, "panels_asked": {"asked_at": _s(asked_raw, 40), "ids": ids}})
+                self._enqueue(folder, jobs)
+        return len(jobs)
+
+    def look_for_panels(self) -> int:
+        """One look at every book's storyboard.json. Nothing at all without a picture program set up. Returns how many
+        pictures were queued."""
+        base = self.maker()["address"]
+        if not base:
+            return 0
+        try:
+            shelf = self.files.shelf()
+        except Refused:
+            return 0
+        if not shelf.is_dir():
+            return 0
+        n = 0
+        for folder in sorted(shelf.iterdir(), key=lambda p: p.name.lower()):
+            if folder.is_dir() and not folder.is_symlink():
+                try:
+                    n += self._queue_panels(folder, base)
+                except Exception:  # noqa: BLE001 - one book's odd file never stops the others
+                    continue
+        return n
+
+    def watch(self) -> None:
+        """Start the storyboard watcher, a daemon thread that looks every few seconds while Maps runs."""
+        if self.watcher is not None and self.watcher.is_alive():
+            return
+
+        def loop() -> None:
+            while True:
+                try:
+                    self.look_for_panels()
+                except Exception:  # noqa: BLE001 - the watcher never stops on a bad file or a busy Core
+                    pass
+                time.sleep(LOOK_S)
+        self.watcher = threading.Thread(target=loop, name="maps-storyboard", daemon=True)
+        self.watcher.start()
 
     def _work(self) -> None:
         while True:                             # one worker, one picture at a time
@@ -680,7 +836,8 @@ class Maps:
             got = comfy.survey()
             choice = pictures.choose(got["info"], got["models"])
             seed = rec["seed"] if isinstance(rec.get("seed"), int) else random.randint(1, 2 ** 31 - 1)
-            flow = pictures.build_workflow(choice, str(rec.get("prompt") or ""), str(rec.get("kind")), seed)
+            kind = str(rec.get("kind"))
+            flow = pictures.build_workflow(choice, str(rec.get("prompt") or ""), SIZE_AS.get(kind, kind), seed)
             self._update_picture(folder, pid, workflow=choice["workflow"], seed=seed)
             prompt_id = comfy.submit(flow, "puffpai-maps-" + pid)
             img = comfy.wait(prompt_id, PICTURE_TIMEOUT_S, POLL_S)
@@ -1196,7 +1353,9 @@ class Handler(BaseHTTPRequestHandler):
 def make_server(port: int, files: Any, token: str | None, data: Path | str | None = None) -> ThreadingHTTPServer:
     """The server, bound to 127.0.0.1 only. Call serve_forever(); stop with shutdown(). *data* is the package's own
     data folder (PUFFPAI_DATA), else ``data`` beside this file."""
-    handler = type("MapsHandler", (Handler,), {"app": Maps(files, data), "token": token or ""})
+    app = Maps(files, data)
+    app.watch()                                     # the storyboard's panels, painted while Maps runs
+    handler = type("MapsHandler", (Handler,), {"app": app, "token": token or ""})
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True
     return server

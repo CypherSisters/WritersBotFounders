@@ -1,4 +1,4 @@
-/* Maps 2.1.0, the page. A manuscript opens on its atlas: Cast, World, Family, Story, Cover, and the eight charts
+/* Maps 2.2.0, the page. A manuscript opens on its atlas: Cast, World, Family, Story, Cover, and the eight charts
    folded under Charts. The picture program paints the pictures; this page puts the words, pins and lines on top.
    The server builds the atlas (atlas.py) and lays out every chart (draw.py); boards.js draws the charts.
 

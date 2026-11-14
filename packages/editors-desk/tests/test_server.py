@@ -548,7 +548,8 @@ def test_the_bot_tools_cannot_write_text(box):
     _, listed = call(box.port, "POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {t["name"] for t in listed["result"]["tools"]}
     assert names == {"desk_checks", "desk_run", "desk_status", "desk_findings", "desk_mark", "desk_letter", "desk_ask", "desk_documents", "desk_stop",
-                     "desk_study", "desk_study_report"}
+                     "desk_study", "desk_study_report", "desk_meeting", "desk_staff", "desk_assign",
+                     "desk_storyboard", "desk_storyboard_report"}
     for t in listed["result"]["tools"]:                 # nothing that could carry her text, or read as a file argument
         props = set(t["inputSchema"]["properties"])
         assert not props & {"text", "body", "content", "path", "file", "section", "document", "correct"}, t["name"]
@@ -902,7 +903,7 @@ def test_page_files(box):
         code, body = call(box.port, "GET", "/" + name)
         assert code == 200 and body
     words = "".join((PKG / "web" / n).read_text(encoding="utf-8") for n in ("index.html", "app.js", "write.js", "write.css", "app.css"))
-    for bad in ("—", "LLM", "warts", "bible.json", "API", "the model", " AI "):
+    for bad in ("\u2014", "LLM", "warts", "bible.json", "API", "the model", " AI "):
         assert bad not in words, bad
     code, body = call(box.port, "GET", "/write.js")
     assert code == 200 and body

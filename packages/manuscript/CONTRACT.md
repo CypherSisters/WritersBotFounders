@@ -36,6 +36,8 @@ corrections.json        0.3: {"corrections": [{id, what, correction, made_at}]},
 desk.json               0.3 to 0.4.1: {"items": [{id, kind, severity, sections, note, fix, state, writer_note, changed_at}]},
                         the desk items she kept, dismissed or noted. 0.5: never written; Editor's Desk carries it over once
 editors-desk.json       0.5: Editor's Desk's one file here, {state, step, done, total, check_name}: what it is doing now
+storyboard.json         Editor's Desk 0.4 and Maps 2.2: the storyboard panels she asked to have painted; written only by
+                        Editor's Desk, read by Maps (at the end)
 boards.json             0.3: shared with Maps (below); Manuscript adds boards and keeps every other board and key
 views.json              named views made by the chat or the owner, newest first
 pointer.json            where the bot is pointing right now
@@ -616,3 +618,23 @@ Start reading and Read again, starts the reading as the writer's own press (0.4.
 - **The page** draws the marks as italic and bold (text nodes in `em` and `strong`) and never shows the stars. The
   pointer and a found passage land on the words without the marks.
 - **A book added before 0.6.0** has no marks: its Word file was read as plain words. Its sections stay as they are.
+
+## Editor's Desk 0.4 and Maps 2.2: the storyboard's pictures
+
+Editor's Desk draws a book as storyboard panels (its `EDITOR_IN_CHIEF.md`) and keeps them in its own data folder. To have
+them painted it leaves one file here, because a package never calls another:
+
+```
+storyboard.json         written only by Editor's Desk, on her press of "Have Wren paint these"; read by Maps
+{"asked_at": iso, "panels": [{"id": "s3-1", "prompt": "<what>. <frame>. <where>. Mood: <mood>.", "shot": "wide"}]}
+```
+
+- `id` is `s<section>-<n>`. `prompt` is built from the panel's notes only, never her prose. At most 40 panels a file.
+- Maps (2.2) looks at each book's `storyboard.json` every few seconds while it runs, and only when a picture program is
+  set up. Each panel whose id has no row in `pictures.json` with that `panel` and that `asked_at` is painted once, with
+  kind `panel`, and its row gets `"panel": "<id>"`, `"asked_at": "<the file's asked_at>"` and `"panel_prompt"` (the
+  prompt as it came). A file whose `asked_at` is older than the newest panel row already made starts nothing.
+- Maps takes the file as another app's words: an id that is not `s<number>-<number>` is passed over, a prompt loses
+  its control characters and is cut to 600 characters, and a broken or half-written file does nothing.
+- Editor's Desk reads `pictures.json` and `pictures/<id>.png` to show each panel's picture and its state. Manuscript
+  never reads or writes `storyboard.json`; its tidy leaves it, as a name it does not know.

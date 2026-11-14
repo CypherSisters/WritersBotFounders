@@ -33,6 +33,10 @@ One button on each manuscript's page, and you can ask your bot ("illustrate Salt
 
 A picture already painted for the same description is skipped, so Illustrate again paints only what changed: a new character, a place with new notes, a new style line. If Maps is restarted in the middle, Illustrate again paints the rest. Your notes from Paint again stay with each picture.
 
+### Storyboard panels (2.2)
+
+When you press "Have Wren paint these" on the Storyboard in Editor's Desk, Editor's Desk leaves the panels in `storyboard.json` in the book's folder. While Maps runs it looks there every few seconds and paints each panel once, at a scene's wide size, from the panel's notes only (what we see, the framing, the place and the mood, with names swapped for plain descriptions and the book's style line at the end). Your own words never go. A new press paints them again; an older file, or a second look, paints nothing. Without a picture maker set up Maps does nothing with them, and Editor's Desk says so. The pictures show in Editor's Desk and under All pictures here, as kind `panel`, with Retry for one that failed.
+
 ### Style
 
 Each manuscript has one style line, shown on its page under Illustrate, that ends every picture's description, so the cast and the world look like one book. It starts as the picture maker's style ("painterly, soft light, book illustration" to begin with); change it for one book on that book's page, or clear it to go back to the picture maker's.
@@ -84,11 +88,11 @@ What travels: only a short description built from the story bible, which you can
 
 ### Which files it may change
 
-Your manuscript is never read or changed by Maps. In each manuscript's folder, `My files\Manuscripts\<title>\`, it reads `bible.json`, `views.json`, `boards.json`, `corrections.json` (when there is one) and `pointer.json`, and writes only these:
+Your manuscript is never read or changed by Maps. In each manuscript's folder, `My files\Manuscripts\<title>\`, it reads `bible.json`, `views.json`, `boards.json`, `corrections.json` (when there is one), `pointer.json` and `storyboard.json` (Editor's Desk's panels to paint, when there is one), and writes only these:
 
 - `boards.json`, the boards drawn from asks and the places you dragged things to;
 - `pointer.json`, which tells Manuscript where to scroll when you click something;
-- `pictures.json`, the list of pictures, what was sent for each, and each character's and place's seed, and `pictures\<id>.png`, the pictures themselves;
+- `pictures.json`, the list of pictures, what was sent for each, and each character's and place's seed (a storyboard panel's picture also says which panel and which press), and `pictures\<id>.png`, the pictures themselves;
 - `style.json`, this book's style line, when you set one;
 - `illustrate.json`, how far Illustrate got.
 

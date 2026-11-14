@@ -3,8 +3,8 @@
   "id": "maps",
   "kind": "app",
   "name": "Maps",
-  "version": "2.1.0",
-  "description": "An illustrated atlas of your novel, from what Manuscript has read: the cast as a gallery of portraits, the world as a painted map with its places pinned on it, the family tree with faces, the story as a strip of painted scenes, and a cover mock. A picture program on another computer on your home network paints the pictures; Maps puts the names, pins and lines on top. Illustrate paints everything a book needs, one picture at a time, and Paint again takes a note from you. The eight drawn charts are still there under Charts: a family tree, a relationship map, a timeline, character touchpoints, arcs, the story structure, a world map and a thread board. Click anything and the manuscript pane opens that passage. It never reads or changes your manuscript text.",
+  "version": "2.2.0",
+  "description": "An illustrated atlas of your novel, from what Manuscript has read: the cast as a gallery of portraits, the world as a painted map with its places pinned on it, the family tree with faces, the story as a strip of painted scenes, and a cover mock. A picture program on another computer on your home network paints the pictures; Maps puts the names, pins and lines on top. Illustrate paints everything a book needs, one picture at a time, and Paint again takes a note from you. The eight drawn charts are still there under Charts: a family tree, a relationship map, a timeline, character touchpoints, arcs, the story structure, a world map and a thread board. Click anything and the manuscript pane opens that passage. It also paints the storyboard panels you ask for in Editor's Desk. It never reads or changes your manuscript text.",
   "author": "Cypher Sisters",
   "license": "Apache-2.0",
   "icon": "icons/maps.svg",
@@ -53,5 +53,5 @@
 
   "setup_steps": [],
   "data": { "keep_on_remove": "keep" },
-  "consent": "Maps draws from what Manuscript read, in the Manuscripts folder in My files. It writes only its own boards, its pictures, each book's style line and Illustrate progress, and the pointer that tells Manuscript where to scroll, and never reads or changes your manuscript text. It doesn't use the internet. Pictures are made by a picture program on another computer on your home network, at the one address you type and allow on the Bridge page; it gets only short descriptions built from the story bible, never your text."
+  "consent": "Maps draws from what Manuscript read, in the Manuscripts folder in My files. It writes only its own boards, its pictures, each book's style line and Illustrate progress, and the pointer that tells Manuscript where to scroll, and never reads or changes your manuscript text. It doesn't use the internet. Pictures are made by a picture program on another computer on your home network, at the one address you type and allow on the Bridge page; it gets only short descriptions built from the story bible or from your storyboard's notes, never your text."
 }

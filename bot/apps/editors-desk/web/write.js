@@ -752,7 +752,7 @@
   function askCard(c) {
     const a = c.a;
     const card = el('article', {cls: 'card ask', tabindex: '-1'});
-    const head = el('div', {cls: 'chead'}, [el('span', {cls: 'size', text: 'You asked your editor'}),
+    const head = el('div', {cls: 'chead'}, [el('span', {cls: 'size', text: 'You asked ' + staffName(a.who || 'chief')}),
       el('button', {type: 'button', cls: 'x', text: 'Close', on: {click: e => { e.stopPropagation(); unfocus(); }}})]);
     card.appendChild(head);
     if (a.question) card.appendChild(el('div', {cls: 'what', text: a.question}));
@@ -778,19 +778,27 @@
     return card;
   }
 
+  // who she can ask, from the desk's staff list; before it comes, only the editor-in-chief
+  const ASKABLE = ['chief', 'story', 'facts', 'line', 'copy'];
+  const staffName = id => ((W.staff || []).find(s => s.id === id) || {}).name || (id === 'chief' ? 'Dewey' : 'your editor');
+
   // a card for a new question, at her selection
   function draftCard(range, sec) {
     const c = {kind: 'ask', id: 'draft', ranges: [range], sec, title: 'Your question'};
     const box = el('textarea', {cls: 'mynote', rows: '2', placeholder: 'Ask about these words', 'aria-label': 'Your question'});
+    const askable = (W.staff || []).filter(s => ASKABLE.includes(s.id));
+    const pick = el('select', {cls: 'askwho', id: 'askwho'}, (askable.length ? askable : [{id: 'chief', name: 'Dewey'}])
+      .map(s => el('option', {value: s.id, text: s.name})));
     const send = question => {
       const qn = (question || box.value).trim();
       if (!qn) { box.focus(); return; }
-      ask(c, range, sec, qn);
+      ask(c, range, sec, qn, pick.value || 'chief');
     };
     const card = el('article', {cls: 'card ask', tabindex: '-1'}, [
       el('div', {cls: 'chead'}, [el('span', {cls: 'size', text: 'Ask your editor'}),
         el('button', {type: 'button', cls: 'x', text: 'Close', on: {click: e => { e.stopPropagation(); dropDraft(c); }}})]),
       el('div', {cls: 'quick'}, ['How does this read?', 'Is this clear?', 'Does this drag?'].map(t => el('button', {type: 'button', text: t, on: {click: () => send(t)}}))),
+      el('div', {cls: 'askrow'}, [el('label', {for: 'askwho', text: 'Ask:'}), pick]),
       box,
       el('div', {cls: 'marks'}, [el('button', {type: 'button', cls: 'main', text: 'Ask', on: {click: () => send()}})]),
     ]);
@@ -804,16 +812,16 @@
     paint();
     layout();
   }
-  async function ask(c, range, sec, question) {
+  async function ask(c, range, sec, question, who) {
     const passage = range.toString();
-    const wait = {id: '', n: sec.n, quote: passage, question, state: 'waiting'};
+    const wait = {id: '', n: sec.n, quote: passage, question, state: 'waiting', who};
     const tmp = Object.assign({}, c, {a: wait, kind: 'ask'});
     const node = askCard(tmp);
     c.node.replaceWith(node);
     c.node = node;
     let got;
     try {
-      got = await call('api/ask', {title: W.title, n: sec.n, passage, question});
+      got = await call('api/ask', {title: W.title, n: sec.n, passage, question, who});
     } catch (e) {
       wait.state = 'failed';
       wait.answer = e.message;
@@ -1191,6 +1199,7 @@
   // what the desk knows: open findings and whether a check is running
   function desk(v) {
     W.status = v && v.status;
+    if (v && v.staff && v.staff.length) W.staff = v.staff;
     const open = (v && v.findings || []).filter(f => f.state === 'open');
     const key = JSON.stringify(open.map(f => [f.id, f.state, f.where, f.note, f.what]));
     if (key === W.fkey) return;

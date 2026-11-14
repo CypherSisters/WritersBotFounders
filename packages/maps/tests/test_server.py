@@ -1,4 +1,4 @@
-"""Maps 2.1.0 against a stand-in Core and a stand-in picture program: the server runs as its own process, the Core here
+"""Maps 2.2.0 against a stand-in Core and a stand-in picture program: the server runs as its own process, the Core here
 answers ``/v1/owner-files`` and ``/v1/bridge/addresses/ask``, a small ComfyUI stand-in answers the picture calls, and a
 manuscript folder holds the sample bible (and a second one the v2 sample bible, with importance and a minor
 character). The real ComfyUI is never contacted. Run from the package folder:
@@ -457,7 +457,7 @@ def test_mcp_tools(env):
 
 def test_page_files(env):
     page = call(env["port"], "GET", "/")[1]
-    assert b"Maps <span class=\"ver\">2.1.0</span>" in page and b'id="atlas"' in page
+    assert b"Maps <span class=\"ver\">2.2.0</span>" in page and b'id="atlas"' in page
     for name, ctype in (("app.js", "text/javascript"), ("boards.js", "text/javascript"), ("app.css", "text/css")):
         req = urllib.request.Request(f"http://127.0.0.1:{env['port']}/{name}",
                                      headers={"Authorization": f"Bearer {TOKEN}"})
@@ -470,7 +470,7 @@ def test_page_files(env):
 
 def manifest_needs_lan() -> bool:
     m = json.loads((PKG / "puffpai.json").read_text(encoding="utf-8"))
-    return m["version"] == "2.1.0" and m["needs"]["addresses"] == "lan" and "home network" in m["consent"]
+    return m["version"] == "2.2.0" and m["needs"]["addresses"] == "lan" and "home network" in m["consent"]
 
 
 SECTION_TEXT = "Mira was holding an old company badge."
@@ -1091,3 +1091,232 @@ def test_zz_other_files_never_changed(env):
                                                                     "pictures", "pictures.json", "pointer.json",
                                                                     "sections", "views.json"])
     assert sorted(p.name for p in env["data"].iterdir()) == ["maker.json"]      # the package's own folder
+
+
+def test_manuscripts_mark_and_tidy_leave_maps_working(env):
+    """Manuscript 0.4.1 marks the shelf with .app-files and tidies the book's folder. Maps reads on, and Paint again works:
+    the old painting is still in pictures.json, so it stays; only a file no record names goes."""
+    port, book, shelf = env["port"], env["book"], env["shelf"]
+    tidy_at = PKG.parent / "manuscript" / "tidy.py"
+    if not tidy_at.is_file():
+        pytest.skip("Manuscript is not beside Maps here")
+    sys.path.append(str(tidy_at.parent))
+    import tidy
+    ensure_maker(env)
+    first = call(port, "POST", "/api/picture", {"title": "Salt Moon", "kind": "portrait", "who": "Mira Dray"})[1]["picture"]
+    wait_for(env, first["id"])
+    again = call(port, "POST", "/api/picture", {"title": "Salt Moon", "again": first["id"], "note": "older, grey hair"})[1]["picture"]
+    wait_for(env, again["id"])
+    assert again["id"] != first["id"]
+    mark = shelf / ".app-files"
+    mark.write_text("Manuscript and Maps keep their working files here.\n", encoding="utf-8")
+    orphan, temp = book / "pictures" / "p-20200101-000000-portrait.png", book / "pictures" / ".tmp-maps-left.png"
+    try:
+        for f in (orphan, temp):
+            f.write_bytes(PNG)
+            os.utime(f, (time.time() - 7200, time.time() - 7200))
+        gone = tidy.tidy(book, "sections", [], [], {})
+        assert gone["pictures"] == 1 and gone["temps"] == 1 and not orphan.exists() and not temp.exists()
+        names = [b["title"] for b in call(port, "GET", "/api/list")[1]["manuscripts"]]
+        assert "Salt Moon" in names and len(names) >= 3
+        pics = {p["id"] for p in call(port, "GET", "/api/pictures" + q(title="Salt Moon"))[1]["pictures"]}
+        assert {first["id"], again["id"]} <= pics
+        for pid in (first["id"], again["id"]):
+            assert call(port, "GET", f"/api/picture/{pid}.png" + q(title="Salt Moon"))[1] == PNG
+        assert call(port, "GET", "/api/atlas" + q(title="Salt Moon"))[0] == 200
+        more = call(port, "POST", "/api/picture", {"title": "Salt Moon", "again": again["id"], "note": "a little older"})[1]["picture"]
+        wait_for(env, more["id"])
+        assert (book / "pictures" / f"{more['id']}.png").read_bytes() == PNG
+        assert tidy.usage(book)["older"] >= 2 * len(PNG)
+        assert (book / "pictures" / f"{first['id']}.png").is_file()
+    finally:
+        mark.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------- 2.2: the storyboard's panels, from Editor's Desk
+
+import server  # noqa: E402
+
+ASKED = "2026-11-10T10:00:00Z"
+LATER = "2026-11-10T11:30:00Z"
+EARLIER = "2026-11-09T09:00:00Z"
+PANELS = [{"id": "s1-1", "prompt": "Tamsin climbs the relay mast at night. Low, looking up. The Lantern. Mood: cold.",
+           "shot": "wide"},
+          {"id": "s2-1", "prompt": "A bell" + chr(0) + " rings" + chr(27) + "[31m\nover the station. " + "x" * 700,
+           "shot": "close"},
+          {"id": "../s1-2", "prompt": "a way out of the folder"}, {"id": "s1-2\n", "prompt": "a line break"},
+          {"id": "S1-2", "prompt": "a capital"}, {"id": 5, "prompt": "a number"}, {"id": "s1-3"}, "not a panel"]
+
+
+class Files:
+    """Where My files is, for a Maps made in this process; ``down`` makes it fail as an unreachable Core does."""
+
+    def __init__(self, shelf: Path) -> None:
+        self.at, self.looked, self.down = shelf, 0, False
+
+    def shelf(self) -> Path:
+        self.looked += 1
+        if self.down:
+            raise server.Refused("I could not ask BuildBot where your files are.")
+        return self.at
+
+    def ask(self, address: str):
+        return ("allowed", "Allowed.")
+
+
+def board(folder: Path, asked_at, panels) -> None:
+    (folder / "storyboard.json").write_text(json.dumps({"asked_at": asked_at, "panels": panels}), encoding="utf-8")
+
+
+def panel_rows(folder: Path) -> list[dict]:
+    got = server.read_json(folder / "pictures.json", {})          # it waits out a file being replaced on Windows
+    return [p for p in got.get("pictures", []) if p.get("kind") == "panel"]
+
+
+def settle(app, folder: Path, seconds: float = 60) -> list[dict]:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        rows = panel_rows(folder)
+        if not app.queued and all(p["state"] != "making" for p in rows):
+            return rows
+        time.sleep(0.1)
+    raise AssertionError("the panels stayed making")
+
+
+@pytest.fixture()
+def desk(tmp_path, monkeypatch):
+    """A book with a storyboard folder, a Maps in this process with the picture maker set, a stand-in picture program."""
+    for k in list(os.environ):
+        if k.upper().endswith("_PROXY"):
+            monkeypatch.delenv(k)
+    shelf = tmp_path / "My files" / "Manuscripts"
+    book = shelf / "Salt Moon"
+    book.mkdir(parents=True)
+    shutil.copy(PKG / "fixtures" / "bible.sample.json", book / "bible.json")
+    comfy = Comfy()
+    comfy.ready_after = 0
+    files = Files(shelf)
+    app = server.Maps(files, tmp_path / "data")
+    app.set_maker(comfy.address, "ink and wash")
+    try:
+        yield {"app": app, "book": book, "comfy": comfy, "files": files, "shelf": shelf, "data": tmp_path / "data"}
+    finally:
+        comfy.stop()
+
+
+def test_each_panel_is_painted_once_for_each_press(desk):
+    app, book, comfy = desk["app"], desk["book"], desk["comfy"]
+    board(book, ASKED, PANELS)
+    assert app.look_for_panels() == 2                              # the four bad ids and the one with no prompt: no
+    rows = settle(app, book)
+    assert sorted(p["panel"] for p in rows) == ["s1-1", "s2-1"]
+    for p in rows:
+        assert p["state"] == "ready" and p["asked_at"] == ASKED and p["why"] == ""
+        assert p["id"].startswith("p-") and "-panel" in p["id"] and (book / "pictures" / f"{p['id']}.png").read_bytes() == PNG
+        assert p["prompt"].endswith("ink and wash") and p["section"] == int(p["panel"][1])
+    one = next(p for p in rows if p["panel"] == "s1-1")
+    assert "climbs the relay mast at night" in one["prompt"] and "Tamsin" not in one["prompt"]    # no names go
+    two = next(p for p in rows if p["panel"] == "s2-1")
+    assert not any(not c.isprintable() for c in two["prompt"]) and len(two["panel_prompt"]) == 600
+    assert two["panel_prompt"].startswith("A bell rings [31m over the station.")
+    assert len(comfy.prompts) == 2
+    for sent in comfy.prompts:                                     # a scene's landscape size
+        assert (sent["prompt"]["6"]["inputs"]["width"], sent["prompt"]["6"]["inputs"]["height"]) == (1024, 640)
+    assert app.look_for_panels() == 0 and len(comfy.prompts) == 2  # a second look: nothing
+    board(book, LATER, PANELS[:1])                                 # her next press paints again
+    assert app.look_for_panels() == 1
+    assert [p["asked_at"] for p in settle(app, book)].count(LATER) == 1 and len(comfy.prompts) == 3
+    board(book, EARLIER, PANELS)                                   # older than what was painted: nothing starts
+    assert app.look_for_panels() == 0
+    board(book, LATER, PANELS)                                     # the same press with one more panel: only that one
+    assert app.look_for_panels() == 1
+    settle(app, book)
+    again = server.Maps(desk["files"], desk["data"])               # Maps restarted: the rows on disk still count
+    assert again.look_for_panels() == 0 and len(comfy.prompts) == 4
+    assert len(panel_rows(book)) == 4
+
+
+def test_at_most_forty_panels_from_one_file(desk):
+    app, book = desk["app"], desk["book"]
+    board(book, ASKED, [{"id": f"s{i}-1", "prompt": f"panel number {i}"} for i in range(1, 46)])
+    assert app.look_for_panels() == 40
+    rows = settle(app, book)
+    assert len(rows) == 40 and {p["panel"] for p in rows} == {f"s{i}-1" for i in range(1, 41)}
+
+
+def test_no_picture_maker_means_nothing_at_all(desk, tmp_path):
+    app = server.Maps(desk["files"], tmp_path / "other data")
+    board(desk["book"], ASKED, PANELS)
+    assert app.look_for_panels() == 0
+    assert desk["files"].looked == 0 and not (desk["book"] / "pictures.json").exists() and not app.queued
+
+
+def test_a_broken_storyboard_does_nothing_and_raises_nothing(desk):
+    app, book = desk["app"], desk["book"]
+    bad = ['{"asked_at": "2026-11-14T1', "[1, 2]", "", json.dumps({"asked_at": "yesterday", "panels": PANELS}),
+           json.dumps({"asked_at": ASKED, "panels": "s1-1"}), json.dumps({"asked_at": 5, "panels": PANELS}),
+           json.dumps({"panels": PANELS})]
+    for text in bad:
+        (book / "storyboard.json").write_text(text, encoding="utf-8")
+        assert app.look_for_panels() == 0, text
+    (book / "storyboard.json").write_bytes(bytes(range(256)))
+    assert app.look_for_panels() == 0
+    (book / "storyboard.json").unlink()
+    (book / "storyboard.json").mkdir()                             # not even a file
+    assert app.look_for_panels() == 0
+    desk["files"].down = True
+    assert app.look_for_panels() == 0
+    assert not (book / "pictures.json").exists()
+
+
+def test_the_watcher_looks_by_itself_and_never_stops(desk, monkeypatch):
+    app, book, files = desk["app"], desk["book"], desk["files"]
+    monkeypatch.setattr(server, "LOOK_S", 0.05)
+    files.down = True                                              # the Core does not answer at first
+    (book / "storyboard.json").write_text("{broken", encoding="utf-8")
+    app.watch()
+    end = time.monotonic() + 10
+    while files.looked < 3 and time.monotonic() < end:
+        time.sleep(0.05)
+    files.down = False
+    board(book, ASKED, PANELS[:1])
+    end = time.monotonic() + 30
+    while not panel_rows(book) and time.monotonic() < end:
+        time.sleep(0.05)
+    assert app.watcher.is_alive() and [p["panel"] for p in settle(app, book)] == ["s1-1"]
+
+
+def test_a_failed_panel_can_be_retried(desk):
+    app, book, comfy = desk["app"], desk["book"], desk["comfy"]
+    comfy.fail_prompt = True
+    board(book, ASKED, PANELS[:1])
+    assert app.look_for_panels() == 1
+    rec = settle(app, book)[0]
+    assert rec["state"] == "failed" and "404" in rec["why"]
+    comfy.fail_prompt = False
+    assert app.look_for_panels() == 0                               # a failed one is not painted again by itself
+    again = app.make_picture("Salt Moon", None, None, retry=rec["id"])
+    assert again["id"] == rec["id"] and again["state"] == "making" and again["panel"] == "s1-1"
+    rows = settle(app, book)
+    assert len(rows) == 1 and rows[0]["state"] == "ready" and rows[0]["prompt"] == rec["prompt"]
+    noted = app.make_picture("Salt Moon", None, None, again=rec["id"], note="in the rain")
+    assert noted["id"] != rec["id"] and noted["panel"] == "s1-1" and "in the rain. ink and wash" in noted["prompt"]
+    settle(app, book)
+    with pytest.raises(server.Refused, match="five kinds"):
+        app.make_picture("Salt Moon", "panel", "s1-1")              # never by hand: only from a storyboard
+
+
+def test_a_panel_she_deleted_stays_deleted_for_that_press_and_a_future_date_is_not_believed(desk):
+    app, book, comfy = desk["app"], desk["book"], desk["comfy"]
+    board(book, ASKED, PANELS)
+    assert app.look_for_panels() == 2
+    rows = settle(app, book)
+    gone = next(p for p in rows if p["panel"] == "s1-1")
+    app.delete_picture("Salt Moon", gone["id"])
+    assert app.look_for_panels() == 0 and len(comfy.prompts) == 2      # not painted again for the same press
+    again = server.Maps(desk["files"], desk["data"])
+    assert again.look_for_panels() == 0
+    board(book, "9999-12-31T00:00:00Z", PANELS)                        # not her press: no clock says that
+    assert app.look_for_panels() == 0 and len(comfy.prompts) == 2
+    board(book, LATER, PANELS[:1])                                     # her next press still paints
+    assert app.look_for_panels() == 1

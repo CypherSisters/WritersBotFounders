@@ -88,6 +88,8 @@
 .card .marks { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 .card .marks button, .card .quick button { padding: 1px 7px; font-size: 12px; }
 .card .quick { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+.card .askrow { display: flex; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; }
+.card .askrow select { padding: 1px 4px; font-size: 12px; border-radius: 0; }
 .card .mynote { width: 100%; margin-top: 6px; min-height: 34px; resize: vertical; font-size: 13px; }
 .card:not(.on) .mynote:placeholder-shown { display: none; }
 .card.ask .mynote { display: block; }

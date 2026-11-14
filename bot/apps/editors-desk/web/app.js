@@ -6,9 +6,13 @@
   const $ = id => document.getElementById(id);
   const SIZE = {big: 'Big', medium: 'Worth a look', small: 'Small'};
   const STATE = [['open', 'Open'], ['later', 'Later'], ['fixed', 'Fixed'], ['not_a_problem', 'Not a problem']];
-  const S = {books: [], book: null, v: null, view: null, filter: 'open', only: '', opened: {}, typed: {}};
+  const S = {books: [], book: null, v: null, view: null, filter: 'open', only: '', who: '', opened: {}, typed: {}};
   const Write = window.WriteView;
   const Study = window.StudyView;
+  const Office = window.OfficeView;
+  const Board = window.BoardView;
+  // the stage each staff member's desk is (staff.py); a row may also carry its own stage
+  const DESK_STAGE = {chief: 'any', story: 'story', facts: 'facts', line: 'prose', copy: 'polish', reader: 'out'};
 
   // ---------------------------------------------------------------- small helpers
 
@@ -48,11 +52,14 @@
       S.books = (await call('api/list')).books;
     } catch (e) {
       clear($('letter')).appendChild(el('p', {text: e.message}));
+      Office.note(e.message); Board.note(e.message);
       return;
     }
     clear(b);
     if (!S.books.length) {
       clear($('letter')).append(el('h1', {text: "Your editor's letter"}), el('p', {text: 'There are no books yet. Add one on the Manuscript page, let your bot read it, and come back.'}));
+      Office.note('There are no books yet. Add one on the Manuscript page, let your bot read it, and come back.');
+      Board.note('There are no books yet.');
       return;
     }
     const order = S.books.filter(x => !x.study).concat(S.books.filter(x => x.study));    // books to study last
@@ -71,6 +78,8 @@
     await refresh();
     if (S.view === 'write') Write.open(title);
     if (S.view === 'study') Study.open(title);
+    if (S.view === 'office') Office.open(title);
+    if (S.view === 'board') Board.open(title);
   }
 
   async function refresh() {
@@ -82,9 +91,11 @@
       S.v = got;
       Write.desk(got);
       Study.desk(got);
+      Office.desk(got);
+      Board.desk(got);
       if (same) { drawWork(); return; }                // nothing but the progress line moved: leave what she has open
     } catch (e) {
-      for (const id of ['work', 'swork']) { clear($(id)).appendChild(el('span', {text: e.message})); $(id).hidden = false; }
+      for (const id of ['work', 'swork', 'bwork']) { clear($(id)).appendChild(el('span', {text: e.message})); $(id).hidden = false; }
       return;
     }
     draw();
@@ -97,15 +108,33 @@
     st.hidden = !(v.unread && v.unread.length);
     if (!st.hidden) st.textContent = (v.unread.length === 1 ? 'Section ' + v.unread[0] + ' has' : 'Sections ' + v.unread.join(', ') + ' have') + ' changed since your book was last read. Your editor goes by your new words, but the story bible still has the old ones. Read the book again in Manuscript when you are ready.';
     $('private').hidden = !v.private;
-    drawWork(); drawLetter(); drawNext(); drawStages(); drawAnytime(); drawFilters(); drawList(); drawDocs();
+    drawWork(); drawWho(); drawLetter(); drawNext(); drawStages(); drawAnytime(); drawFilters(); drawList(); drawDocs();
+  }
+
+  // ---------------------------------------------------------------- one staff member's desk
+
+  // From the office: only that staff member's checks and findings, with a way back to every desk.
+  const whoRow = () => (S.v && S.v.staff || []).find(x => x.id === S.who);
+  const deskStage = () => { const r = whoRow(); return (r && r.stage) || DESK_STAGE[S.who] || ''; };
+  const mineCheck = c => !S.who || c.stage === deskStage() || c.who === S.who;
+  const mineFinding = f => !S.who || (f.who ? f.who === S.who : (S.v.stages || []).some(s => s.id === deskStage() && s.checks.some(c => c.id === f.check)));
+  function drawWho() {
+    const box = clear($('deskwho'));
+    const r = whoRow();
+    if (S.who && !r) S.who = '';
+    box.hidden = !S.who;
+    if (!S.who) return;
+    box.append(el('strong', {text: r.name + "'s desk"}), el('span', {cls: 'fine', text: r.role || ''}),
+      el('button', {type: 'button', text: 'Show every desk', on: {click: () => { S.who = ''; draw(); }}}));
   }
 
   // ---------------------------------------------------------------- what your editor is doing
 
-  // The same line shows on the desk and in Study a book: one line of work, whichever view she is in.
+  // The same line shows on the desk, in Study a book and on the storyboard: one line of work, whichever view she is in.
   function drawWork() {
     workInto($('work'));
     workInto($('swork'));
+    workInto($('bwork'));
   }
   function workInto(target) {
     const box = clear(target);
@@ -216,7 +245,7 @@
     const input = c.box ? boxFor(c.id, c.box) : null;
     const go = el('button', {cls: 'act', type: 'button', text: running ? '...' : c.last_run && c.button === 'Run' ? 'Run again' : c.button, disabled: !!running || !c.can_run,
       title: c.can_run ? '' : 'It needs your book read in Manuscript first.', on: {click: () => run(c.id, input)}});
-    return el('div', {cls: 'check'}, [
+    return el('div', {cls: 'check', id: 'c-' + c.id}, [
       el('div', {cls: 'title'}, [c.name, c.thin ? el('span', {cls: 'pill', text: 'thin'}) : null]),
       go,
       el('div', {cls: 'says', text: c.says}),
@@ -230,12 +259,13 @@
     const box = clear($('stages'));
     const nextStage = S.v.next && S.v.next.stage;
     S.v.stages.forEach((s, i) => {
-      const open = S.opened[s.id] !== undefined ? S.opened[s.id] : s.name === nextStage;
+      if (S.who && !s.checks.some(mineCheck)) return;
+      const open = S.opened[s.id] !== undefined ? S.opened[s.id] : s.name === nextStage || !!S.who;
       const tally = s.big_open ? plural(s.big_open, 'big thing') + ' open' : s.ran ? s.ran + ' of ' + s.total + ' run' : '';
       const d = el('details', {cls: 'stage', open: open}, [
         el('summary', {}, [el('span', {cls: 'num', text: (i + 1) + '.'}), el('span', {cls: 'name', text: s.name}), el('span', {cls: 'plain', text: s.plain}), el('span', {cls: 'tally' + (s.big_open ? ' big' : ''), text: tally})]),
         el('p', {cls: 'why', text: s.why}),
-      ].concat(s.checks.map(checkRow)));
+      ].concat(s.checks.filter(mineCheck).map(checkRow)));
       d.addEventListener('toggle', () => { S.opened[s.id] = d.open; });
       box.appendChild(d);
     });
@@ -243,8 +273,10 @@
 
   function drawAnytime() {
     const box = clear($('anytime'));
+    const mine = S.v.anytime.filter(mineCheck);
+    if (!mine.length) return;
     box.appendChild(el('h2', {text: 'Any time'}));
-    for (const c of S.v.anytime) box.appendChild(checkRow(c));
+    for (const c of mine) box.appendChild(checkRow(c));
   }
 
   async function run(id, input) {
@@ -266,12 +298,12 @@
   function drawFilters() {
     const box = clear($('filters'));
     for (const [id, label] of STATE) {
-      const n = S.v.findings.filter(f => f.state === id && f.kind !== 'question' && (!S.only || f.check === S.only)).length;
+      const n = S.v.findings.filter(f => f.state === id && f.kind !== 'question' && (!S.only || f.check === S.only) && mineFinding(f)).length;
       box.appendChild(el('button', {type: 'button', role: 'tab', 'aria-selected': String(S.filter === id), text: label + ' ' + n,
         on: {click: () => { S.filter = id; S.all = false; drawFilters(); drawList(); }}}));
     }
     const names = {};
-    for (const f of S.v.findings) names[f.check] = f.check_name;
+    for (const f of S.v.findings) if (mineFinding(f)) names[f.check] = f.check_name;
     if (Object.keys(names).length > 1) {
       const sel = el('select', {'aria-label': 'Show one check', on: {change: e => { S.only = e.target.value; drawFilters(); drawList(); }}},
         [el('option', {value: '', text: 'Every check'})].concat(Object.keys(names).map(k => el('option', {value: k, text: names[k]}))));
@@ -313,8 +345,8 @@
 
   function drawList() {
     const box = clear($('list'));
-    const shown = S.v.findings.filter(f => f.state === S.filter && f.kind !== 'question' && (!S.only || f.check === S.only));
-    const asks = S.v.findings.filter(f => f.kind === 'question' && f.state === 'open' && (!S.only || f.check === S.only));
+    const shown = S.v.findings.filter(f => f.state === S.filter && f.kind !== 'question' && (!S.only || f.check === S.only) && mineFinding(f));
+    const asks = S.v.findings.filter(f => f.kind === 'question' && f.state === 'open' && (!S.only || f.check === S.only) && mineFinding(f));
     if (S.filter === 'fixed') {
       const all = S.v.findings.filter(f => f.state !== 'not_a_problem').length;
       if (all) box.appendChild(el('p', {cls: 'prog', text: S.v.findings.filter(f => f.state === 'fixed').length + ' fixed of ' + all + ' so far.'}));
@@ -347,6 +379,7 @@
     S.filter = f.state;
     S.only = '';
     S.all = true;
+    if (!mineFinding(f)) { S.who = ''; draw(); }
     drawFilters(); drawList();
     const n = $('f-' + f.id);
     if (n) n.scrollIntoView({block: 'center'});
@@ -423,6 +456,23 @@
     showView('write');
     await Write.goTo(n, quote, fid);
   }
+  // From the office: the desk, maybe one staff member's only, maybe at one finding or one check.
+  async function openDesk(o) {
+    o = o || {};
+    S.who = o.who || '';
+    await showView('desk');
+    if (!S.v) return;
+    draw();                                         // refresh() leaves the desk alone when nothing moved; the filter did
+    if (o.finding) { showFinding(S.v.findings.find(f => f.id === o.finding)); return; }
+    if (o.check) {
+      const s = S.v.stages.find(x => x.checks.some(c => c.id === o.check));
+      if (s) { S.opened[s.id] = true; drawStages(); }
+      const n = $('c-' + o.check);
+      if (n) { n.scrollIntoView({block: 'center'}); const b = n.querySelector('button'); if (b) b.focus({preventScroll: true}); }
+      return;
+    }
+    $('v-desk').scrollTop = 0;
+  }
   function openManuscript() {
     if (window.parent !== window) window.parent.postMessage({puffpai: 'open', pkg: 'manuscript', query: q({title: S.book})}, '*');
     else location.href = location.origin + '/pkg/manuscript/?' + q({title: S.book});
@@ -434,37 +484,48 @@
 
   // One line per view. A view is a <section class="view" id="v-..."> in index.html; show() runs each time it opens.
   const VIEWS = [
+    {id: 'office', label: 'Your editor', show: () => { if (S.book) Office.open(S.book); }},
     {id: 'write', label: 'Write', show: () => { if (S.book) Write.open(S.book); Write.show(); }},
     {id: 'desk', label: "Editor's desk", show: () => refresh()},
+    {id: 'board', label: 'Storyboard', show: () => { if (S.book) Board.open(S.book); }},
     {id: 'study', label: 'Study a book', show: () => { if (S.book) Study.open(S.book); }},
   ];
   function drawViews() {
     const box = clear($('views'));
     for (const v of VIEWS) {
       box.appendChild(el('button', {type: 'button', role: 'tab', id: 'tab-' + v.id, 'aria-selected': String(S.view === v.id), 'aria-controls': 'v-' + v.id,
-        text: v.label, on: {click: () => showView(v.id)}}));
+        text: v.label, on: {click: () => { if (v.id === 'desk' && S.who) { S.who = ''; if (S.v) draw(); } showView(v.id); }}}));
     }
   }
   function showView(id) {
     const v = VIEWS.find(x => x.id === id) || VIEWS[0];
     if (S.view === 'write' && v.id !== 'write') Write.flush(true);
+    if (S.view === 'office' && v.id !== 'office') Office.leave();
     S.view = v.id;
     for (const x of VIEWS) { const n = $('v-' + x.id); if (n) n.hidden = x.id !== v.id; }
     drawViews();
     try { sessionStorage.setItem('editors-desk-view', v.id); } catch (e) { /* private window */ }
-    v.show();
+    try { localStorage.setItem('editors-desk-view', v.id); } catch (e) { /* private window */ }
+    return v.show();
   }
   Write.hooks.changed = () => refresh();
   Study.hooks.goTo = (n, quote) => openAt(n, quote);
   Study.hooks.manuscript = openManuscript;
   Study.hooks.refresh = () => refresh();
+  Office.hooks.desk = openDesk;
+  Office.hooks.goTo = openAt;
+  Office.hooks.view = id => showView(id);
+  Office.hooks.refresh = () => refresh();
+  Board.hooks.goTo = (n, quote) => openAt(n, quote);
+  Board.hooks.refresh = () => refresh();
   Write.hooks.words = total => {
     if (S.v) $('count').textContent = plural(S.v.sections.length, 'section') + ', ' + total.toLocaleString() + ' words';
   };
-  let firstView = 'write';
-  try { firstView = sessionStorage.getItem('editors-desk-view') || 'write'; } catch (e) { /* private window */ }
+  let firstView = '';
+  try { firstView = sessionStorage.getItem('editors-desk-view') || ''; } catch (e) { /* private window */ }
+  if (!firstView) try { firstView = localStorage.getItem('editors-desk-view') || ''; } catch (e) { /* private window */ }
   S.view = null;
-  showView(firstView);
+  showView(firstView || 'office');
 
   $('book').addEventListener('change', e => pick(e.target.value));
   $('vaultfree').addEventListener('change', e => { call('api/settings', {vault_free: e.target.checked}).catch(() => {}); });
@@ -476,6 +537,8 @@
     const live = st && ['running', 'waiting', 'queued'].includes(st.state);
     const typing = document.activeElement && ['TEXTAREA', 'INPUT'].includes(document.activeElement.tagName);
     if (!typing && (live || document.visibilityState === 'visible')) refresh();
+    if (S.view === 'office') Office.tick();          // each asks again only while something of its own is on the move
+    if (S.view === 'board') Board.tick();
   }, 5000);
   loadBooks();
 })();

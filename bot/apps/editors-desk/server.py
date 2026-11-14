@@ -11,8 +11,8 @@ One small server, bound to 127.0.0.1. The design is in WritersBot's EDITORS_DESK
 - ``/api/version``      GET ``?title=&n=&id=``: one earlier version
 - ``/api/save``         POST ``{title, n, text, sha, auto?}``: the writer's own words. The old version is kept first; an
                         autosave keeps one at most every ten minutes. A stale sha is refused with the text there now
-- ``/api/ask``          POST ``{title, n, passage, question}``: her question about her own words, to her editor, ahead of a
-                        check's next call. ``/api/asks`` GET ``?title=``: the last 100; POST ``{title, id}`` removes one
+- ``/api/ask``          POST ``{title, n, passage, question, who?}``: her question about her own words, to her editor (or one of
+                        the staff, by ``who``), ahead of a check's next call. ``/api/asks`` GET ``?title=``: the last 100; POST ``{title, id}`` removes one
 - ``/api/restore``      POST ``{title, n, id, sha}``: an earlier version back, the one before it kept too
 - ``/api/use``          POST ``{title, id}``: PROPOSED, Use this: a grammar or proofreading correction, on her click only
 - ``/api/run``          POST ``{title, check, plan?}``: her press; ``/api/stop`` POST ``{title}``
@@ -24,6 +24,13 @@ One small server, bound to 127.0.0.1. The design is in WritersBot's EDITORS_DESK
 - ``/api/study``        POST ``{title, theirs, focus?}``: her press: your editor compares matched passages, in the same line
                         as the checks. GET ``?title=&theirs=``: the latest report for that pair; ``?title=``: the list
 - ``/api/wordcopy``     POST ``{title}``: a Word copy of her book as it stands, to read or share, in My files
+- ``/api/board``        GET ``?title=``: the storyboard, what changed since, and each panel's picture; POST ``{title,
+                        sections}``: her press, the storyboard artist draws those chapters; ``/api/board/plan``,
+                        ``/api/board/picture``, and POST ``/api/board/paint {title, panels}``: her press, the file Maps paints from
+- ``/api/office``       GET ``?title=``: the editor-in-chief's office: the meeting, the staff and what each is doing, by code
+- ``/api/visit``        POST ``{title}``: stamps her visit to the office, so the next meeting says what is new since
+- ``/api/pass``         GET ``?title=&who=``: the plan for one desk going over the book (starts nothing); POST ``{title, who}``:
+                        her press, the desk's checks in line
 
 Every route refuses a request without this package's PUFFPAI_TOKEN. GET never changes anything. No tool writes section
 text, and no brain answer reaches a section: only ``/api/save``, ``/api/restore`` and ``/api/use`` do, from her hand.
@@ -56,6 +63,8 @@ import book as books  # noqa: E402
 import docx_out  # noqa: E402
 import engine  # noqa: E402
 import marks  # noqa: E402
+import staff  # noqa: E402
+import storyboard  # noqa: E402
 import study  # noqa: E402
 from book import SHARED, Book, Refused, find_book, locate, read_index, save_section, section_path, version_text, versions  # noqa: E402
 from brainline import (BrainBusy, BrainDown, BrainQueue, BrainSlow, NotYet, Brain, now, plain, read_json, sha_of, strip_think,  # noqa: E402
@@ -66,7 +75,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "editors-desk"
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 4 * 1024 * 1024
 WEB_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
@@ -87,6 +96,16 @@ ASKS_KEPT = 100
 ASK_PAGE_WAIT = float(os.environ.get("EDITORS_DESK_PAGE_ASK_WAIT_S") or 25)   # then the page asks again for the answer
 STUDY = "study"                 # in a book's working folder: its measure, and one report per book it was compared with
 STUDY_NAME = "Study a book"
+VISIT = "visit.json"            # in a book's working folder: her last visit to the office, {at, shas, words}
+PASS = "pass.json"              # in a book's working folder: the last pass she started, {id, who, total, started_at}
+MEETING_MOST = 8
+BOARD = "storyboard"            # a job kind, and in a book's working folder: board.json and the saved answers
+BOARD_NAME = "Storyboard"
+BOARD_ASK = "storyboard.json"   # beside the bible: the panels she asked to have painted, for Maps (CONTRACT.md)
+PAINT_MOST = 40
+PAINT_WAIT_S = 120              # after her press, how long before the page says Maps has not started
+PICTURE_ID = re.compile(r"[A-Za-z0-9-]{1,80}")
+KIND_STAFF = {STUDY: "line", BOARD: "board"}     # a job that is not a check, by whose desk it is on
 
 
 class CoreFiles:
@@ -142,6 +161,27 @@ def _when_left(seconds: Any) -> str:
     return f"about {seconds / 3600:.1f} hours left"
 
 
+def _and(names: list[str]) -> str:
+    """A list in plain words: "a", "a and b", "a, b and c"."""
+    names = [str(x) for x in names if x]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1] if names else ""
+
+
+def _sections(ns: list[int]) -> str:
+    if len(ns) == 1:
+        return f"section {ns[0]}"
+    return f"sections {_and([str(n) for n in ns])}" if len(ns) <= 6 else f"{len(ns)} sections"
+
+
+def _day(iso: str) -> str:
+    """The day of a stamp, on this computer's clock: "Friday 14 November"."""
+    try:
+        d = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
+    except (TypeError, ValueError):
+        return ""
+    return f"{d:%A} {d.day} {d:%B}"
+
+
 class Desk:
     def __init__(self, files: Any, brain: Brain | None = None) -> None:
         self.files = files
@@ -157,6 +197,7 @@ class Desk:
         self.asks_lock = threading.Lock()
         self.asking: set[str] = set()
         self.study_lock = threading.Lock()
+        self.costs: dict[tuple, int] = {}       # brain calls a check would make, by its book's text and the room: the office is instant
         threading.Thread(target=self._worker, daemon=True, name="your editor").start()
 
     # settings
@@ -233,8 +274,8 @@ class Desk:
                     jobs[i] = job
             self._save_jobs(jobs)
 
-    def start(self, title: Any, check: Any, plan: Any = "") -> tuple[dict, dict]:
-        """Her press, or her Yes through a tool. The only way a check ever starts."""
+    def start(self, title: Any, check: Any, plan: Any = "", who: str = "", pass_id: str = "") -> tuple[dict, dict]:
+        """Her press, or her Yes through a tool. The only way a check ever starts. A pass gives ``who`` and its id."""
         checks = engine.load_checks()
         c = checks.get(str(check or "").strip().lower())
         if c is None:
@@ -253,6 +294,8 @@ class Desk:
                 raise Refused(f"{c['name']} is already in line for {b.title}.")
             job = {"id": f"{int(time.time() * 1000)}-{c['id']}", "folder": folder.name, "title": b.title, "check": c["id"], "check_name": c["name"],
                    "plan": words, "state": "queued", "step": "In line", "done": 0, "total": 0, "found": 0, "problems": [], "started_at": None, "pressed_at": now()}
+            if pass_id:
+                job.update(who=who, **{"pass": pass_id})
             jobs.append(job)
             self._save_jobs(jobs)
         self.wake.set()
@@ -310,6 +353,9 @@ class Desk:
     def _run(self, job: dict, shelf: Path) -> None:
         if job.get("kind") == STUDY:
             self._run_study(job, shelf)
+            return
+        if job.get("kind") == BOARD:
+            self._run_board(job, shelf)
             return
         folder = shelf / job["folder"]
         checks = engine.load_checks()
@@ -385,7 +431,7 @@ class Desk:
             c = checks.get(f.get("check")) or {}
             changed = any(shas.get(int(n)) != v for n, v in (f.get("sha") or {}).items() if str(n).isdigit())
             out.append({**f, "check_name": c.get("name") or "", "stage": c.get("stage") or "any", "changed": changed,
-                        "can_use": bool(USE_THIS and f.get("correct") and c.get("use_this"))})
+                        "can_use": bool(USE_THIS and f.get("correct") and c.get("use_this")), "who": staff.of_check(c)})
         out.sort(key=lambda f: (engine.SIZE_RANK.get(f.get("size"), 1), int(f.get("rank") or 0)))
         job_rows = {j.get("check"): j for j in self._jobs() if j.get("folder") == folder.name}
         rows = {}
@@ -410,7 +456,8 @@ class Desk:
                 "words": sum(s.words for s in b.sections), "reading": reading.get("state") == "reading", "status": status,
                 "letter": read_json(engine.home_of(folder) / engine.LETTER), "plan": engine.revision_plan(items, checks), "open_now": sum(1 for f in items if f.get("state") == "open" and f.get("kind") != "question"), "private": b.private,
                 "stages": stages, "anytime": [rows[c] for c in rows if rows[c]["stage"] == "any" and c != "letter"],
-                "old_notes": self._old_notes(folder), "next": self._next(stages), "findings": out, "documents": docs, "use_this": USE_THIS, "context": self.context()}
+                "old_notes": self._old_notes(folder), "next": self._next(stages), "findings": out, "documents": docs, "use_this": USE_THIS, "context": self.context(),
+                "staff": [staff.public(sid) for sid in staff.IDS]}
 
     @staticmethod
     def _old_notes(folder: Path) -> str:
@@ -587,11 +634,21 @@ class Desk:
         last = f"last run {c['last_run'][:10]}, {c['open']} open" if c["last_run"] else "not run yet"
         return f"- {c['name']} [{c['id']}]: {c['says']} ({last})"
 
-    def _estimate(self, c: dict, b: Book) -> str:
+    def _calls(self, c: dict, b: Book) -> int:
+        """About how many brain calls a check makes on this book. Kept by the book's text and the room, so the office and
+        a pass plan, which ask for many at once, stay quick."""
         room = self.room()
-        units = sum(len(engine.units_for(n, b, room - 600, "a change")) for n in c["blocks"] if n in ("thread", "character", "section", "theme", "claim", "change", "book", "speakers", "opening", "ending"))
-        cands = sum(1 for name in c["find"] for x in engine.finders.run(name, b) if x.get("judge"))
-        calls = int((units + cands) * 1.4) + (1 if c["letter"] else 0)
+        key = (c["id"], room, tuple(s.sha for s in b.sections), sha_of(json.dumps(b.bible, sort_keys=True).encode("utf-8")))
+        if key not in self.costs:
+            units = sum(len(engine.units_for(n, b, room - 600, "a change")) for n in c["blocks"] if n in ("thread", "character", "section", "theme", "claim", "change", "book", "speakers", "opening", "ending"))
+            cands = sum(1 for name in c["find"] for x in engine.finders.run(name, b) if x.get("judge"))
+            if len(self.costs) > 500:
+                self.costs.clear()
+            self.costs[key] = int((units + cands) * 1.4) + (1 if c["letter"] else 0)
+        return self.costs[key]
+
+    def _estimate(self, c: dict, b: Book) -> str:
+        calls = self._calls(c, b)
         if not calls:
             return "It uses no brain calls, so it takes moments."
         left = self.timing.left(calls)
@@ -675,18 +732,28 @@ class Desk:
                   "the story bible. Answer in plain words, naming sections like (section 3). When the facts don't say, say so. "
                   "Never write new story text.")
 
-    def desk_ask(self, title: str = "", question: str = "") -> str:
+    @staticmethod
+    def _asked(who: Any) -> str:
+        """The staff id an ask goes to, by id or name; her editor-in-chief when none is given."""
+        w = " ".join(str(who or "").split()).lower() or staff.CHIEF
+        sid = next((s["id"] for s in staff.STAFF if w in (s["id"], s["name"].lower())), w)
+        if sid not in staff.ASKABLE:
+            raise Refused("You can ask " + ", ".join(staff.name(s) for s in staff.ASKABLE) + ".")
+        return sid
+
+    def desk_ask(self, title: str = "", question: str = "", who: str = "") -> str:
         q = " ".join(str(question or "").split())[:2000]
         if not q:
             raise Refused("Say what you want to know about the plan.")
+        system = self.ASK_SYSTEM + " " + staff.BY_ID[self._asked(who)]["lens"]
         folder = self._folder(title)
         b = Book(folder)
         items = [f for f in engine.load_findings(folder) if f.get("check") == "future"]
-        room = self.room() - tokens(self.ASK_SYSTEM) - tokens(q) - 100
+        room = self.room() - tokens(system) - tokens(q) - 100
         facts = [f"Change she asked about: {f.get('plan')}. Revisit (section {(f.get('where') or [{}])[0].get('section')}): {f.get('what')}" for f in items]
         user = f"Question: {q}\n\nWhat the plan touches:\n" + (engine.fit(facts, room // 2) or "(no plan traced yet)")
         user += "\n\nStory bible:\n" + engine.fit(engine.bible_lines(b, ("summary", "threads", "characters")), room // 2)
-        messages = [{"role": "system", "content": self.ASK_SYSTEM}, {"role": "user", "content": user}]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         job = self.queue.submit(lambda: self.brain.chat(messages, patient=False))    # ahead of a check's next call
         try:
             text, _m = job.wait(ASK_WAIT)
@@ -738,6 +805,8 @@ class Desk:
         r = rep_["report"]
         if rep_["running"]:
             lines.append("The passage comparison is running now (desk_status says how far).")
+        if not r and rep_["running"]:
+            return "\n".join(lines)
         if not r:
             lines.append("Her editor has not compared passages of these two books yet. Offer it; start it with desk_study only "
                          "after her yes.")
@@ -857,14 +926,17 @@ class Desk:
         if not passage:
             raise Refused("Select some of your words first.")
         q = " ".join(str(msg.get("question") or "").split())[:1000] or "How does this read?"
-        room = self.room() - tokens(self.PAGE_ASK_SYSTEM) - tokens(q) - tokens(passage) - 200
+        who = self._asked(msg.get("who"))
+        system = self.PAGE_ASK_SYSTEM + " " + staff.BY_ID[who]["lens"]
+        room = self.room() - tokens(system) - tokens(q) - tokens(passage) - 200
         facts = engine.fit(self._ask_facts(b, passage), max(0, min(room // 5, 400)))
         near = self._around(s, passage, max(0, room - tokens(facts)))
         user = f"Her question: {q}\n\nThe words she chose, from section {s.n}:\n{passage}\n\nAround them in her book:\n{near or passage}"
         if facts:
             user += f"\n\nFrom the story bible:\n{facts}"
-        messages = [{"role": "system", "content": self.PAGE_ASK_SYSTEM}, {"role": "user", "content": books.scrub(user)}]
-        rec = {"id": f"a{int(time.time() * 1000)}", "n": s.n, "quote": passage, "question": q, "answer": "", "state": "waiting", "asked_at": now()}
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": books.scrub(user)}]
+        rec = {"id": f"a{int(time.time() * 1000)}", "n": s.n, "quote": passage, "question": q, "answer": "", "state": "waiting", "asked_at": now(),
+               "who": who}
         self.asking.add(rec["id"])
         self._ask_put(folder, rec)
 
@@ -1049,6 +1121,239 @@ class Desk:
         running = any(j.get("folder") == folder.name and j.get("kind") == STUDY and j.get("theirs") == other.name for j in self._jobs())
         return {"report": got if isinstance(got, dict) else None, "running": running}
 
+    # The storyboard (storyboard.py): her book as panels, notes for pictures and never words for her book. Her press, a job
+    # in the same line as the checks. Kept in this book's working folder, in storyboard/: one board, and the saved answers.
+    # Painting is Maps' work: her press writes storyboard.json beside the bible, and Maps paints from it (CONTRACT.md).
+
+    def _board_home(self, folder: Path) -> Path:
+        return engine.home_of(folder) / BOARD
+
+    @staticmethod
+    def _loose(path: Path) -> Any:
+        """A JSON file another program may have written, or a broken one: whatever is wrong with it, None."""
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+                return None
+            return read_json(path)
+        except (OSError, ValueError, TypeError, RecursionError, MemoryError):
+            return None
+
+    def _board_read(self, folder: Path) -> dict:
+        got = self._loose(self._board_home(folder) / "board.json")
+        if not isinstance(got, dict) or not isinstance(got.get("panels"), list):
+            return {}
+        got["panels"] = [p for p in got["panels"] if isinstance(p, dict) and isinstance(p.get("id"), str)
+                         and isinstance(p.get("section"), int)]
+        return got
+
+    @staticmethod
+    def _board_sections(b: Book, sections: Any) -> list[int]:
+        """The sections she chose, in book order. Empty or "all" is the whole book."""
+        have = [s.n for s in b.sections]
+        if sections is None or sections == "all" or sections == "" or sections == []:
+            return have
+        if isinstance(sections, str):
+            sections = [x for x in re.split(r"[\s,]+", sections) if x]
+        if not isinstance(sections, list):
+            raise Refused("Say which chapters, by their numbers, or all.")
+        want = {int(x) for x in sections if str(x).strip().isdigit()}
+        out = [n for n in have if n in want]
+        if not out:
+            raise Refused("I could not find those chapters in this book.")
+        return out
+
+    def board_plan(self, title: Any, sections: Any = None) -> dict:
+        b = Book(self._folder(title))
+        want = self._board_sections(b, sections)
+        n = storyboard.steps(b, want)
+        return {"sections": want, "steps": n, "time": _when_left(self.timing.left(n)).replace(" left", "")}
+
+    def board_start(self, title: Any, sections: Any = None) -> dict:
+        """Her press, or her yes through desk_storyboard. The only way a storyboard is drawn."""
+        folder = self._folder(title)
+        b = Book(folder)
+        want = self._board_sections(b, sections)
+        if not storyboard.steps(b, want):
+            raise Refused("There is not enough story in those chapters to draw.")
+        with self.lock:
+            jobs = self._jobs()
+            if any(j.get("folder") == folder.name and j.get("kind") == BOARD for j in jobs):
+                raise Refused(f"The storyboard for {b.title} is already being drawn. Wait for it, or press Stop.")
+            job = {"id": f"{int(time.time() * 1000)}-board", "kind": BOARD, "folder": folder.name, "title": b.title,
+                   "check": BOARD, "check_name": BOARD_NAME, "sections": want, "plan": "", "state": "queued", "step": "In line",
+                   "done": 0, "total": 0, "found": 0, "problems": [], "started_at": None, "pressed_at": now()}
+            jobs.append(job)
+            self._save_jobs(jobs)
+        self.wake.set()
+        return job
+
+    def _run_board(self, job: dict, shelf: Path) -> None:
+        folder = shelf / job["folder"]
+        if not folder.is_dir():
+            self._finish(job, "failed", "That book is no longer on the shelf.")
+            return
+        resumed = job.get("state") in ("running", "waiting")
+        job.update(state="running", started_at=job.get("started_at") or now(), resumed=resumed, done=0, total=0)
+
+        def put(**kw: Any) -> None:
+            job.update(kw)
+            self._update(job)
+            self._book_status(job)
+
+        def stopped() -> bool:
+            return job["id"] in self.stop_flag
+
+        caller = _Run(folder, {"id": BOARD, "name": BOARD_NAME, "box_needed": False}, job, self.brain, self.queue, self.room,
+                      self.timing, put, stopped, self.shelf)
+        home = self._board_home(folder)
+        saved = _Saved(home / "answers.json")
+
+        def progress(done: int, total: int, line: str) -> None:
+            put(step=line, done=done, total=total, left_s=self.timing.left(total - done))
+
+        put()
+        try:
+            board = storyboard.run(Book(folder), job.get("sections") or [], caller._call, self.room(), saved, progress, stopped,
+                                   self._board_read(folder))
+        except Stopped:
+            self.stop_flag.discard(job["id"])
+            self._finish(job, "stopped", "Stopped. Press Draw again and it goes on from where it was.")
+            return
+        except (BrainDown, Refused) as exc:
+            self._finish(job, "failed", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - never out of the thread; a plain line in the status
+            traceback.print_exc()
+            self._finish(job, "failed", f"The storyboard stopped on an error ({type(exc).__name__}). Press it again and it goes on from where it was.")
+            return
+        with self.study_lock:
+            write_json(home / "board.json", board)
+            saved.keep_used()
+        mine = {int(n) for n in job.get("sections") or []}
+        n = sum(1 for p in board.get("panels") or [] if p.get("section") in mine)
+        line = f"The storyboard has {n} new panel{'s' if n != 1 else ''}. See Storyboard." if n else "No panel could be drawn from those chapters."
+        self._finish(job, "done", line, found=n, problems=[str(x.get("why") or "") for x in board.get("skipped") or [] if x.get("why")])
+
+    @staticmethod
+    def _panel_pictures(folder: Path) -> dict[str, dict]:
+        """The newest picture Maps made for each panel, from pictures.json. A missing or bad file counts as none."""
+        out: dict[str, dict] = {}
+        try:
+            got = Desk._loose(folder / "pictures.json")
+            rows = got.get("pictures") if isinstance(got, dict) else None
+            for r in rows if isinstance(rows, list) else []:
+                if not isinstance(r, dict) or not isinstance(r.get("panel"), str) or not isinstance(r.get("id"), str) \
+                        or not PICTURE_ID.fullmatch(r["id"]):
+                    continue
+                pid = str(r["panel"])
+                if pid not in out or str(r.get("made_at") or "") >= str(out[pid].get("made_at") or ""):
+                    out[pid] = r
+        except (OSError, ValueError, TypeError, AttributeError, RecursionError):
+            pass
+        return out
+
+    def board_view(self, title: Any) -> dict:
+        folder = self._folder(title)
+        b = Book(folder)
+        board = self._board_read(folder)
+        shas = {str(s.n): s.sha for s in b.sections}
+        marks_ = board.get("sections") if isinstance(board.get("sections"), dict) else {}
+        changed = sorted(int(n) for n, m in marks_.items() if str(n).isdigit() and n in shas and isinstance(m, dict)
+                         and m.get("panels") and m.get("sha") != shas[n])
+        rows = self._panel_pictures(folder)
+        t = urllib.parse.quote(b.title)
+        ids = {str(p.get("id")) for p in board.get("panels") or []}
+        pictures = {}
+        for pid, r in rows.items():
+            if pid in ids:
+                state = r.get("state") if r.get("state") in ("making", "ready", "failed") else "making"
+                pictures[pid] = {"state": state, "url": f"api/board/picture?title={t}&id={urllib.parse.quote(pid)}"}
+        asked = self._loose(folder / BOARD_ASK)
+        asked = asked if isinstance(asked, dict) else {}
+        note = ""
+        listed = asked.get("panels") if isinstance(asked.get("panels"), list) else []
+        waiting = [str(x.get("id")) for x in listed if isinstance(x, dict)]
+        fresh = [pid for pid in waiting if pid in ids and not (rows.get(pid) and rows[pid].get("asked_at") == asked.get("asked_at"))]
+        if fresh:
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(asked.get("asked_at")).replace("Z", "+00:00"))).total_seconds()
+            except (ValueError, TypeError):
+                age = PAINT_WAIT_S + 1
+            if age <= PAINT_WAIT_S:
+                for pid in fresh:
+                    pictures[pid] = {"state": "making", "url": ""}
+            else:
+                note = ("The painting has not started. Open Maps and set up the picture maker there, keep Maps open, "
+                        f"then press Have {staff.name('art')} paint these again.")
+        running = any(j.get("folder") == folder.name and j.get("kind") == BOARD for j in self._jobs())
+        return {"board": board or None, "changed": changed, "plan": self.board_plan(title), "running": running,
+                "pictures": pictures, "can_paint": bool(ids) and not running, "paint_note": note,
+                "sections": [{"n": s.n, "heading": s.heading, "words": s.words} for s in b.sections]}
+
+    def board_picture(self, title: Any, pid: Any) -> bytes:
+        folder = self._folder(title)
+        r = self._panel_pictures(folder).get(str(pid or ""))
+        if not r or r.get("state") != "ready":
+            raise Refused("That panel has no picture yet.")
+        file = folder / "pictures" / f"{r['id']}.png"
+        inside = (folder / "pictures").resolve() == folder.resolve() / "pictures" and file.resolve().parent == folder.resolve() / "pictures"
+        if not inside or file.is_symlink() or not file.is_file() or file.stat().st_size > 30 * 1024 * 1024:
+            raise Refused("That picture is not there any more.")
+        return file.read_bytes()
+
+    def board_paint(self, title: Any, panels: Any = "all") -> dict:
+        """Her press. Writes the one shared file Maps paints from: panel ids and prompts made from the notes only."""
+        folder = self._folder(title)
+        board = self._board_read(folder)
+        have = [p for p in board.get("panels") or [] if isinstance(p, dict) and p.get("id")]
+        if not have:
+            raise Refused("Draw the storyboard first. Then its panels can be painted.")
+        if panels not in (None, "", "all"):
+            want = {str(x) for x in panels} if isinstance(panels, list) else set()
+            have = [p for p in have if str(p["id"]) in want]
+            if not have:
+                raise Refused("I could not find those panels.")
+        left = max(0, len(have) - PAINT_MOST)
+        have = have[:PAINT_MOST]
+        write_json(folder / BOARD_ASK, {"asked_at": now(), "panels": [{"id": str(p["id"]), "prompt": storyboard.prompt_for(p),
+                                                                    "shot": p.get("shot") or "medium"} for p in have]})
+        line = f"{staff.name('art')} has {len(have)} panel{'s' if len(have) != 1 else ''} to paint. Maps does the painting, so keep Maps open."
+        if left:
+            line += f" That is the most at one time; {left} more can go next."
+        return {"message": line, "asked": len(have), "left": left}
+
+    def desk_storyboard(self, title: str = "", sections: Any = "", confirm: Any = False) -> str:
+        plan = self.board_plan(title, sections)
+        b = Book(self._folder(title))
+        if not plan["steps"]:
+            return f"There is not enough story in those chapters of {b.title} to draw."
+        n = len(plan["sections"])
+        cost = f"{n} chapter{'s' if n != 1 else ''} or parts" + (f", {plan['time']}" if plan["time"] else ", and I have not timed your bot yet")
+        kit = staff.name("board")
+        if confirm is not True:
+            return (f"This has not started. Ask the writer: \"Shall {kit} draw a storyboard of {b.title}?\" That is {cost}. "
+                    "Panels are notes for pictures, never words for her book. Start it only after she says yes, with confirm true.")
+        self.board_start(title, sections)
+        return (f"{kit} is drawing the storyboard of {b.title} in the background: {cost}. When it is done, desk_storyboard_report "
+                "has the panels, and the Storyboard page shows them.")
+
+    def desk_storyboard_report(self, title: str = "") -> str:
+        folder = self._folder(title)
+        v = self.board_view(title)
+        b = Book(folder)
+        if v["running"] and not v["board"]:
+            return f"The storyboard of {b.title} is being drawn now (desk_status says how far)."
+        if not v["board"] or not v["board"].get("panels"):
+            return (f"There is no storyboard of {b.title} yet. Offer one; start it with desk_storyboard only after her yes. "
+                    "Panels are notes for pictures, never words for her book.")
+        out = [f"The storyboard of {b.title}: {len(v['board']['panels'])} panels. These are notes for pictures, not words for her book."]
+        if v["running"]:
+            out.append("More is being drawn now (desk_status says how far).")
+        if v["changed"]:
+            out.append("Chapters changed since they were drawn: " + ", ".join(str(n) for n in v["changed"]) + ".")
+        out += storyboard.lines(v["board"])
+        return "\n".join(out)
+
     # a Word copy of her book, to read or share. It reads her sections and writes a new file in My files; nothing else.
 
     def word_copy(self, title: Any) -> dict:
@@ -1063,6 +1368,340 @@ class Desk:
         rec = engine.save_document(folder, "reading-copy", name, "docx", raw, "wordcopy")
         where = f"My files/{engine.EXPORTS}/{folder.name}/{rec['file']}"
         return {"message": f"Saved in your files at: {where}", "where": where, "document": rec}
+
+    # The editor-in-chief and her staff (EDITOR_IN_CHIEF.md). A pass is her one Yes for a whole desk: ordinary check jobs
+    # in the same line, each with ``who`` and ``pass``. The office is built by code from what is kept, with no brain call.
+
+    @staticmethod
+    def _pass_who(who: Any) -> str:
+        w = " ".join(str(who or "").split()).lower()
+        w = next((s["id"] for s in staff.STAFF if w == s["name"].lower()), w)
+        if w not in staff.PASSES + ["all"]:
+            raise Refused("Say whose desk goes over the book: " + ", ".join(f"{staff.name(s)} ({s})" for s in staff.PASSES)
+                          + ", or all for the full edit.")
+        return w
+
+    @staticmethod
+    def _pass_checks(who: str, checks: dict) -> list[dict]:
+        """One desk's checks in order. ``all`` is the full edit, big to small, then the letter; not the finished book's."""
+        if who != "all":
+            return staff.checks_of(who, checks)
+        out = [c for st in ("story", "facts", "prose", "polish") for c in staff.checks_of(staff.BY_STAGE[st], checks)]
+        return out + [c for c in staff.checks_of(staff.CHIEF, checks) if c["id"] == "letter"]
+
+    @staticmethod
+    def _pass_name(who: str) -> str:
+        return "The whole staff" if who == "all" else staff.name(who)
+
+    def _plan(self, b: Book, checks: dict, jobs: list[dict], who: str) -> dict:
+        lined = {j.get("check") for j in jobs if j.get("folder") == b.folder.name}
+        go, out, calls = [], [], 0
+        for c in self._pass_checks(who, checks):
+            if c["box_needed"]:
+                why = f"It needs your words in its box first: {c['box']}"
+            elif c["needs_bible"] and not b.bible:
+                why = f"It goes by the story bible, and {b.title} has not been read yet."
+            elif c["id"] in lined:
+                why = "It is already in line."
+            else:
+                calls += self._calls(c, b)
+                go.append({"id": c["id"], "name": c["name"], "estimate": self._estimate(c, b)})
+                continue
+            out.append({"id": c["id"], "name": c["name"], "why": why})
+        left = self.timing.left(calls)
+        why_not = ""
+        if not go:
+            if not out:
+                why_not = "There is nothing on this desk to do."
+            elif all(x["why"] == "It is already in line." for x in out):
+                why_not = f"All of it is already in line for {b.title}."
+            elif not b.bible and any("story bible" in x["why"] for x in out):
+                why_not = f"{b.title} has not been read yet. Read it in Manuscript first."
+            else:
+                why_not = out[0]["why"]
+        return {"who": who, "name": self._pass_name(who), "checks": go, "left_out": out,
+                "time": _when_left(left).replace(" left", "") if go and left is not None else "", "can_start": bool(go), "why_not": why_not}
+
+    def pass_plan(self, title: Any, who: Any) -> dict:
+        """What a pass would do and about how long it takes. Starts nothing."""
+        w = self._pass_who(who)
+        return self._plan(Book(self._folder(title)), engine.load_checks(), self._jobs(), w)
+
+    def pass_start(self, title: Any, who: Any) -> dict:
+        """Her press, or her yes through desk_assign: the desk's checks go in line, in order, as ordinary checks."""
+        folder = self._folder(title)
+        plan = self.pass_plan(folder.name, who)
+        if not plan["can_start"]:
+            raise Refused(plan["why_not"])
+        pid = f"p{int(time.time() * 1000)}"
+        queued, left = [], list(plan["left_out"])
+        for c in plan["checks"]:
+            try:
+                self.start(folder.name, c["id"], "", who=plan["who"], pass_id=pid)
+                queued.append(c["name"])
+            except Refused as exc:                   # put in line a moment ago, from another press
+                left.append({"id": c["id"], "name": c["name"], "why": str(exc)})
+        if not queued:
+            raise Refused(f"All of it is already in line for {Book(folder).title}.")
+        write_json(engine.home_of(folder) / PASS, {"id": pid, "who": plan["who"], "total": len(queued), "started_at": now()})
+        return {"pass": pid, "queued": queued, "left_out": left, "time": plan["time"]}
+
+    def visit(self, title: Any) -> dict:
+        """She has seen the meeting: the next one says what is new since now."""
+        folder = self._folder(title)
+        b = Book(folder)
+        rec = {"at": now(), "shas": {str(s.n): s.sha for s in b.sections}, "words": sum(s.words for s in b.sections)}
+        write_json(engine.home_of(folder) / VISIT, rec)
+        return {"at": rec["at"], "message": "Noted."}
+
+    @staticmethod
+    def _board(folder: Path) -> dict:
+        """The storyboard and its painted panels, from their files. A missing or bad file counts as none."""
+        out = {"panels": 0, "made_at": None, "painted": 0}
+        try:
+            got = Desk._loose(engine.home_of(folder) / "storyboard" / "board.json")
+            if isinstance(got, dict):
+                out["panels"] = len(got["panels"]) if isinstance(got.get("panels"), list) else 0
+                out["made_at"] = got["made_at"] if isinstance(got.get("made_at"), str) else None
+            pics = Desk._loose(folder / "pictures.json")
+            rows = pics.get("pictures") if isinstance(pics, dict) else pics
+            if isinstance(rows, list):
+                out["painted"] = len({str(p["panel"]) for p in rows if isinstance(p, dict) and p.get("panel") and p.get("state") == "ready"})
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return out
+
+    def _pass_now(self, folder: Path, jobs: list[dict]) -> dict | None:
+        rec = read_json(engine.home_of(folder) / PASS)
+        if not isinstance(rec, dict) or not rec.get("id"):
+            return None
+        left = [str(j.get("check_name") or "") for j in jobs if j.get("pass") == rec["id"]]
+        if not left:
+            return None
+        total = max(int(rec.get("total") or 0), len(left))
+        return {"id": rec["id"], "who": rec.get("who"), "total": total, "done": total - len(left), "left": left}
+
+    @staticmethod
+    def _doing(job: dict) -> str:
+        bits = [str(job.get("check_name") or "")]
+        if job.get("total"):
+            bits.append(f"step {job.get('done') or 0} of {job['total']}")
+        bits.append(_when_left(job.get("left_s")))
+        return ", ".join(b for b in bits if b)
+
+    def office_view(self, title: Any) -> dict:
+        """Her editor-in-chief's office: the meeting, and the staff with what each is doing and has found."""
+        folder = self._folder(title)
+        v = self.desk_view(folder.name)
+        b = Book(folder)
+        checks = engine.load_checks()
+        jobs = [j for j in self._jobs() if j.get("folder") == folder.name]
+        ran = read_json(engine.home_of(folder) / engine.RUNS, {}) or {}
+        ran = ran if isinstance(ran, dict) else {}
+        seen = read_json(engine.home_of(folder) / VISIT)
+        seen = seen if isinstance(seen, dict) and isinstance(seen.get("at"), str) else None
+        board = self._board(folder)
+        found = v["findings"]
+        lined = {j.get("check"): j for j in jobs}
+
+        def job_staff(j: dict) -> str:
+            return KIND_STAFF.get(str(j.get("kind") or "")) or staff.of_check(checks.get(j.get("check")) or {})
+
+        def last_run(cid: str) -> str:
+            got = ran.get(cid)
+            return str(got.get("finished_at") or "") if isinstance(got, dict) else ""
+
+        plans = {sid: self._plan(b, checks, jobs, sid) for sid in staff.PASSES}
+        rows = []
+        for sid in staff.IDS:
+            mine = staff.checks_of(sid, checks)
+            fs = [f for f in found if f.get("who") == sid]
+            opened = [f for f in fs if f.get("state") == "open" and f.get("kind") != "question"]
+            js = [j for j in jobs if job_staff(j) == sid]
+            last = max((last_run(c["id"]) for c in mine), default="") or (board["made_at"] if sid == "board" else None) or None
+            run_ = next((j for j in js if j.get("state") == "running"), None)
+            wait_ = next((j for j in js if j.get("state") == "waiting"), None)
+            if run_:
+                state, doing = "working", self._doing(run_)
+            elif wait_:
+                state, doing = "waiting", str(wait_.get("step") or "")
+            elif js:
+                state, doing = "in_line", "In line: " + ", ".join(str(j.get("check_name") or "") for j in js)
+            else:
+                worked = last or any(f.get("found_by") != "old desk" for f in fs) or (sid == "art" and board["painted"])
+                state = "idle" if worked else "new"
+                doing = ""
+            p = plans.get(sid)
+            rows.append({**staff.public(sid), "state": state, "doing": doing,
+                         "checks": [{"id": c["id"], "name": c["name"], "last_run": last_run(c["id"]) or None,
+                                     "open": sum(1 for f in opened if f.get("check") == c["id"]),
+                                     "running": (lined.get(c["id"]) or {}).get("state")} for c in mine],
+                         "open": len(opened), "big": sum(1 for f in opened if f.get("size") == "big"),
+                         "questions": sum(1 for f in fs if f.get("state") == "open" and f.get("kind") == "question"),
+                         "fixed": sum(1 for f in fs if f.get("state") == "fixed"), "last_worked": last,
+                         "top": [{"id": f.get("id"), "what": f.get("what"), "size": f.get("size"),
+                                  "section": (f.get("where") or [{}])[0].get("section"), "check_name": f.get("check_name")} for f in opened[:3]],
+                         "pass": {"can_start": p["can_start"], "time": p["time"], "label": f"Ask {p['name']} to go over the book",
+                                  "why_not": p["why_not"]} if p else None})
+        by = {r["id"]: r for r in rows}
+        lines = self._meeting(b, v, checks, ran, seen, jobs, by, plans, job_staff)
+        chief = staff.BY_ID[staff.CHIEF]
+        return {"title": b.title, "version": VERSION, "chief": {k: chief[k] for k in ("id", "name", "role", "img")},
+                "meeting": {"first": seen is None, "since": seen["at"] if seen else None, "lines": lines,
+                            "say": "\n\n".join(x["text"] for x in lines)},
+                "staff": rows, "status": v["status"], "pass": self._pass_now(folder, jobs), "board": board,
+                "has_bible": v["has_bible"], "unread": v["unread"]}
+
+    def _meeting(self, b: Book, v: dict, checks: dict, ran: dict, seen: dict | None, jobs: list[dict], by: dict,
+                 plans: dict, job_staff: Any) -> list[dict]:
+        """The meeting's lines, in the design's order, each only when true, never more than eight. Code only."""
+        chief = staff.BY_ID[staff.CHIEF]
+
+        def line(who: str, kind: str, text: str, go: dict | None = None, do: dict | None = None) -> dict:
+            return {"who": who, "kind": kind, "text": text, **({"go": go} if go else {}), **({"do": do} if do else {})}
+
+        if seen is None:
+            hello = [line(staff.CHIEF, "hello", f"Hello, I am {chief['name']}, your {chief['role'].lower()}. My staff is here "
+                          f"to work on {b.title} with you, from the big shape of the story down to the last comma.")]
+        else:
+            day = _day(seen["at"])
+            hello = [line(staff.CHIEF, "hello", "Welcome back." + (f" You were last here on {day}." if day else ""))]
+        news = []
+        if seen is not None:
+            old = seen.get("shas") if isinstance(seen.get("shas"), dict) else {}
+            changed = [s.n for s in b.sections if old.get(str(s.n)) != s.sha]
+            if changed:
+                net = sum(s.words for s in b.sections) - int(seen.get("words") or 0)
+                size = (f"{net:,} more word{'s' if net != 1 else ''}" if net > 0 else
+                        f"{-net:,} fewer word{'s' if net != -1 else ''}" if net < 0 else "the same number of words")
+                news.append(line(staff.CHIEF, "news", f"Since then you changed {_sections(changed)}: {size}.",
+                                 go={"view": "write", "section": changed[0]}))
+            done: dict[str, list[dict]] = {}
+            for cid, c in checks.items():
+                got = ran.get(cid)
+                if isinstance(got, dict) and str(got.get("finished_at") or "") > seen["at"]:
+                    done.setdefault(staff.of_check(c), []).append(c)
+            for sid in staff.IDS:
+                if sid not in done:
+                    continue
+                ids = {c["id"] for c in done[sid]}
+                opened = [f for f in v["findings"] if f.get("check") in ids and f.get("state") == "open" and f.get("kind") != "question"]
+                big = sum(1 for f in opened if f.get("size") == "big")
+                small = len(opened) - big
+                said = ", ".join(x for x in (f"{big} big thing{'s' if big != 1 else ''}" if big else "",
+                                             f"{small} smaller" + (" thing" + ("s" if small != 1 else "") if not big else "") if small else "") if x)
+                news.append(line(sid, "news", f"{staff.name(sid)} finished {_and([c['name'] for c in done[sid]])}: {said or 'nothing to report'}.",
+                                 go={"view": "desk", "who": sid}))
+        working = []
+        if jobs:
+            run_ = next((j for j in jobs if j.get("state") in ("running", "waiting")), None)
+            waiting = [j for j in jobs if j is not run_]
+            bits = []
+            if run_:
+                name_ = staff.name(job_staff(run_))
+                bits.append(f"{name_} is waiting to start {run_.get('check_name')} while Manuscript reads your book." if run_.get("state") == "waiting"
+                            else f"{name_} is working on {self._doing(run_)}.")
+            groups: list[list] = []
+            for j in waiting:
+                sid = job_staff(j)
+                if groups and groups[-1][0] == sid:
+                    groups[-1][1].append(j)
+                else:
+                    groups.append([sid, [j]])
+            if groups:
+                bits.append("In line: " + "; ".join(f"{staff.name(sid)} with " + (str(js[0].get("check_name")) if len(js) == 1 else f"{len(js)} checks")
+                                                     for sid, js in groups) + ".")
+            first = job_staff(run_ or waiting[0])
+            working.append(line(first, "working", " ".join(bits), go={"view": "desk", "who": first}))
+        big_lines = []
+        for sid in staff.IDS:
+            top = next((f for f in v["findings"] if f.get("who") == sid and f.get("state") == "open" and f.get("kind") != "question"
+                        and f.get("size") == "big"), None)
+            if top and len(big_lines) < 3:
+                what = str(top.get("what") or "").strip()
+                big_lines.append(line(sid, "found", f"{staff.name(sid)} found something big: {what}" + ("" if what.endswith((".", "?", "!")) else "."),
+                                      go={"view": "desk", "finding": top.get("id"), "who": sid}))
+        unread = list(v["unread"])
+        wait = [line(staff.CHIEF, "waiting", f"{_sections(unread)[0].upper()}{_sections(unread)[1:]} changed since we last read "
+                     f"{'it' if len(unread) == 1 else 'them'}. Read again in Manuscript and our notes on {'it' if len(unread) == 1 else 'them'} will be current.",
+                     go={"view": "write", "section": unread[0]})] if unread else []
+        nxt = []
+        story = plans[staff.BY_STAGE["story"]]
+        lead = staff.BY_ID[story["who"]]
+        if not any(isinstance(r, dict) and r.get("finished_at") for r in ran.values()):
+            if story["can_start"]:
+                nxt.append(line(lead["id"], "next", f"Next: {lead['name']}, your {lead['role'].lower()}, goes over the whole story first. "
+                                "There is no use polishing a scene that may go." + (f" That takes {story['time']}." if story["time"] else ""),
+                                do={"pass": lead["id"]}))
+            elif not b.bible:
+                nxt.append(line(staff.CHIEF, "next", f"Next: read {b.title} in Manuscript first. Then {lead['name']} can start on the story."))
+        elif v["next"]:
+            nx = v["next"]
+            if nx.get("check"):
+                sid = staff.of_check(checks.get(nx["check"]) or {})
+                if nx.get("can_run"):
+                    nxt.append(line(sid, "next", f"Next: {staff.name(sid)} on {nx['name']}. {nx['why']}", do={"check": nx["check"]}))
+                else:
+                    nxt.append(line(sid, "next", f"Next: {staff.name(sid)} on {nx['name']}, once {b.title} is read in Manuscript. {nx['why']}"))
+            else:
+                st = next((s["id"] for s in engine.STAGES if s["name"] == nx.get("stage")), "any")
+                sid = staff.BY_STAGE.get(st, staff.CHIEF)
+                nxt.append(line(sid, "next", f"Next: settle what {staff.name(sid)} found. {nx['why']}", go={"view": "desk", "who": sid}))
+        fixed = len(hello) + len(working) + len(big_lines) + len(wait) + len(nxt)
+        news = news[:max(0, MEETING_MOST - fixed)]
+        return hello + news + working + big_lines + wait + nxt
+
+    # tools for the office
+
+    def desk_meeting(self, title: str = "") -> str:
+        o = self.office_view(title)
+        out = [f"The meeting in the office for {o['title']}, by code. You are {o['chief']['name']}: tell it in your own voice, short."]
+        named = {staff.CHIEF}
+        for x in o["meeting"]["lines"]:
+            text = x["text"]
+            if x["who"] not in named:
+                named.add(x["who"])
+                s = staff.BY_ID[x["who"]]
+                if s["role"].lower() not in text.lower():
+                    text += f" ({s['name']} is the {s['role'].lower()}.)"
+            do = x.get("do") or {}
+            if do.get("pass"):
+                text += f" Offer it; start it only on her yes, with desk_assign who {do['pass']} and confirm true."
+            elif do.get("check"):
+                text += f" Offer it; start it only on her yes, with desk_run check {do['check']} and confirm true."
+            out.append("- " + text)
+        return "\n".join(out)
+
+    def desk_staff(self, title: str = "") -> str:
+        o = self.office_view(title)
+        lines = [f"The staff working on {o['title']}:"]
+        for s in o["staff"]:
+            now_ = {"working": f"working on {s['doing']}", "waiting": s["doing"] or "waiting while Manuscript reads",
+                    "in_line": s["doing"].replace("In line", "in line", 1), "idle": "free", "new": "has not worked on this book yet"}[s["state"]]
+            if s["id"] == "board":
+                has = f"The storyboard has {o['board']['panels']} panels." if o["board"]["panels"] else "No storyboard yet."
+            elif s["id"] == "art":
+                has = f"Painted {o['board']['painted']} panels." if o["board"]["painted"] else "Nothing painted yet."
+            else:
+                has = (f"Open: {s['open']}, {s['big']} of them big." if s["open"] else "Nothing open.") + (f" Questions for her: {s['questions']}." if s["questions"] else "")
+            lines.append(f"- {s['name']}, {s['role'].lower()} [{s['id']}]: {s['does']} Now: {now_}. {has}")
+        return "\n".join(lines)
+
+    def desk_assign(self, title: str = "", who: str = "", confirm: Any = False) -> str:
+        p = self.pass_plan(title, who)
+        book_ = Book(self._folder(title)).title
+        whom = "the whole staff" if p["who"] == "all" else p["name"]
+        if not p["can_start"]:
+            return f"This cannot start now. {p['why_not']}"
+        cost = f"That takes {p['time']} at the speed I have measured." if p["time"] else "I have not timed your bot yet, so I cannot say how long."
+        left = (" Left out: " + "; ".join(f"{x['name']} ({x['why']})" for x in p["left_out"]) + ".") if p["left_out"] else ""
+        names = _and([c["name"] for c in p["checks"]])
+        if confirm is not True:
+            return (f"This has not started. Ask the writer: \"Shall {whom} go over {book_}? That is {names}.\" {cost}{left} "
+                    "Start it only after she says yes, with confirm true.")
+        got = self.pass_start(title, p["who"])
+        return (f"{whom[0].upper()}{whom[1:]} {'are' if p['who'] == 'all' else 'is'} going over {book_} in the background: "
+                f"{_and(got['queued'])}. {cost} desk_status says how far; desk_meeting tells her what was found.")
 
 
 def _page_text(raw: str) -> str:
@@ -1096,15 +1735,31 @@ class _Saved(dict):
 
 # -- MCP ------------------------------------------------------------------------------------------
 
-CHANGES = ("desk_run", "desk_mark", "desk_stop", "desk_study")
+CHANGES = ("desk_run", "desk_mark", "desk_stop", "desk_study", "desk_assign", "desk_storyboard")
 _TITLE = {"type": "string", "description": "The manuscript's title. May be left empty when there is only one."}
 STUDY_TOOL = ("Compares the writer's manuscript with a book she admires, on the shelf: your editor reads matched passages of each, "
               "one pair at a time, in the background, and gives pointers on style and flow. Without theirs it lists the books she "
               "could compare with. It starts only after the writer said yes; asked without her yes it only tells your bot what to "
               "ask her. It never writes her text.")
+BOARD_TOOL = ("Draws the writer's book as storyboard panels, the way a film or picture-book artist lays a story out: what a "
+              "picture would show, where, who, the mood and the shot, each with her own words under it. Panels are notes for "
+              "pictures, never words for her book. It works in the background and starts only after the writer said yes; asked "
+              "without her yes it only tells your bot what to ask her.")
+BOARD_REPORT_TOOL = ("The storyboard of the writer's book as plain lines, panel by panel: what each picture would show, where, "
+                     "who, the mood, and her words it rests on.")
 STUDY_REPORT_TOOL = ("How the writer's manuscript compares with a book she admires: the style numbers at once, where the two "
                      "differ most and where she already matches, and, once her editor compared passages, what to try first and the "
                      "notes on each pair of passages.")
+_ASKED = ", ".join(f"{sid} ({staff.name(sid)})" for sid in staff.ASKABLE)
+_DESKS = ", ".join(f"{sid} ({staff.name(sid)})" for sid in staff.PASSES)
+MEETING_TOOL = ("The editor-in-chief's meeting for one manuscript, built by code: what changed since the writer was last here, "
+                "what each staff member finished and found, what is running, what is waiting, and what comes next. Call it when "
+                "she says hello, sits down, or asks what is new.")
+STAFF_TOOL = ("The editor-in-chief's staff for one manuscript: each one's name, role and what they do for the book, what they are "
+              "doing now, and what they have open.")
+ASSIGN_TOOL = ("Sends one desk of the staff over the whole book: every check on that desk, in order, in the background. who all "
+               "is the full edit, big to small, then the letter. It starts only after the writer said yes; asked without her yes "
+               "it only tells your bot what to ask her, with the plan and the time. It never writes her text.")
 TOOLS = {
     "desk_checks": ("The stages of editing for one manuscript and every check in them, when each last ran, what it found, and which comes next.", {"title": _TITLE}, []),
     "desk_run": ("Runs one editing check in the background. It starts only after the writer said yes; asked without her yes it only tells your bot what to ask her. A check can take a long time.",
@@ -1117,13 +1772,22 @@ TOOLS = {
     "desk_mark": ("Marks one finding Open, Fixed, Not a problem or Later, and keeps a note of the writer's on it, by its number among the open ones or its id.",
                   {"title": _TITLE, "id": {"type": "string", "description": "The finding's number or id."}, "state": {"type": "string", "enum": ["open", "fixed", "not a problem", "later"]}, "note": {"type": "string"}}, ["id"]),
     "desk_letter": ("The Editor's letter for one manuscript: what the book is, what is working, its biggest problems, what to do first, and the revision plan as it stands now.", {"title": _TITLE}, []),
-    "desk_ask": ("Answers a question about a change the writer is planning, from what Future plans and changes found and the story bible.", {"title": _TITLE, "question": {"type": "string"}}, ["question"]),
+    "desk_ask": ("Answers a question about a change the writer is planning, from what Future plans and changes found and the story bible.",
+                 {"title": _TITLE, "question": {"type": "string"},
+                  "who": {"type": "string", "enum": list(staff.ASKABLE), "description": f"Which of her staff answers: {_ASKED}. Her editor-in-chief when left empty."}}, ["question"]),
     "desk_documents": ("The documents made for one manuscript: the style sheet, length note, synopsis, query letter, submission copy. Gives one by name, or the list.", {"title": _TITLE, "name": {"type": "string"}}, []),
     "desk_stop": ("Stops the check running for one manuscript, after the call in progress. Pressed again, it goes on from where it was.", {"title": _TITLE}, []),
     "desk_study": (STUDY_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she admires, on the shelf. Leave empty to list the books she could pick."},
                                 "confirm": {"type": "boolean", "description": "True only when the writer said yes to the comparison, in her latest message."},
                                 "focus": {"type": "string", "description": "What she most wants to learn from that book, in her words. May be left empty."}}, []),
     "desk_study_report": (STUDY_REPORT_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she compared hers with."}}, []),
+    "desk_meeting": (MEETING_TOOL, {"title": _TITLE}, []),
+    "desk_storyboard": (BOARD_TOOL, {"title": _TITLE, "sections": {"type": "string", "description": "The chapter numbers as the manuscript list gives them, like 3,4. Leave empty for the whole book."},
+                                     "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, []),
+    "desk_storyboard_report": (BOARD_REPORT_TOOL, {"title": _TITLE}, []),
+    "desk_staff": (STAFF_TOOL, {"title": _TITLE}, []),
+    "desk_assign": (ASSIGN_TOOL, {"title": _TITLE, "who": {"type": "string", "enum": list(staff.PASSES) + ["all"], "description": f"Whose desk: {_DESKS}, or all for the full edit."},
+                                  "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, ["who"]),
 }
 
 
@@ -1274,6 +1938,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, a.study_numbers(q.get("title", ""), q.get("theirs", "")))
         if path == "/api/study":
             return self._json(200, a.study_report(q.get("title", ""), q.get("theirs", "")))
+        if path == "/api/office":
+            return self._json(200, a.office_view(q.get("title", "")))
+        if path == "/api/board":
+            return self._json(200, a.board_view(q.get("title", "")))
+        if path == "/api/board/plan":
+            return self._json(200, a.board_plan(q.get("title", ""), q.get("sections", "")))
+        if path == "/api/board/picture":
+            return self._send(200, a.board_picture(q.get("title", ""), q.get("id", "")), "image/png")
+        if path == "/api/pass":
+            return self._json(200, a.pass_plan(q.get("title", ""), q.get("who", "")))
         name = urllib.parse.unquote(path.lstrip("/"))
         file = (WEB / name).resolve()
         if name and file.suffix.lower() in WEB_TYPES and WEB.resolve() in file.parents and file.is_file():
@@ -1331,6 +2005,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"message": f"Your editor is comparing passages with {job['theirs_title']}.", "job": job})
         if path == "/api/wordcopy":
             return self._json(200, a.word_copy(msg.get("title")))
+        if path == "/api/visit":
+            return self._json(200, a.visit(msg.get("title")))
+        if path == "/api/board":
+            job = a.board_start(msg.get("title"), msg.get("sections"))
+            return self._json(200, {"message": f"{staff.name('board')} is drawing the storyboard.", "job": job})
+        if path == "/api/board/paint":
+            return self._json(200, a.board_paint(msg.get("title"), msg.get("panels")))
+        if path == "/api/pass":
+            got = a.pass_start(msg.get("title"), msg.get("who"))
+            n = len(got["queued"])
+            who = a._pass_who(msg.get("who"))
+            return self._json(200, {**got, "message": f"{a._pass_name(who)} {'are' if who == 'all' else 'is'} going over the book: "
+                                                      f"{n} check{'s' if n != 1 else ''} in line."})
         self._json(404, {"error": "Editor's Desk has no page here."})
 
     def do_DELETE(self):
