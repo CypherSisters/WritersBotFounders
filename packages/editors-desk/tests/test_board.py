@@ -158,3 +158,12 @@ def test_a_place_or_mood_that_repeats_her_words_is_left_out():
     panel = storyboard._panels(got, S, [])[0]
     assert panel["where"] == "" and panel["mood"] == ""
     assert storyboard.prompt_for({"what": 'A man says "You', "frame": "close", "where": "", "mood": "calm"}) == "A man says. close. Mood: calm."
+
+
+def test_a_painting_that_failed_says_why_in_maps_own_words(desk):
+    v = drawn(desk)
+    pid = v["board"]["panels"][0]["id"]
+    rows = [{"id": "p-1", "panel": pid, "state": "failed", "why": "Not allowed yet: waiting for your Yes on the Bridge page.", "made_at": "2026-01-01T00:00:00Z"}]
+    (desk.folder / "pictures.json").write_text(json.dumps({"pictures": rows}), encoding="utf-8")
+    _c, after = view(desk)
+    assert after["pictures"][pid]["state"] == "failed" and "waiting for your Yes on the Bridge page" in after["paint_note"]

@@ -75,7 +75,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "editors-desk"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 4 * 1024 * 1024
 WEB_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
@@ -1264,10 +1264,13 @@ class Desk:
         t = urllib.parse.quote(b.title)
         ids = {str(p.get("id")) for p in board.get("panels") or []}
         pictures = {}
+        failed_why = ""
         for pid, r in rows.items():
             if pid in ids:
                 state = r.get("state") if r.get("state") in ("making", "ready", "failed") else "making"
                 pictures[pid] = {"state": state, "url": f"api/board/picture?title={t}&id={urllib.parse.quote(pid)}"}
+                if state == "failed" and isinstance(r.get("why"), str) and r["why"].strip():
+                    failed_why = plain(r["why"], 300)
         asked = self._loose(folder / BOARD_ASK)
         asked = asked if isinstance(asked, dict) else {}
         note = ""
@@ -1285,6 +1288,8 @@ class Desk:
             else:
                 note = ("The painting has not started. Open Maps and set up the picture maker there, keep Maps open, "
                         f"then press Have {staff.name('art')} paint these again.")
+        if failed_why and not note:                  # Maps' own words for why a painting did not come
+            note = f"A painting did not come. Maps says: {failed_why} Open Maps to try it again."
         running = any(j.get("folder") == folder.name and j.get("kind") == BOARD for j in self._jobs())
         return {"board": board or None, "changed": changed, "plan": self.board_plan(title), "running": running,
                 "pictures": pictures, "can_paint": bool(ids) and not running, "paint_note": note,

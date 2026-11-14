@@ -149,7 +149,7 @@ def test_all_is_the_full_edit_then_the_letter(obox):
 def test_the_office_for_a_new_book(obox):
     asked = len(obox.core.asks)
     o = office(obox)
-    assert o["version"] == "0.4.0" and o["title"] == TITLE
+    assert o["version"] == server.VERSION and o["title"] == TITLE
     assert o["chief"] == {"id": "chief", "name": staff.name("chief"), "role": "Editor-in-chief", "img": "img/staff/chief.png"}
     m = o["meeting"]
     assert m["first"] is True and m["since"] is None
