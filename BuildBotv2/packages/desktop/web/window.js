@@ -582,7 +582,7 @@
   }
   function drawRailChats() {
     clear($("rail-chats")).append(...S.chats.map((c) => el("button", { class: "w-item" + (c.id === S.chatId ? " on" : ""), title: c.title,
-      "data-chat": c.id, on: { click: () => pickChat(c.id) } }, [el("span", { class: "w-name", text: c.title })])));
+      "data-chat": c.id, on: { click: () => { setWide(false); pickChat(c.id); } } }, [el("span", { class: "w-name", text: c.title })])));
   }
   function drawRailApps() {
     const box = clear($("rail-apps"));
@@ -770,6 +770,8 @@
   const DRAW = { app: drawApp, building: drawBuilding, turn: drawTurn, settings: drawSettings, store: drawStore, page: drawPage };
 
   function saveTabs() { keep(TABS_KEY, S.tabs.map((t) => t.key)); }
+  /* Bigger: the side pane takes the chat's room too, for a page she works in. Her choice is kept; opening a chat brings chat back. */
+  function setWide(on) { if (!!S.wide === !!on) return; S.wide = !!on; keep("puffpai.window.wide", S.wide); renderTabs(); }
   function openTab(def) {
     let t = S.tabs.find((x) => x.key === def.key);
     if (!t) {
@@ -798,12 +800,17 @@
   }
   function renderTabs() {
     $("win").classList.toggle("w-nopane", !S.tabs.length);
+    if (S.wide === undefined) S.wide = saved("puffpai.window.wide", false) === true;
+    $("win").classList.toggle("w-wide", S.wide && S.tabs.length > 0);
     const live = S.tool && (S.tool.builds || []).some((b) => L.buildChip(b, S.waiting.has(b.id)).tone === "live");
     clear($("tabs")).append(el("div", { class: "w-tablist" }, S.tabs.map((t) => el("div", { class: "w-tab" + (t.key === S.active ? " on" : ""), "data-tab": t.key }, [
       el("button", { class: "w-tabname", on: { click: () => { const back = S.active !== t.key; S.active = t.key; renderTabs(); if (back && t.kind === "page") drawPageAgain(t); } } },
         [t.title, t.kind === "building" && live ? spin() : null]),
       el("button", { class: "w-x", "aria-label": "Close " + t.title, text: "✕", on: { click: () => closeTab(t.key) } })]))),
-    el("span", { class: "w-grow" }), el("button", { class: "w-tool", "data-open-dash": "tabs", text: "Open full dashboard ↗", on: { click: () => openDashboard("") } }));
+    el("span", { class: "w-grow" }),
+    el("button", { class: "w-tool w-widebtn", "data-wide": S.wide ? "on" : "off", "aria-pressed": S.wide ? "true" : "false", title: S.wide ? "Bring the chat back beside this page" : "Give this page the chat's room too",
+      text: S.wide ? "Show chat" : "Bigger", on: { click: () => setWide(!S.wide) } }),
+    el("button", { class: "w-tool", "data-open-dash": "tabs", text: "Open full dashboard ↗", on: { click: () => openDashboard("") } }));
     S.tabs.forEach((t) => { t.node.hidden = t.key !== S.active; });
     const here = S.tabs.find((t) => t.key === S.active);
     if (here && here.kind === "page") S.view = here.view;
@@ -2001,7 +2008,7 @@
   function closeRail() { $("rail").classList.remove("open"); }
   function wire() {
     document.addEventListener("focusin", (e) => { S.chatHadFocus = $("composer").contains(e.target); });
-    $("new-chat").addEventListener("click", newChat);
+    $("new-chat").addEventListener("click", () => { setWide(false); newChat(); });
     $("menu-btn").addEventListener("click", () => $("rail").classList.toggle("open"));
     const terminal = document.querySelector("[data-switch=terminal]");
     /* D139: on another device a console on the bot's computer helps nobody, so Terminal is the Developer page's own

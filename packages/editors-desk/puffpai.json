@@ -3,7 +3,7 @@
   "id": "editors-desk",
   "kind": "app",
   "name": "Editor's Desk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Your whole book as one page you just type in, like Word, with notes from your editor in the margin beside the words they are about. It saves as you type and keeps earlier versions. Select any words and ask your editor how they read. Behind it is a publishing house's stages of editing, big to small: the story, the facts, the prose, the polish, and getting it out. It finds plot holes and inconsistencies across the whole book and shows each at its exact words, with why it matters and one way to fix it. Mark each Fixed, Not a problem or Later. Study a book puts your book beside a book you admire: the numbers at once, and your editor's pointers on matched passages. Save a Word copy of your book any time. Your editor-in-chief runs a small staff, one person for each kind of editing: she tells you what is new, what each desk found and what to do next, and a whole desk goes over your book on your one Yes. Your editor works in the background with your bot's brain on this computer, and only when you say so. Your bot never writes your book.",
   "author": "Cypher Sisters",
   "license": "Apache-2.0",

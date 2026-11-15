@@ -8,6 +8,12 @@ html, body.w-body { height: 100%; overflow: hidden; }
 .w-win { display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(0, 1.05fr); grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; min-height: 480px; }
 .w-win.w-nopane { grid-template-columns: 230px minmax(0, 1fr); }
 .w-win.w-nopane .w-pane { display: none; }
+/* Bigger: the side pane takes the chat's room too. The menu stays. Not at phone width, where chat and pane stack. */
+@media (min-width: 901px) {
+  .w-win.w-wide { grid-template-columns: 230px minmax(0, 1fr); }
+  .w-win.w-wide .w-chat { display: none; }
+}
+@media (max-width: 900px) { .w-win .w-widebtn { display: none; } }
 .w-win h4, .w-win h5, .w-win p { margin: 0; }
 .w-win button { min-height: 0; font: inherit; box-shadow: none; border-radius: calc(8px * var(--round)); }
 .w-win code, .w-win pre, .w-win kbd { font-family: var(--mono); }

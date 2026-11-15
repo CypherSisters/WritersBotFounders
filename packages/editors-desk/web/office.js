@@ -103,6 +103,7 @@
     n.role = el('p', {cls: 'orole', text: 'Editor-in-chief'});
     n.lines = el('div', {cls: 'olines'});
     n.hear = el('button', {type: 'button', 'data-k': 'hear', 'aria-pressed': 'false', text: 'Hear it', hidden: true, on: {click: hear}});
+    n.voices = el('select', {'data-k': 'voices', 'aria-label': 'Dewey\'s voice', title: 'Dewey\'s voice', hidden: true, on: {change: chooseVoice}});
     n.all = el('button', {type: 'button', cls: 'main owide', 'data-k': 'all', text: 'Have the whole staff edit this book, big to small', on: {click: () => passDialog('all')}});
     n.say = el('p', {cls: 'osay', role: 'status', 'aria-live': 'polite', hidden: true});
     n.pass = el('p', {cls: 'opass', hidden: true});
@@ -111,7 +112,7 @@
     box.append(
       el('section', {cls: 'ohead', 'aria-label': 'Your meeting'}, [
         el('div', {cls: 'oframe'}, [n.face]),
-        el('div', {cls: 'omeet'}, [n.name, n.role, n.lines, el('div', {cls: 'row'}, [n.hear]), n.pass, el('div', {cls: 'row'}, [n.all]), n.say]),
+        el('div', {cls: 'omeet'}, [n.name, n.role, n.lines, el('div', {cls: 'row'}, [n.hear, n.voices]), n.pass, el('div', {cls: 'row'}, [n.all]), n.say]),
       ]),
       el('h2', {text: 'Your staff'}),
       n.staff,
@@ -163,8 +164,12 @@
 
   // ---------------------------------------------------------------- Hear it: the computer's own voice, nothing leaves it
 
+  const VOICE_KEY = 'editors-desk.voice';
+  const WOMEN = /zira|hazel|susan|linda|heather|catherine|samantha|karen|moira|tessa|victoria|fiona|allison|ava|serena|kate|sonia|libby|aria|jenny|michelle|female|woman/i;
+
   function pickVoice() {
     T.voice = null;
+    let pool = [];
     const ss = window.speechSynthesis;
     if (ss && typeof window.SpeechSynthesisUtterance === 'function') {
       let all = [];
@@ -172,14 +177,34 @@
       const local = all.filter(v => v.localService === true);
       const lang = (document.documentElement.lang || 'en').toLowerCase().slice(0, 2);
       const starts = (v, l) => String(v.lang || '').toLowerCase().startsWith(l);
-      T.voice = local.find(v => starts(v, lang)) || local.find(v => starts(v, 'en')) || local[0] || null;
+      const mine = local.filter(v => starts(v, lang));
+      const en = local.filter(v => starts(v, 'en'));
+      pool = mine.length ? mine : en.length ? en : local;
+      let kept = '';
+      try { kept = localStorage.getItem(VOICE_KEY) || ''; } catch (e) { kept = ''; }
+      // the one she chose; or a woman's voice, Dewey being a woman; or whatever the computer has
+      T.voice = pool.find(v => v.name === kept) || pool.find(v => WOMEN.test(v.name)) || pool[0] || null;
+    }
+    T.pool = pool;
+    if (T.nodes) {
+      const sel = clear(T.nodes.voices);
+      pool.forEach(v => sel.append(el('option', {value: v.name, text: String(v.name).replace(/^Microsoft\s+/, '').replace(/\s+-\s+.*$/, '')})));
+      if (T.voice) sel.value = T.voice.name;
     }
     showHear();
+  }
+  function chooseVoice() {
+    const v = (T.pool || []).find(x => x.name === T.nodes.voices.value);
+    if (!v) return;
+    stopTalk();
+    T.voice = v;
+    try { localStorage.setItem(VOICE_KEY, v.name); } catch (e) { /* it holds for this visit only */ }
   }
   function showHear() {
     if (!T.nodes) return;
     const text = T.o && T.o.meeting && T.o.meeting.say;
     T.nodes.hear.hidden = !(T.voice && text);
+    T.nodes.voices.hidden = T.nodes.hear.hidden || (T.pool || []).length < 2;
     if (T.nodes.hear.hidden && T.talk) stopTalk();
   }
 
