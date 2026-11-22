@@ -75,6 +75,19 @@ about what has run for real and what has not.
   - **Novel mode** (`skill`): `SKILL.md`, the playbook the brain follows: ask for the book, read only on the writer's
     yes, say what was found from the status tool's counts, walk the tabs, take corrections and notes, go through
     Editor's Desk's findings one at a time, show and draw on request, never write the book.
+  - **What Editor's Desk is now (0.4.2)**: five views. **Your editor** (the editor-in-chief's office: a meeting built by
+    code with no brain call, staff cards, one press to send a desk or the whole staff over the book, Hear it with the
+    computer's own local voice), **Write** (the whole book on one page, saved as she types, Ask one staff member about
+    selected words), **Editor's desk** (the findings), **Storyboard** (panels as notes for pictures, a sketch for each;
+    her press writes `Manuscripts/<title>/storyboard.json` and Maps 2.2 paints from it) and **Study a book**. The staff
+    and their names are data in `packages/editors-desk/staff.py`. Chat tools: `desk_meeting`, `desk_staff`,
+    `desk_assign`, `desk_storyboard`, `desk_storyboard_report`; `desk_ask` takes `who`. The window has a **Bigger**
+    button on the tab bar (`BuildBotv2/packages/desktop/web/window.js`, WritersBot's own change): the side pane takes
+    the chat's room. For the writer: `docs/FOR_THE_WRITER.md`.
+  - **How far this is tried**: on one real Orin with qwen3:30b-a3b, `update` ran clean several times, and the meeting,
+    staff edits, a storyboard, Study a book and asking about a passage all ran on the real brain. Painting a panel
+    stopped at the Bridge's Yes and has not been seen end to end. A whole-staff edit has not been seen start to finish.
+    Eight older tests in `BuildBotv2/tests` (pairing links, the PIN row) fail in this copy and are not about this work.
 - **The three apps share one folder per manuscript**: `My files/Manuscripts/<title>/` in the bot's data folder. That
   folder is the whole contract between them. See `packages/manuscript/CONTRACT.md`.
 

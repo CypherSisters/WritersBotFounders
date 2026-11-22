@@ -92,8 +92,10 @@ idle; the window shows a PIN box at the top when it does.
 **`./install-writersbot.sh update`** is for a bot already set up, after you get the newest version (section 10). Run it
 at a terminal. First it brings the Core and the window up to this copy, if they differ. Then it puts the bundle's list of
 books and articles on Knowledge, under Recommended for this bot, where they wait for a Yes. Then it copies this folder's
-bundle to `<DATA>/from/writersbot` and brings Novel mode, Manuscript, Editor's Desk, Maps and Document convert forward, in
-that order, each with its own Yes card here. Type `y` on each. Editor's Desk is new: on a bot from before it, `update` adds it,
+bundle to `<DATA>/from/writersbot` and brings Novel mode, Manuscript, Editor's Desk, Maps, Document convert and Dewey (the editor-in-chief's face, a look to
+pick on Settings, Looks) forward, in that order, each with its own Yes card here. Type `y` on each. Maps is taken off and
+added again, so its Yes on the Bridge page for the picture program must be given again (then Retry in Maps). After it,
+the writer presses F5 in her window and types her PIN; what is new for her is in `docs/FOR_THE_WRITER.md`. Editor's Desk is new: on a bot from before it, `update` adds it,
 and it downloads nothing, so it needs no Bridge.
 
 - For the Core and the window it says so in one line, waits if Manuscript is reading a book, and keeps a copy of what was

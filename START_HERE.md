@@ -57,7 +57,8 @@ WritersBot window**. It asks for the Orin's address, gets what it needs, and lea
 desktop. The window then asks for a sign-in code, from `./install-writersbot.sh pair` on the Orin.
 `docs/FOR_YOUR_WINDOWS_COMPUTER.md`, Part 1 has this step by step.
 
-Then open the window from the shortcut and say "start novel mode". Editing is in the Editor's Desk app, beside Manuscript and Maps.
+Then open the window from the shortcut and say "start novel mode". Editing is in the Editor's Desk app, beside Manuscript and Maps:
+the writer types in her book there, and an editor-in-chief with a small staff reads it on her Yes. `docs/FOR_THE_WRITER.md` is the step by step for her.
 
 **Getting the newest version**, if you already have this folder:
 

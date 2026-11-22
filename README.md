@@ -17,6 +17,7 @@ Nothing leaves the computer without the writer's consent.
 | `install-writersbot.sh` | One script for the Orin: BuildBot, the bot from the bundle, setup. |
 | `install-pictures.sh` | The picture program (ComfyUI) on the same Orin, for Maps. |
 | `docs/FOR_THE_ORIN.md` | Step by step for the person at the Orin, including the pictures by hand if the script is not wanted. |
+| `docs/FOR_THE_WRITER.md` | For the writer, no terminal: editing the book in the app step by step, the editor-in-chief and her staff, the storyboard, and taking a Word copy out. |
 | `docs/FOR_YOUR_WINDOWS_COMPUTER.md` | Step by step for the writer's Windows computer: the window, and a shortcut on the desktop. |
 | `docs/FOR_HER_CLAUDE.md` | For the AI helping at the other end: how it is built, where it gets stuck, how to build on it, how to make it faster. |
 | `docs/NOVEL_MODE.md` | The design: the tabs, the flow, Maps, pictures, and where editing went. |
