@@ -555,7 +555,7 @@ operations (one that no longer applies is still her words), `desk.json` (Editor'
 older versions of a section in its own data folder, not here. Each removal is one delete and the day's
 stamp is written last, so a stop leaves nothing half-done and the next tidy goes on.
 
-A current cache entry is a re-read's work, about four minutes a section on an Orin, so it is never removed.
+A current cache entry is a re-read's work, about four minutes a section on a small computer, so it is never removed.
 
 **The Settings fold** has one line from `GET /api/size`: "This book uses 4.3 MB: pictures 3.9 MB." It adds how much is older paintings Paint
 again replaced, and past 200 MB of pictures says they are taking a lot of room and that deleting them stays her choice. There is no button.
