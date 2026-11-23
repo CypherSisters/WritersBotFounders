@@ -75,7 +75,7 @@ about what has run for real and what has not.
   - **Novel mode** (`skill`): `SKILL.md`, the playbook the brain follows: ask for the book, read only on the writer's
     yes, say what was found from the status tool's counts, walk the tabs, take corrections and notes, go through
     Editor's Desk's findings one at a time, show and draw on request, never write the book.
-  - **What Editor's Desk is now (0.4.2)**: five views. **Your editor** (the editor-in-chief's office: a meeting built by
+  - **What Editor's Desk is now (0.4.3)**: five views. **Your editor** (the editor-in-chief's office: a meeting built by
     code with no brain call, staff cards, one press to send a desk or the whole staff over the book, Hear it with the
     computer's own local voice), **Write** (the whole book on one page, saved as she types, Ask one staff member about
     selected words), **Editor's desk** (the findings), **Storyboard** (panels as notes for pictures, a sketch for each;

@@ -75,7 +75,7 @@ HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PAGE = WEB / "index.html"
 NAME = "editors-desk"
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MAX_BODY = 4 * 1024 * 1024
 WEB_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
@@ -1766,33 +1766,33 @@ ASSIGN_TOOL = ("Sends one desk of the staff over the whole book: every check on 
                "is the full edit, big to small, then the letter. It starts only after the writer said yes; asked without her yes "
                "it only tells your bot what to ask her, with the plan and the time. It never writes her text.")
 TOOLS = {
-    "desk_checks": ("The stages of editing for one manuscript and every check in them, when each last ran, what it found, and which comes next.", {"title": _TITLE}, []),
     "desk_run": ("Runs one editing check in the background. It starts only after the writer said yes; asked without her yes it only tells your bot what to ask her. A check can take a long time.",
                  {"title": _TITLE, "check": {"type": "string", "description": "The check's id from desk_checks, such as plot, continuity or future."},
                   "confirm": {"type": "boolean", "description": "True only when the writer said yes to this check, in her latest message."},
                   "plan": {"type": "string", "description": "What she typed for a check with a box: the change she is thinking of, her genre, or her name for the title page."}}, ["check"]),
+    "desk_mark": ("Marks one finding Open, Fixed, Not a problem or Later, and keeps a note of the writer's on it, by its number among the open ones or its id.",
+                  {"title": _TITLE, "id": {"type": "string", "description": "The finding's number or id."}, "state": {"type": "string", "enum": ["open", "fixed", "not a problem", "later"]}, "note": {"type": "string"}}, ["id"]),
+    "desk_stop": ("Stops the check running for one manuscript, after the call in progress. Pressed again, it goes on from where it was.", {"title": _TITLE}, []),
+    "desk_assign": (ASSIGN_TOOL, {"title": _TITLE, "who": {"type": "string", "enum": list(staff.PASSES) + ["all"], "description": f"Whose desk: {_DESKS}, or all for the full edit."},
+                                  "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, ["who"]),
+    "desk_study": (STUDY_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she admires, on the shelf. Leave empty to list the books she could pick."},
+                                "confirm": {"type": "boolean", "description": "True only when the writer said yes to the comparison, in her latest message."},
+                                "focus": {"type": "string", "description": "What she most wants to learn from that book, in her words. May be left empty."}}, []),
+    "desk_storyboard": (BOARD_TOOL, {"title": _TITLE, "sections": {"type": "string", "description": "The chapter numbers as the manuscript list gives them, like 3,4. Leave empty for the whole book."},
+                                     "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, []),
+    "desk_checks": ("The stages of editing for one manuscript and every check in them, when each last ran, what it found, and which comes next.", {"title": _TITLE}, []),
     "desk_status": ("What the writer's editor is doing now for one manuscript, how far along, and about how long is left.", {"title": _TITLE}, []),
     "desk_findings": ("What the checks found in one manuscript: each with what is wrong, the section and its exact quote, why it matters and one way to fix it, biggest first.",
                       {"title": _TITLE, "state": {"type": "string", "enum": ["open", "fixed", "not a problem", "later"]}, "check": {"type": "string", "description": "Only this check's findings."}}, []),
-    "desk_mark": ("Marks one finding Open, Fixed, Not a problem or Later, and keeps a note of the writer's on it, by its number among the open ones or its id.",
-                  {"title": _TITLE, "id": {"type": "string", "description": "The finding's number or id."}, "state": {"type": "string", "enum": ["open", "fixed", "not a problem", "later"]}, "note": {"type": "string"}}, ["id"]),
     "desk_letter": ("The Editor's letter for one manuscript: what the book is, what is working, its biggest problems, what to do first, and the revision plan as it stands now.", {"title": _TITLE}, []),
     "desk_ask": ("Answers a question about a change the writer is planning, from what Future plans and changes found and the story bible.",
                  {"title": _TITLE, "question": {"type": "string"},
                   "who": {"type": "string", "enum": list(staff.ASKABLE), "description": f"Which of her staff answers: {_ASKED}. Her editor-in-chief when left empty."}}, ["question"]),
     "desk_documents": ("The documents made for one manuscript: the style sheet, length note, synopsis, query letter, submission copy. Gives one by name, or the list.", {"title": _TITLE, "name": {"type": "string"}}, []),
-    "desk_stop": ("Stops the check running for one manuscript, after the call in progress. Pressed again, it goes on from where it was.", {"title": _TITLE}, []),
-    "desk_study": (STUDY_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she admires, on the shelf. Leave empty to list the books she could pick."},
-                                "confirm": {"type": "boolean", "description": "True only when the writer said yes to the comparison, in her latest message."},
-                                "focus": {"type": "string", "description": "What she most wants to learn from that book, in her words. May be left empty."}}, []),
     "desk_study_report": (STUDY_REPORT_TOOL, {"title": _TITLE, "theirs": {"type": "string", "description": "The title of the book she compared hers with."}}, []),
-    "desk_meeting": (MEETING_TOOL, {"title": _TITLE}, []),
-    "desk_storyboard": (BOARD_TOOL, {"title": _TITLE, "sections": {"type": "string", "description": "The chapter numbers as the manuscript list gives them, like 3,4. Leave empty for the whole book."},
-                                     "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, []),
     "desk_storyboard_report": (BOARD_REPORT_TOOL, {"title": _TITLE}, []),
     "desk_staff": (STAFF_TOOL, {"title": _TITLE}, []),
-    "desk_assign": (ASSIGN_TOOL, {"title": _TITLE, "who": {"type": "string", "enum": list(staff.PASSES) + ["all"], "description": f"Whose desk: {_DESKS}, or all for the full edit."},
-                                  "confirm": {"type": "boolean", "description": "True only when the writer said yes to this, in her latest message."}}, ["who"]),
+    "desk_meeting": (MEETING_TOOL, {"title": _TITLE}, []),
 }
 
 
